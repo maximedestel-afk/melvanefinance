@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
+import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type SortKey = "reference" | "rents" | "channelFees" | "netRevenue" | "commission" | "fixedRent" | "profit";
+type SortKey = "reference" | "fillRate" | "rents" | "channelFees" | "netRevenue" | "commission" | "fixedRent" | "profit";
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -25,6 +25,7 @@ interface FinanceRow {
   reference: string;
   notFoundReferences: string[];
   isFixedRent: boolean;
+  fillRate: number;
   rentsCents: number;
   channelFeesCents: number;
   netRevenueCents: number;
@@ -35,6 +36,7 @@ interface FinanceRow {
 
 function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): FinanceRow {
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
+  const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
   const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
   const channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
   const netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
@@ -52,6 +54,7 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): Finan
     reference: property.reference,
     notFoundReferences: property.notFoundReferences,
     isFixedRent: property.isFixedRent,
+    fillRate,
     rentsCents,
     channelFeesCents,
     netRevenueCents,
@@ -193,6 +196,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           case "reference":
             cmp = a.reference.localeCompare(b.reference, "fr");
             break;
+          case "fillRate":
+            cmp = a.fillRate - b.fillRate;
+            break;
           case "rents":
             cmp = a.rentsCents - b.rentsCents;
             break;
@@ -218,6 +224,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
 
   const totals = sortedRows
     ? {
+        fillRate: sortedRows.length > 0 ? sortedRows.reduce((sum, r) => sum + r.fillRate, 0) / sortedRows.length : 0,
         rentsCents: sortedRows.reduce((sum, r) => sum + r.rentsCents, 0),
         channelFeesCents: sortedRows.reduce((sum, r) => sum + r.channelFeesCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
@@ -373,6 +380,13 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
             <thead>
               <tr className="border-b border-black/10 text-left text-[12px] uppercase tracking-wide">
                 <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                <SortHeader
+                  label="Taux de remplissage"
+                  sortKey="fillRate"
+                  activeKey={sortKey}
+                  direction={direction}
+                  onSort={handleSort}
+                />
                 <SortHeader label="Rents" sortKey="rents" activeKey={sortKey} direction={direction} onSort={handleSort} />
                 <SortHeader
                   label="Channel Fees"
@@ -419,6 +433,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                       </span>
                     )}
                   </td>
+                  <td className="py-2 pr-3">
+                    <span
+                      className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium"
+                      style={fillRateBadgeStyle(row.fillRate)}
+                    >
+                      {formatPercent(row.fillRate)}
+                    </span>
+                  </td>
                   <td className="py-2 pr-3 text-[#1d1d1f]">
                     <Money cents={row.rentsCents} />
                   </td>
@@ -447,6 +469,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
             <tfoot>
               <tr className="border-t border-black/10 font-semibold text-[#1d1d1f]">
                 <td className="py-2 pr-3">Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})</td>
+                <td className="py-2 pr-3">
+                  <span
+                    className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
+                    style={fillRateBadgeStyle(totals.fillRate)}
+                  >
+                    {formatPercent(totals.fillRate)}
+                  </span>
+                </td>
                 <td className="py-2 pr-3">
                   <Money cents={totals.rentsCents} bold />
                 </td>

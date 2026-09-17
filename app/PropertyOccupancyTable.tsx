@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
+import { fillRateBadgeStyle, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyOccupancyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
@@ -19,15 +19,6 @@ interface PropertyOption {
   name: string | null;
   tags: string[];
   rentType: RentType | null;
-}
-
-/** Rouge (peu rempli) → vert (bien rempli), sur l'échelle 0–100 % du mois. */
-function fillRateBadgeStyle(fillRate: number): { backgroundColor: string; color: string } {
-  const hue = Math.max(0, Math.min(1, fillRate)) * 130;
-  return {
-    backgroundColor: `hsl(${hue} 85% 94%)`,
-    color: `hsl(${hue} 70% 30%)`,
-  };
 }
 
 function avgFillRate(property: PropertyOccupancyResult): number {
