@@ -294,44 +294,52 @@ async function sumListingNightsForMonth(listingId: string, year: number, month: 
   return nightsBooked;
 }
 
-export interface PropertyOccupancy {
-  propertyId: string;
-  reference: string;
-  name: string | null;
+export interface PropertyMonthOccupancy {
+  month: number;
   nightsBooked: number;
   daysInMonth: number;
   fillRate: number;
+}
+
+export interface PropertyOccupancyResult {
+  propertyId: string;
+  reference: string;
+  name: string | null;
+  months: PropertyMonthOccupancy[];
   notFoundReferences: string[];
 }
 
-/** Taux de remplissage d'un mois donné, pour chaque bien du portefeuille —
- * un bien réparti sur plusieurs listings VRPlatform (référence + références
- * supplémentaires) est regroupé en une seule ligne, comme le reste de
- * l'app. Utilisé par l'onglet Remplissage. */
-export async function getPropertyOccupancyForMonth(
+/** Taux de remplissage d'un ou plusieurs mois d'une année, pour chaque bien
+ * du portefeuille — un bien réparti sur plusieurs listings VRPlatform
+ * (référence + références supplémentaires) est regroupé en une seule ligne,
+ * comme le reste de l'app. Utilisé par l'onglet Remplissage. */
+export async function getPropertyOccupancyForMonths(
   properties: PortfolioProperty[],
   year: number,
-  month: number
-): Promise<PropertyOccupancy[]> {
+  months: number[]
+): Promise<PropertyOccupancyResult[]> {
   const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
-  const days = daysInMonth(year, month);
 
   return Promise.all(
     properties.map(async (property) => {
       const references = [property.reference, ...property.extraVrplatformReferences];
       const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
-      const nightsPerListing = await Promise.all(
-        listingIds.map((listingId) => sumListingNightsForMonth(listingId, year, month))
+      const monthResults = await Promise.all(
+        months.map(async (month) => {
+          const nightsPerListing = await Promise.all(
+            listingIds.map((listingId) => sumListingNightsForMonth(listingId, year, month))
+          );
+          const nightsBooked = nightsPerListing.reduce((sum, n) => sum + n, 0);
+          const days = daysInMonth(year, month);
+          return { month, nightsBooked, daysInMonth: days, fillRate: days > 0 ? nightsBooked / days : 0 };
+        })
       );
-      const nightsBooked = nightsPerListing.reduce((sum, n) => sum + n, 0);
       return {
         propertyId: property.propertyId,
         reference: property.reference,
         name: property.name,
-        nightsBooked,
-        daysInMonth: days,
-        fillRate: days > 0 ? nightsBooked / days : 0,
+        months: monthResults,
         notFoundReferences,
       };
     })

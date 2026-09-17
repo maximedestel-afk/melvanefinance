@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
-import { getPropertyOccupancyForMonth, isVrPlatformConfigured } from "@/lib/vrplatform";
+import { getPropertyOccupancyForMonths, isVrPlatformConfigured } from "@/lib/vrplatform";
 
 export async function GET(request: Request) {
   const profile = await getCurrentProfile();
@@ -13,14 +13,17 @@ export async function GET(request: Request) {
 
   const searchParams = new URL(request.url).searchParams;
   const year = Number.parseInt(searchParams.get("year") ?? "", 10);
-  const month = Number.parseInt(searchParams.get("month") ?? "", 10);
-  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
-    return NextResponse.json({ error: "Mois invalide." }, { status: 400 });
+  const months = (searchParams.get("months") ?? "")
+    .split(",")
+    .map((m) => Number.parseInt(m.trim(), 10))
+    .filter((m) => Number.isInteger(m) && m >= 1 && m <= 12);
+  if (!Number.isInteger(year) || months.length === 0) {
+    return NextResponse.json({ error: "Année ou mois invalide." }, { status: 400 });
   }
 
   try {
     const properties = await listPropertiesForFinance();
-    const results = await getPropertyOccupancyForMonth(
+    const results = await getPropertyOccupancyForMonths(
       properties.map((p) => ({
         propertyId: p.id,
         reference: p.reference,
@@ -30,9 +33,9 @@ export async function GET(request: Request) {
         extraVrplatformReferences: p.extraVrplatformReferences,
       })),
       year,
-      month
+      months
     );
-    return NextResponse.json({ year, month, properties: results });
+    return NextResponse.json({ year, months, properties: results });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Erreur VRPlatform inconnue." },
