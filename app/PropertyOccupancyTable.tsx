@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyOccupancyResult } from "@/lib/vrplatform";
 
 type SortKey = "reference" | "avgFillRate";
+
+interface PropertyOption {
+  id: string;
+  reference: string;
+  name: string | null;
+  tags: string[];
+}
 
 /** Rouge (peu rempli) → vert (bien rempli), sur l'échelle 0–100 % du mois. */
 function fillRateBadgeStyle(fillRate: number): { backgroundColor: string; color: string } {
@@ -20,18 +27,33 @@ function avgFillRate(property: PropertyOccupancyResult): number {
   return property.months.reduce((sum, m) => sum + m.fillRate, 0) / property.months.length;
 }
 
-export function PropertyOccupancyTable() {
+export function PropertyOccupancyTable({ properties: allProperties }: { properties: PropertyOption[] }) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
+  const allTags = useMemo(
+    () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
+    [allProperties]
+  );
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
+  const [referenceFilter, setReferenceFilter] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [properties, setProperties] = useState<PropertyOccupancyResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const matchingProperties = useMemo(() => {
+    const needle = referenceFilter.trim().toLowerCase();
+    return allProperties.filter((p) => {
+      const matchesReference = needle === "" || p.reference.toLowerCase().includes(needle);
+      const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
+      return matchesReference && matchesTags;
+    });
+  }, [allProperties, referenceFilter, selectedTags]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
@@ -39,15 +61,28 @@ export function PropertyOccupancyTable() {
     );
   }
 
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
   async function load() {
     if (selectedMonths.length === 0) {
       setError("Sélectionne au moins un mois.");
       return;
     }
+    if (matchingProperties.length === 0) {
+      setError("Aucun bien ne correspond aux filtres.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/finance/occupancy?year=${year}&months=${selectedMonths.join(",")}`);
+      const params = new URLSearchParams({
+        year: String(year),
+        months: selectedMonths.join(","),
+        propertyIds: matchingProperties.map((p) => p.id).join(","),
+      });
+      const res = await fetch(`/api/finance/occupancy?${params.toString()}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -100,6 +135,20 @@ export function PropertyOccupancyTable() {
         </div>
 
         <div>
+          <label className="field-label" htmlFor="occupancy-reference">
+            Référence
+          </label>
+          <input
+            id="occupancy-reference"
+            type="text"
+            value={referenceFilter}
+            onChange={(e) => setReferenceFilter(e.target.value)}
+            placeholder="ex: 12ARM"
+            className="mt-1 w-40 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+          />
+        </div>
+
+        <div>
           <span className="field-label">Mois</span>
           <div className="mt-1 flex flex-wrap gap-1">
             {MONTH_LABELS_SHORT.map((label, i) => {
@@ -127,6 +176,36 @@ export function PropertyOccupancyTable() {
           {loading ? "Chargement…" : properties ? "Actualiser" : "Charger"}
         </button>
       </div>
+
+      {allTags.length > 0 && (
+        <div>
+          <span className="field-label">Tags</span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {allTags.map((tag) => {
+              const active = selectedTags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => toggleTag(tag)}
+                  className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                    active
+                      ? "border-[#0071e3] bg-[#0071e3] text-white"
+                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[13px] text-[#6e6e73]">
+        {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
+        {matchingProperties.length !== 1 ? "s" : ""}
+      </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
@@ -210,7 +289,9 @@ export function PropertyOccupancyTable() {
       )}
 
       {!properties && !loading && !error && (
-        <p className="text-[13px] text-[#6e6e73]">Choisis une année, un ou plusieurs mois, puis charge les données.</p>
+        <p className="text-[13px] text-[#6e6e73]">
+          Choisis une année, un ou plusieurs mois, filtre par référence/tag si besoin, puis charge les données.
+        </p>
       )}
     </div>
   );

@@ -31,7 +31,9 @@ export default async function DashboardPage() {
         </form>
       </header>
 
-      <DashboardClient properties={properties.map((p) => ({ id: p.id, reference: p.reference, name: p.name }))} />
+      <DashboardClient
+        properties={properties.map((p) => ({ id: p.id, reference: p.reference, name: p.name, tags: p.tags }))}
+      />
     </div>
   );
 }

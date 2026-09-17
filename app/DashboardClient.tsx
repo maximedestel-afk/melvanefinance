@@ -9,7 +9,11 @@ import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 
 type Tab = "overview" | "occupancy";
 
-export function DashboardClient({ properties }: { properties: { id: string; reference: string; name: string | null }[] }) {
+export function DashboardClient({
+  properties,
+}: {
+  properties: { id: string; reference: string; name: string | null; tags: string[] }[];
+}) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 3 + i);
 
@@ -106,7 +110,7 @@ export function DashboardClient({ properties }: { properties: { id: string; refe
       {tab === "occupancy" && (
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Remplissage</h2>
-          <PropertyOccupancyTable />
+          <PropertyOccupancyTable properties={properties} />
         </section>
       )}
     </div>

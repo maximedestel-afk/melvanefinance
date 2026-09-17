@@ -21,8 +21,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Année ou mois invalide." }, { status: 400 });
   }
 
+  const propertyIdsParam = searchParams.get("propertyIds");
+  const propertyIds = propertyIdsParam ? new Set(propertyIdsParam.split(",")) : null;
+
   try {
-    const properties = await listPropertiesForFinance();
+    const allProperties = await listPropertiesForFinance();
+    const properties = propertyIds ? allProperties.filter((p) => propertyIds.has(p.id)) : allProperties;
+    if (propertyIds && properties.length === 0) {
+      return NextResponse.json({ error: "Aucun bien ne correspond aux filtres." }, { status: 404 });
+    }
     const results = await getPropertyOccupancyForMonths(
       properties.map((p) => ({
         propertyId: p.id,

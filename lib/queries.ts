@@ -29,7 +29,7 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
     { data: owners, error: ownersError },
     { data: settings, error: settingsError },
   ] = await Promise.all([
-    supabase.from("properties").select("id, reference, name").order("reference", { ascending: true }),
+    supabase.from("properties").select("id, reference, name, tags").order("reference", { ascending: true }),
     supabase.from("property_owner").select("property_id, rent_type, rent_amount"),
     supabase.from("property_finance_settings").select("property_id, extra_vrplatform_references"),
   ]);
@@ -50,6 +50,7 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
       rentType: owner?.rent_type ?? null,
       rentAmount: owner?.rent_amount ?? null,
       extraVrplatformReferences: setting?.extra_vrplatform_references ?? [],
+      tags: property.tags ?? [],
     };
   });
 }

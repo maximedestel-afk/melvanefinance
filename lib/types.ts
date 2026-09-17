@@ -21,4 +21,5 @@ export interface PropertyFinanceInfo {
   /** Références VRPlatform de listings supplémentaires à regrouper avec ce
    * bien (voir l'onglet Finances de M.G.B). */
   extraVrplatformReferences: string[];
+  tags: string[];
 }
