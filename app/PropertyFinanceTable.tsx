@@ -31,7 +31,9 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): Finan
   const channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
   const netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   const commissionCents =
-    property.commissionPercent != null ? Math.round((netRevenueCents * property.commissionPercent) / 100) : null;
+    !property.isFixedRent && property.commissionPercent != null
+      ? Math.round((netRevenueCents * property.commissionPercent) / 100)
+      : null;
   const fixedRentCents =
     property.isFixedRent && property.fixedRentAmountCents != null
       ? property.fixedRentAmountCents * selectedMonths.length
