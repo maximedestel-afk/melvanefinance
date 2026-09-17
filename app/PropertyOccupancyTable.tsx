@@ -27,10 +27,14 @@ function avgFillRate(property: PropertyOccupancyResult): number {
   return property.months.reduce((sum, m) => sum + m.fillRate, 0) / property.months.length;
 }
 
-export function PropertyOccupancyTable({ properties: allProperties }: { properties: PropertyOption[] }) {
+export function PropertyOccupancyTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
   const now = new Date();
   const currentYear = now.getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
+  const allProperties = useMemo(
+    () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
+    [unsortedProperties]
+  );
   const allTags = useMemo(
     () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
     [allProperties]
