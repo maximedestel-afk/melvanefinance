@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { MonthlyOverview } from "./MonthlyOverview";
 import { PropertyComparisonTable } from "./PropertyComparisonTable";
+import { PropertyOccupancyTable } from "./PropertyOccupancyTable";
 import { TrendsSection } from "./TrendsSection";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 
@@ -68,6 +69,11 @@ export function DashboardClient({ properties }: { properties: { id: string; refe
           </section>
         </>
       )}
+
+      <section className="card space-y-3 p-5">
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Remplissage</h2>
+        <PropertyOccupancyTable />
+      </section>
 
       <section className="card space-y-3 p-5">
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Tendances</h2>

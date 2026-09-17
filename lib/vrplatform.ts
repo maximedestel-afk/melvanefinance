@@ -269,6 +269,75 @@ export async function getPortfolioMonthlyFinancials(
   );
 }
 
+/** Nuits réservées d'un listing sur un mois donné (borne "intersection" —
+ * une réservation à cheval sur le mois compte ses nuits qui tombent dedans). */
+async function sumListingNightsForMonth(listingId: string, year: number, month: number): Promise<number> {
+  const dateParam = `${year}-${String(month).padStart(2, "0")}`;
+  let nightsBooked = 0;
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformReservationsResponse>("/reservations", {
+      listingId,
+      date: dateParam,
+      dateField: "intersection",
+      status: "booked",
+      limit: "250",
+      page: String(page),
+    });
+    for (const reservation of res.data) {
+      if (!reservation.checkIn || !reservation.checkOut) continue;
+      nightsBooked += overlapNights(reservation.checkIn, reservation.checkOut, year, month);
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return nightsBooked;
+}
+
+export interface PropertyOccupancy {
+  propertyId: string;
+  reference: string;
+  name: string | null;
+  nightsBooked: number;
+  daysInMonth: number;
+  fillRate: number;
+  notFoundReferences: string[];
+}
+
+/** Taux de remplissage d'un mois donné, pour chaque bien du portefeuille —
+ * un bien réparti sur plusieurs listings VRPlatform (référence + références
+ * supplémentaires) est regroupé en une seule ligne, comme le reste de
+ * l'app. Utilisé par l'onglet Remplissage. */
+export async function getPropertyOccupancyForMonth(
+  properties: PortfolioProperty[],
+  year: number,
+  month: number
+): Promise<PropertyOccupancy[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
+  const days = daysInMonth(year, month);
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+      const nightsPerListing = await Promise.all(
+        listingIds.map((listingId) => sumListingNightsForMonth(listingId, year, month))
+      );
+      const nightsBooked = nightsPerListing.reduce((sum, n) => sum + n, 0);
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        name: property.name,
+        nightsBooked,
+        daysInMonth: days,
+        fillRate: days > 0 ? nightsBooked / days : 0,
+        notFoundReferences,
+      };
+    })
+  );
+}
+
 export interface YearlyTotal {
   year: number;
   rentsCents: number;
