@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyOccupancyResult } from "@/lib/vrplatform";
 
-type SortKey = "reference" | "avgFillRate";
+type SortKey = "reference" | "avgFillRate" | number;
 
 interface PropertyOption {
   id: string;
@@ -25,6 +25,15 @@ function fillRateBadgeStyle(fillRate: number): { backgroundColor: string; color:
 function avgFillRate(property: PropertyOccupancyResult): number {
   if (property.months.length === 0) return 0;
   return property.months.reduce((sum, m) => sum + m.fillRate, 0) / property.months.length;
+}
+
+function monthFillRate(property: PropertyOccupancyResult, month: number): number {
+  return property.months.find((m) => m.month === month)?.fillRate ?? 0;
+}
+
+function average(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
 export function PropertyOccupancyTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
@@ -115,10 +124,21 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
 
   const sortedProperties = properties
     ? [...properties].sort((a, b) => {
-        const cmp = sortKey === "reference" ? a.reference.localeCompare(b.reference, "fr") : avgFillRate(a) - avgFillRate(b);
+        let cmp: number;
+        if (sortKey === "reference") cmp = a.reference.localeCompare(b.reference, "fr");
+        else if (sortKey === "avgFillRate") cmp = avgFillRate(a) - avgFillRate(b);
+        else cmp = monthFillRate(a, sortKey) - monthFillRate(b, sortKey);
         return direction === "asc" ? cmp : -cmp;
       })
     : null;
+
+  const portfolioAverages = sortedProperties
+    ? sortedProperties[0]?.months.map((m) => ({
+        month: m.month,
+        fillRate: average(sortedProperties.map((p) => monthFillRate(p, m.month))),
+      }))
+    : undefined;
+  const portfolioOverallAverage = sortedProperties ? average(sortedProperties.map(avgFillRate)) : 0;
 
   return (
     <div className="space-y-4">
@@ -256,7 +276,16 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                 </th>
                 {sortedProperties[0]?.months.map((m) => (
                   <th key={m.month} className="py-2 pr-3">
-                    {MONTH_LABELS_SHORT[m.month - 1]}
+                    <button
+                      type="button"
+                      onClick={() => handleSort(m.month)}
+                      className={`inline-flex items-center gap-1 transition ${
+                        sortKey === m.month ? "text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                      }`}
+                    >
+                      {MONTH_LABELS_SHORT[m.month - 1]}
+                      {sortKey === m.month && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+                    </button>
                   </th>
                 ))}
                 {sortedProperties[0]?.months.length !== 1 && (
@@ -312,6 +341,35 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                 </tr>
               ))}
             </tbody>
+            {portfolioAverages && (
+              <tfoot>
+                <tr className="border-t border-black/10">
+                  <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">
+                    Moyenne ({sortedProperties?.length ?? 0} bien{(sortedProperties?.length ?? 0) !== 1 ? "s" : ""})
+                  </td>
+                  {portfolioAverages.map((m) => (
+                    <td key={m.month} className="py-2 pr-3">
+                      <span
+                        className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
+                        style={fillRateBadgeStyle(m.fillRate)}
+                      >
+                        {formatPercent(m.fillRate)}
+                      </span>
+                    </td>
+                  ))}
+                  {portfolioAverages.length !== 1 && (
+                    <td className="py-2 pr-3">
+                      <span
+                        className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
+                        style={fillRateBadgeStyle(portfolioOverallAverage)}
+                      >
+                        {formatPercent(portfolioOverallAverage)}
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
