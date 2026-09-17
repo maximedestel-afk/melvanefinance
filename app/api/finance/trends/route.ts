@@ -36,6 +36,7 @@ export async function GET(request: Request) {
         name: p.name,
         rentType: p.rentType,
         rentAmount: p.rentAmount,
+        commissionPercent: p.commissionPercent,
         extraVrplatformReferences: p.extraVrplatformReferences,
       })),
       years

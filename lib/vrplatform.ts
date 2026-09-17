@@ -207,6 +207,7 @@ export interface PortfolioProperty {
   name: string | null;
   rentType: "fixe" | "variable" | "fixe_variable" | null;
   rentAmount: number | null;
+  commissionPercent: number | null;
   extraVrplatformReferences: string[];
 }
 
@@ -233,6 +234,7 @@ export interface PropertyMonthlyResult {
   name: string | null;
   isFixedRent: boolean;
   fixedRentAmountCents: number | null;
+  commissionPercent: number | null;
   months: MonthlyFinance[];
   notFoundReferences: string[];
 }
@@ -262,6 +264,7 @@ export async function getPortfolioMonthlyFinancials(
         name: property.name,
         isFixedRent: property.rentType === "fixe",
         fixedRentAmountCents: property.rentAmount != null ? Math.round(property.rentAmount * 100) : null,
+        commissionPercent: property.commissionPercent,
         months: finalizeMonths(months),
         notFoundReferences,
       };

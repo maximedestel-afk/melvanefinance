@@ -18,6 +18,9 @@ export interface PropertyFinanceInfo {
   name: string | null;
   rentType: RentType | null;
   rentAmount: number | null;
+  /** Pourcentage de commission M.G.B (ex: 20 pour 20 %), appliqué au Net
+   * Commissionable Revenue pour les biens en modèle variable. */
+  commissionPercent: number | null;
   /** Références VRPlatform de listings supplémentaires à regrouper avec ce
    * bien (voir l'onglet Finances de M.G.B). */
   extraVrplatformReferences: string[];

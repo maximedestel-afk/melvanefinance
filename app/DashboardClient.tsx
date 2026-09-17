@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { MonthlyOverview } from "./MonthlyOverview";
 import { PropertyComparisonTable } from "./PropertyComparisonTable";
 import { PropertyOccupancyTable } from "./PropertyOccupancyTable";
+import { PropertyFinanceTable } from "./PropertyFinanceTable";
 import { TrendsSection } from "./TrendsSection";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 
-type Tab = "overview" | "occupancy";
+type Tab = "overview" | "occupancy" | "finance";
 
 export function DashboardClient({
   properties,
@@ -65,6 +66,15 @@ export function DashboardClient({
         >
           Remplissage
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("finance")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "finance" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Revenus
+        </button>
       </div>
 
       {tab === "overview" && (
@@ -111,6 +121,13 @@ export function DashboardClient({
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Remplissage</h2>
           <PropertyOccupancyTable properties={properties} />
+        </section>
+      )}
+
+      {tab === "finance" && (
+        <section className="card space-y-3 p-5">
+          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Revenus</h2>
+          <PropertyFinanceTable properties={properties} />
         </section>
       )}
     </div>

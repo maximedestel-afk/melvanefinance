@@ -11,14 +11,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "VRPlatform n'est pas configuré sur ce déploiement." }, { status: 500 });
   }
 
-  const yearParam = new URL(request.url).searchParams.get("year");
+  const searchParams = new URL(request.url).searchParams;
+  const yearParam = searchParams.get("year");
   const year = yearParam ? Number.parseInt(yearParam, 10) : NaN;
   if (!Number.isInteger(year)) {
     return NextResponse.json({ error: "Année invalide." }, { status: 400 });
   }
 
+  const propertyIdsParam = searchParams.get("propertyIds");
+  const propertyIds = propertyIdsParam ? new Set(propertyIdsParam.split(",")) : null;
+
   try {
-    const properties = await listPropertiesForFinance();
+    const allProperties = await listPropertiesForFinance();
+    const properties = propertyIds ? allProperties.filter((p) => propertyIds.has(p.id)) : allProperties;
+    if (propertyIds && properties.length === 0) {
+      return NextResponse.json({ error: "Aucun bien ne correspond aux filtres." }, { status: 404 });
+    }
     const results = await getPortfolioMonthlyFinancials(
       properties.map((p) => ({
         propertyId: p.id,
@@ -26,6 +34,7 @@ export async function GET(request: Request) {
         name: p.name,
         rentType: p.rentType,
         rentAmount: p.rentAmount,
+        commissionPercent: p.commissionPercent,
         extraVrplatformReferences: p.extraVrplatformReferences,
       })),
       year
