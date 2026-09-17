@@ -9,14 +9,12 @@ type SortKey = "reference" | "rents" | "channelFees" | "netRevenue" | "commissio
 interface PropertyOption {
   id: string;
   reference: string;
-  name: string | null;
   tags: string[];
 }
 
 interface FinanceRow {
   propertyId: string;
   reference: string;
-  name: string | null;
   notFoundReferences: string[];
   isFixedRent: boolean;
   rentsCents: number;
@@ -42,7 +40,6 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): Finan
   return {
     propertyId: property.propertyId,
     reference: property.reference,
-    name: property.name,
     notFoundReferences: property.notFoundReferences,
     isFixedRent: property.isFixedRent,
     rentsCents,
@@ -374,7 +371,6 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                 <tr key={row.propertyId} className="border-b border-black/5">
                   <td className="py-2 pr-3 text-[#1d1d1f]">
                     <span className="font-medium">{row.reference}</span>
-                    {row.name && <span className="ml-1.5 text-[#6e6e73]">{row.name}</span>}
                     {row.notFoundReferences.length > 0 && (
                       <span
                         title={`Référence VRPlatform introuvable : ${row.notFoundReferences.join(", ")}`}
