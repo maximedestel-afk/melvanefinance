@@ -3,14 +3,22 @@
 import { useMemo, useState } from "react";
 import { formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyOccupancyResult } from "@/lib/vrplatform";
+import type { RentType } from "@/lib/types";
 
 type SortKey = "reference" | "avgFillRate" | number;
+
+const RENT_TYPE_LABELS: Record<RentType, string> = {
+  fixe: "Fixe",
+  variable: "Variable",
+  fixe_variable: "Fixe + variable",
+};
 
 interface PropertyOption {
   id: string;
   reference: string;
   name: string | null;
   tags: string[];
+  rentType: RentType | null;
 }
 
 /** Rouge (peu rempli) → vert (bien rempli), sur l'échelle 0–100 % du mois. */
@@ -53,6 +61,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
   const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [properties, setProperties] = useState<PropertyOccupancyResult[] | null>(null);
@@ -63,9 +72,10 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
     return allProperties.filter((p) => {
       const isSelected = selectedPropertyIds.includes(p.id);
       const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
-      return isSelected && matchesTags;
+      const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
+      return isSelected && matchesTags && matchesRentType;
     });
-  }, [allProperties, selectedPropertyIds, selectedTags]);
+  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
@@ -79,6 +89,10 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
+  function toggleRentType(rentType: RentType) {
+    setSelectedRentTypes((prev) => (prev.includes(rentType) ? prev.filter((t) => t !== rentType) : [...prev, rentType]));
   }
 
   async function load() {
@@ -222,6 +236,29 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
               {p.reference}
             </label>
           ))}
+        </div>
+      </div>
+
+      <div>
+        <span className="field-label">Modèle de rémunération</span>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {(Object.keys(RENT_TYPE_LABELS) as RentType[]).map((rentType) => {
+            const active = selectedRentTypes.includes(rentType);
+            return (
+              <button
+                key={rentType}
+                type="button"
+                onClick={() => toggleRentType(rentType)}
+                className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                  active
+                    ? "border-[#0071e3] bg-[#0071e3] text-white"
+                    : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                }`}
+              >
+                {RENT_TYPE_LABELS[rentType]}
+              </button>
+            );
+          })}
         </div>
       </div>
 
