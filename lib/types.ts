@@ -17,6 +17,7 @@ export interface PropertyFinanceInfo {
   reference: string;
   name: string | null;
   rentType: RentType | null;
+  /** Loyer fixe total payé au propriétaire (rent_amount + charges_amount). */
   rentAmount: number | null;
   /** Pourcentage de commission M.G.B (ex: 20 pour 20 %), appliqué au Net
    * Commissionable Revenue pour les biens en modèle variable. */
