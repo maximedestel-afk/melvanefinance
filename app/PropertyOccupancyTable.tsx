@@ -38,7 +38,7 @@ export function PropertyOccupancyTable({ properties: allProperties }: { properti
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
-  const [referenceFilter, setReferenceFilter] = useState("");
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
@@ -47,18 +47,21 @@ export function PropertyOccupancyTable({ properties: allProperties }: { properti
   const [error, setError] = useState<string | null>(null);
 
   const matchingProperties = useMemo(() => {
-    const needle = referenceFilter.trim().toLowerCase();
     return allProperties.filter((p) => {
-      const matchesReference = needle === "" || p.reference.toLowerCase().includes(needle);
+      const isSelected = selectedPropertyIds.includes(p.id);
       const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
-      return matchesReference && matchesTags;
+      return isSelected && matchesTags;
     });
-  }, [allProperties, referenceFilter, selectedTags]);
+  }, [allProperties, selectedPropertyIds, selectedTags]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
       prev.includes(month) ? prev.filter((m) => m !== month) : [...prev, month].sort((a, b) => a - b)
     );
+  }
+
+  function toggleProperty(id: string) {
+    setSelectedPropertyIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
   function toggleTag(tag: string) {
@@ -135,20 +138,6 @@ export function PropertyOccupancyTable({ properties: allProperties }: { properti
         </div>
 
         <div>
-          <label className="field-label" htmlFor="occupancy-reference">
-            Référence
-          </label>
-          <input
-            id="occupancy-reference"
-            type="text"
-            value={referenceFilter}
-            onChange={(e) => setReferenceFilter(e.target.value)}
-            placeholder="ex: 12ARM"
-            className="mt-1 w-40 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
-          />
-        </div>
-
-        <div>
           <span className="field-label">Mois</span>
           <div className="mt-1 flex flex-wrap gap-1">
             {MONTH_LABELS_SHORT.map((label, i) => {
@@ -175,6 +164,41 @@ export function PropertyOccupancyTable({ properties: allProperties }: { properti
         <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
           {loading ? "Chargement…" : properties ? "Actualiser" : "Charger"}
         </button>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between">
+          <span className="field-label">Biens</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedPropertyIds(allProperties.map((p) => p.id))}
+              className="text-[12px] font-medium text-[#0071e3] hover:underline"
+            >
+              Tout sélectionner
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedPropertyIds([])}
+              className="text-[12px] font-medium text-[#0071e3] hover:underline"
+            >
+              Tout désélectionner
+            </button>
+          </div>
+        </div>
+        <div className="mt-1 grid max-h-56 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto rounded-[10px] border border-black/10 bg-white p-3 sm:grid-cols-3 md:grid-cols-4">
+          {allProperties.map((p) => (
+            <label key={p.id} className="flex items-center gap-1.5 text-[13px] text-[#1d1d1f]">
+              <input
+                type="checkbox"
+                checked={selectedPropertyIds.includes(p.id)}
+                onChange={() => toggleProperty(p.id)}
+                className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+              />
+              {p.reference}
+            </label>
+          ))}
+        </div>
       </div>
 
       {allTags.length > 0 && (
