@@ -7,13 +7,14 @@ import { PropertyOccupancyTable } from "./PropertyOccupancyTable";
 import { PropertyFinanceTable } from "./PropertyFinanceTable";
 import { TrendsSection } from "./TrendsSection";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
+import type { RentType } from "@/lib/types";
 
 type Tab = "overview" | "occupancy" | "finance";
 
 export function DashboardClient({
   properties,
 }: {
-  properties: { id: string; reference: string; name: string | null; tags: string[] }[];
+  properties: { id: string; reference: string; name: string | null; tags: string[]; rentType: RentType | null }[];
 }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 3 + i);
