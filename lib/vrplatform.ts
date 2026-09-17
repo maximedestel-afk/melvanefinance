@@ -1,0 +1,317 @@
+// Intégration VRPlatform pour l'analyse financière du portefeuille — reprend
+// le même calcul que l'onglet Finances de M.G.B (Rents, Channel Fees, Net
+// Commissionable Revenue, taux de remplissage), étendu pour travailler sur
+// tous les biens et plusieurs années à la fois. Appelle directement l'API
+// VRPlatform (https://api.vrplatform.app) avec une clé d'API "Team or
+// partner backend" (x-api-key + x-team-id) — jamais depuis le client.
+
+const API_BASE_URL = "https://api.vrplatform.app";
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export function isVrPlatformConfigured(): boolean {
+  return !!process.env.VRPLATFORM_API_KEY && !!process.env.VRPLATFORM_TEAM_ID;
+}
+
+async function vrPlatformFetch<T>(path: string, query: Record<string, string>): Promise<T> {
+  const apiKey = process.env.VRPLATFORM_API_KEY;
+  const teamId = process.env.VRPLATFORM_TEAM_ID;
+  if (!apiKey || !teamId) {
+    throw new Error("VRPlatform n'est pas configuré (VRPLATFORM_API_KEY / VRPLATFORM_TEAM_ID manquants).");
+  }
+
+  const url = new URL(path, API_BASE_URL);
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+
+  const response = await fetch(url, {
+    headers: { "x-api-key": apiKey, "x-team-id": teamId },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`VRPlatform a répondu ${response.status} sur ${path}.`);
+  }
+  return response.json() as Promise<T>;
+}
+
+interface VrPlatformListingsResponse {
+  data: { id: string; name: string | null; title: string | null }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Tous les listings actifs de l'équipe, chargés une seule fois par requête
+ * et réutilisés pour résoudre les références de tous les biens du
+ * portefeuille — évite un aller-retour /listings par bien. */
+async function listVrPlatformListings(): Promise<{ id: string; name: string }[]> {
+  const options: { id: string; name: string }[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformListingsResponse>("/listings", {
+      status: "active",
+      limit: "250",
+      page: String(page),
+    });
+    for (const listing of res.data) {
+      options.push({ id: listing.id, name: listing.title || listing.name || listing.id });
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return options;
+}
+
+interface VrPlatformReservationLine {
+  type: string | null;
+  amount: number | null;
+}
+
+interface VrPlatformReservation {
+  checkIn: string | null;
+  checkOut: string | null;
+  status: "booked" | "canceled" | "inactive";
+  lines: VrPlatformReservationLine[] | null;
+}
+
+interface VrPlatformReservationsResponse {
+  data: VrPlatformReservation[];
+  pagination: { page: number; totalPage: number };
+}
+
+interface VrPlatformLineMappingsResponse {
+  data: { type: string; account: { name: string } | null }[];
+  pagination: { page: number; totalPage: number };
+}
+
+const RENTS_ACCOUNT = "Rents";
+const CHANNEL_COMMISSION_ACCOUNTS = new Set(["Channel Commissions - Airbnb", "Channel Commissions (Reference Account)"]);
+
+/** Table "type de ligne de réservation" → nom du compte comptable,
+ * configurée côté VRPlatform (Réglages > Reservation Line Mappings). */
+async function getReservationLineAccountMap(): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformLineMappingsResponse>("/reservations/line-mappings", {
+      limit: "250",
+      page: String(page),
+    });
+    for (const mapping of res.data) {
+      if (mapping.account) map.set(mapping.type, mapping.account.name);
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return map;
+}
+
+function classifyReservationLines(
+  lines: VrPlatformReservationLine[] | null,
+  accountByLineType: Map<string, string>
+): { rentsCents: number; channelFeesCents: number } {
+  let rentsCents = 0;
+  let channelFeesCents = 0;
+  if (!lines) return { rentsCents, channelFeesCents };
+  for (const line of lines) {
+    if (!line.type) continue;
+    const account = accountByLineType.get(line.type);
+    if (account === RENTS_ACCOUNT) rentsCents += line.amount ?? 0;
+    else if (account && CHANNEL_COMMISSION_ACCOUNTS.has(account)) channelFeesCents += Math.abs(line.amount ?? 0);
+  }
+  return { rentsCents, channelFeesCents };
+}
+
+export interface MonthlyFinance {
+  /** 1 (janvier) à 12 (décembre). */
+  month: number;
+  rentsCents: number;
+  channelFeesCents: number;
+  netRevenueCents: number;
+  nightsBooked: number;
+  daysInMonth: number;
+  fillRate: number;
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function overlapNights(checkIn: string, checkOut: string, year: number, month: number): number {
+  const checkInMs = Date.parse(`${checkIn}T00:00:00Z`);
+  const checkOutMs = Date.parse(`${checkOut}T00:00:00Z`);
+  const monthStartMs = Date.UTC(year, month - 1, 1);
+  const monthEndMs = Date.UTC(year, month, 1);
+  return Math.max(0, (Math.min(checkOutMs, monthEndMs) - Math.max(checkInMs, monthStartMs)) / MS_PER_DAY);
+}
+
+function emptyMonths(year: number): MonthlyFinance[] {
+  return Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    rentsCents: 0,
+    channelFeesCents: 0,
+    netRevenueCents: 0,
+    nightsBooked: 0,
+    daysInMonth: daysInMonth(year, i + 1),
+    fillRate: 0,
+  }));
+}
+
+function finalizeMonths(months: MonthlyFinance[]): MonthlyFinance[] {
+  for (const entry of months) {
+    entry.netRevenueCents = entry.rentsCents - entry.channelFeesCents;
+    entry.fillRate = entry.daysInMonth > 0 ? entry.nightsBooked / entry.daysInMonth : 0;
+  }
+  return months;
+}
+
+async function addListingMonthlyFinancials(
+  months: MonthlyFinance[],
+  listingId: string,
+  year: number,
+  accountByLineType: Map<string, string>
+): Promise<void> {
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformReservationsResponse>("/reservations", {
+      listingId,
+      date: String(year),
+      dateField: "intersection",
+      status: "booked",
+      limit: "250",
+      page: String(page),
+      includeLines: "true",
+    });
+
+    for (const reservation of res.data) {
+      if (!reservation.checkIn || !reservation.checkOut) continue;
+
+      for (const entry of months) {
+        const nights = overlapNights(reservation.checkIn, reservation.checkOut, year, entry.month);
+        if (nights > 0) entry.nightsBooked += nights;
+      }
+
+      const checkOutDate = new Date(`${reservation.checkOut}T00:00:00Z`);
+      if (checkOutDate.getUTCFullYear() === year) {
+        const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+        const entry = months[checkOutDate.getUTCMonth()];
+        entry.rentsCents += rentsCents;
+        entry.channelFeesCents += channelFeesCents;
+      }
+    }
+
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+}
+
+export interface PortfolioProperty {
+  propertyId: string;
+  reference: string;
+  name: string | null;
+  rentType: "fixe" | "variable" | "fixe_variable" | null;
+  rentAmount: number | null;
+  extraVrplatformReferences: string[];
+}
+
+/** Résout, pour un bien, les listings VRPlatform qui lui correspondent (sa
+ * référence + ses références supplémentaires), à partir d'une liste de
+ * listings déjà chargée en mémoire. */
+function resolveListingIds(
+  references: string[],
+  listingsByName: Map<string, string>
+): { listingIds: string[]; notFoundReferences: string[] } {
+  const listingIds: string[] = [];
+  const notFoundReferences: string[] = [];
+  for (const reference of references) {
+    const id = listingsByName.get(reference.trim().toLowerCase());
+    if (id) listingIds.push(id);
+    else notFoundReferences.push(reference);
+  }
+  return { listingIds, notFoundReferences };
+}
+
+export interface PropertyMonthlyResult {
+  propertyId: string;
+  reference: string;
+  name: string | null;
+  isFixedRent: boolean;
+  fixedRentAmountCents: number | null;
+  months: MonthlyFinance[];
+  notFoundReferences: string[];
+}
+
+/** Rents, Channel Fees, Net Commissionable Revenue et taux de remplissage de
+ * chaque mois d'une année, pour chaque bien du portefeuille — un seul appel
+ * VRPlatform pour la liste des listings et le mapping comptable, puis un
+ * calcul par bien (en parallèle) sur ses listings résolus. */
+export async function getPortfolioMonthlyFinancials(
+  properties: PortfolioProperty[],
+  year: number
+): Promise<PropertyMonthlyResult[]> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+      const months = emptyMonths(year);
+      for (const listingId of listingIds) {
+        await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
+      }
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        name: property.name,
+        isFixedRent: property.rentType === "fixe",
+        fixedRentAmountCents: property.rentAmount != null ? Math.round(property.rentAmount * 100) : null,
+        months: finalizeMonths(months),
+        notFoundReferences,
+      };
+    })
+  );
+}
+
+export interface YearlyTotal {
+  year: number;
+  rentsCents: number;
+  channelFeesCents: number;
+  netRevenueCents: number;
+  nightsBooked: number;
+  daysInYear: number;
+  fillRate: number;
+}
+
+/** Total annuel, pour un sous-ensemble de biens (portefeuille entier ou un
+ * seul bien), sur plusieurs années — utilisé par la section Tendances. */
+export async function getYearlyTotals(properties: PortfolioProperty[], years: number[]): Promise<YearlyTotal[]> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
+
+  const propertyListingIds = properties.map((property) => {
+    const references = [property.reference, ...property.extraVrplatformReferences];
+    return resolveListingIds(references, listingsByName).listingIds;
+  });
+
+  return Promise.all(
+    years.map(async (year) => {
+      const months = emptyMonths(year);
+      await Promise.all(
+        propertyListingIds.map(async (listingIds) => {
+          for (const listingId of listingIds) {
+            await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
+          }
+        })
+      );
+      finalizeMonths(months);
+      const daysInYear = months.reduce((sum, m) => sum + m.daysInMonth, 0);
+      const nightsBooked = months.reduce((sum, m) => sum + m.nightsBooked, 0);
+      return {
+        year,
+        rentsCents: months.reduce((sum, m) => sum + m.rentsCents, 0),
+        channelFeesCents: months.reduce((sum, m) => sum + m.channelFeesCents, 0),
+        netRevenueCents: months.reduce((sum, m) => sum + m.netRevenueCents, 0),
+        nightsBooked,
+        daysInYear,
+        fillRate: daysInYear > 0 ? nightsBooked / daysInYear : 0,
+      };
+    })
+  );
+}
