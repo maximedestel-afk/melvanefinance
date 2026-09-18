@@ -176,6 +176,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [hiddenColumns, setHiddenColumns] = useState<Set<ColumnKey>>(new Set());
+  const [removedRowIds, setRemovedRowIds] = useState<Set<string>>(new Set());
   const [results, setResults] = useState<CleaningApiResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,6 +217,10 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     });
   }
 
+  function removeRow(propertyId: string) {
+    setRemovedRowIds((prev) => new Set(prev).add(propertyId));
+  }
+
   async function load() {
     if (selectedMonths.length === 0) {
       setError("Sélectionne au moins un mois.");
@@ -240,6 +245,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         setResults(null);
       } else {
         setResults(data.properties);
+        setRemovedRowIds(new Set());
       }
     } catch {
       setError("Impossible de charger les données de ménage.");
@@ -257,7 +263,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     }
   }
 
-  const rows = results?.map(toRow).filter((r) => r.checkoutCount > 0) ?? null;
+  const rows = results?.map(toRow).filter((r) => r.checkoutCount > 0 && !removedRowIds.has(r.propertyId)) ?? null;
 
   const sortedRows = rows
     ? [...rows].sort((a, b) => {
@@ -503,7 +509,17 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
 
       {sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
         <div className="space-y-2">
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between">
+            {removedRowIds.size > 0 ? (
+              <p className="text-[13px] text-[#6e6e73]">
+                {removedRowIds.size} bien{removedRowIds.size !== 1 ? "s" : ""} masqué{removedRowIds.size !== 1 ? "s" : ""} de cette liste ·{" "}
+                <button type="button" onClick={() => setRemovedRowIds(new Set())} className="font-medium text-[#0071e3] hover:underline">
+                  Réafficher
+                </button>
+              </p>
+            ) : (
+              <span />
+            )}
             <button type="button" onClick={exportCsv} className="btn-secondary btn-sm">
               Exporter (CSV)
             </button>
@@ -578,6 +594,14 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
                     >
                       {!hiddenColumns.has("reference") && (
                         <td className="py-3.5 pl-5 pr-4 text-[#1d1d1f]">
+                          <button
+                            type="button"
+                            onClick={() => removeRow(row.propertyId)}
+                            title="Retirer ce bien de la liste"
+                            className="mr-1.5 text-[#c7c7cc] transition hover:text-red-600"
+                          >
+                            ✕
+                          </button>
                           <span className="font-medium">{row.reference}</span>
                           {row.notFoundReferences.length > 0 && (
                             <span

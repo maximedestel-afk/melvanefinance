@@ -159,6 +159,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [results, setResults] = useState<PropertyMonthlyResult[] | null>(null);
   const [cleaningResults, setCleaningResults] = useState<CleaningApiResult[] | null>(null);
+  const [removedRowIds, setRemovedRowIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -219,6 +220,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         // configuré, etc.) n'empêche pas d'afficher le reste du tableau.
         const cleaningData = await cleaningRes.json();
         setCleaningResults(cleaningData.error ? null : cleaningData.properties);
+        setRemovedRowIds(new Set());
       }
     } catch {
       setError("Impossible de charger les données financières.");
@@ -240,7 +242,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     () => new Map((cleaningResults ?? []).map((c) => [c.propertyId, c])),
     [cleaningResults]
   );
-  const rows = results?.map((r) => toRow(r, selectedMonths, cleaningByPropertyId.get(r.propertyId))) ?? null;
+  const rows =
+    results
+      ?.filter((r) => !removedRowIds.has(r.propertyId))
+      .map((r) => toRow(r, selectedMonths, cleaningByPropertyId.get(r.propertyId))) ?? null;
+
+  function removeRow(propertyId: string) {
+    setRemovedRowIds((prev) => new Set(prev).add(propertyId));
+  }
 
   const sortedRows = rows
     ? [...rows].sort((a, b) => {
@@ -436,8 +445,17 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && totals && !loading && !error && (
-        <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
-          <div className="overflow-x-auto">
+        <div className="space-y-2">
+          {removedRowIds.size > 0 && (
+            <p className="text-[13px] text-[#6e6e73]">
+              {removedRowIds.size} bien{removedRowIds.size !== 1 ? "s" : ""} masqué{removedRowIds.size !== 1 ? "s" : ""} de cette liste ·{" "}
+              <button type="button" onClick={() => setRemovedRowIds(new Set())} className="font-medium text-[#0071e3] hover:underline">
+                Réafficher
+              </button>
+            </p>
+          )}
+          <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[14px]">
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
@@ -500,6 +518,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
               {sortedRows.map((row) => (
                 <tr key={row.propertyId} className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]">
                   <td className="py-3.5 pl-5 pr-4 text-[#1d1d1f]">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.propertyId)}
+                      title="Retirer ce bien de la liste"
+                      className="mr-1.5 text-[#c7c7cc] transition hover:text-red-600"
+                    >
+                      ✕
+                    </button>
                     <span className="font-medium">{row.reference}</span>
                     {row.notFoundReferences.length > 0 && (
                       <span
@@ -610,6 +636,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
             </tfoot>
             </table>
           </div>
+        </div>
         </div>
       )}
 

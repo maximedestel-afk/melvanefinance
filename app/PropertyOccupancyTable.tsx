@@ -56,6 +56,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [properties, setProperties] = useState<PropertyOccupancyResult[] | null>(null);
+  const [removedPropertyIds, setRemovedPropertyIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +111,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
         setProperties(null);
       } else {
         setProperties(data.properties);
+        setRemovedPropertyIds(new Set());
       }
     } catch {
       setError("Impossible de charger le taux de remplissage.");
@@ -127,14 +129,20 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
     }
   }
 
+  function removeProperty(propertyId: string) {
+    setRemovedPropertyIds((prev) => new Set(prev).add(propertyId));
+  }
+
   const sortedProperties = properties
-    ? [...properties].sort((a, b) => {
-        let cmp: number;
-        if (sortKey === "reference") cmp = a.reference.localeCompare(b.reference, "fr");
-        else if (sortKey === "avgFillRate") cmp = avgFillRate(a) - avgFillRate(b);
-        else cmp = monthFillRate(a, sortKey) - monthFillRate(b, sortKey);
-        return direction === "asc" ? cmp : -cmp;
-      })
+    ? [...properties]
+        .filter((p) => !removedPropertyIds.has(p.propertyId))
+        .sort((a, b) => {
+          let cmp: number;
+          if (sortKey === "reference") cmp = a.reference.localeCompare(b.reference, "fr");
+          else if (sortKey === "avgFillRate") cmp = avgFillRate(a) - avgFillRate(b);
+          else cmp = monthFillRate(a, sortKey) - monthFillRate(b, sortKey);
+          return direction === "asc" ? cmp : -cmp;
+        })
     : null;
 
   const portfolioAverages = sortedProperties
@@ -286,8 +294,22 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedProperties && !loading && !error && (
-        <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
-          <div className="overflow-x-auto">
+        <div className="space-y-2">
+          {removedPropertyIds.size > 0 && (
+            <p className="text-[13px] text-[#6e6e73]">
+              {removedPropertyIds.size} bien{removedPropertyIds.size !== 1 ? "s" : ""} masqué
+              {removedPropertyIds.size !== 1 ? "s" : ""} de cette liste ·{" "}
+              <button
+                type="button"
+                onClick={() => setRemovedPropertyIds(new Set())}
+                className="font-medium text-[#0071e3] hover:underline"
+              >
+                Réafficher
+              </button>
+            </p>
+          )}
+          <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[14px]">
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
@@ -340,6 +362,14 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                     className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
                   >
                     <td className="py-3.5 pl-5 pr-4 font-medium text-[#1d1d1f]">
+                      <button
+                        type="button"
+                        onClick={() => removeProperty(property.propertyId)}
+                        title="Retirer ce bien de la liste"
+                        className="mr-1.5 font-normal text-[#c7c7cc] transition hover:text-red-600"
+                      >
+                        ✕
+                      </button>
                       {property.reference}
                       {property.notFoundReferences.length > 0 && (
                         <span
@@ -404,6 +434,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
               )}
             </table>
           </div>
+        </div>
         </div>
       )}
 
