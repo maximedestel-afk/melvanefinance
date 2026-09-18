@@ -33,15 +33,23 @@ async function vrPlatformFetch<T>(path: string, query: Record<string, string>): 
 }
 
 interface VrPlatformListingsResponse {
-  data: { id: string; name: string | null; title: string | null }[];
+  data: { id: string; name: string | null; title: string | null; uniqueRef: string | null }[];
   pagination: { page: number; totalPage: number };
+}
+
+interface VrPlatformListingOption {
+  id: string;
+  name: string;
+  /** ID Guesty natif du listing (VRPlatform passe par Guesty comme PMS
+   * sous-jacente) — utilisé pour interroger l'API Guesty directement. */
+  uniqueRef: string | null;
 }
 
 /** Tous les listings actifs de l'équipe, chargés une seule fois par requête
  * et réutilisés pour résoudre les références de tous les biens du
  * portefeuille — évite un aller-retour /listings par bien. */
-async function listVrPlatformListings(): Promise<{ id: string; name: string }[]> {
-  const options: { id: string; name: string }[] = [];
+async function listVrPlatformListings(): Promise<VrPlatformListingOption[]> {
+  const options: VrPlatformListingOption[] = [];
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformListingsResponse>("/listings", {
@@ -50,7 +58,11 @@ async function listVrPlatformListings(): Promise<{ id: string; name: string }[]>
       page: String(page),
     });
     for (const listing of res.data) {
-      options.push({ id: listing.id, name: listing.title || listing.name || listing.id });
+      options.push({
+        id: listing.id,
+        name: listing.title || listing.name || listing.id,
+        uniqueRef: listing.uniqueRef,
+      });
     }
     if (page >= res.pagination.totalPage) break;
     page++;
@@ -216,13 +228,13 @@ export interface PortfolioProperty {
  * listings déjà chargée en mémoire. */
 function resolveListingIds(
   references: string[],
-  listingsByName: Map<string, string>
+  listingsByName: Map<string, VrPlatformListingOption>
 ): { listingIds: string[]; notFoundReferences: string[] } {
   const listingIds: string[] = [];
   const notFoundReferences: string[] = [];
   for (const reference of references) {
-    const id = listingsByName.get(reference.trim().toLowerCase());
-    if (id) listingIds.push(id);
+    const listing = listingsByName.get(reference.trim().toLowerCase());
+    if (listing) listingIds.push(listing.id);
     else notFoundReferences.push(reference);
   }
   return { listingIds, notFoundReferences };
@@ -248,7 +260,7 @@ export async function getPortfolioMonthlyFinancials(
   year: number
 ): Promise<PropertyMonthlyResult[]> {
   const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
-  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   return Promise.all(
     properties.map(async (property) => {
@@ -322,7 +334,7 @@ export async function getPropertyOccupancyForMonths(
   months: number[]
 ): Promise<PropertyOccupancyResult[]> {
   const listings = await listVrPlatformListings();
-  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   return Promise.all(
     properties.map(async (property) => {
@@ -349,6 +361,77 @@ export async function getPropertyOccupancyForMonths(
   );
 }
 
+/** Dates de check-out (format ISO "AAAA-MM-JJ") d'un listing tombant dans un
+ * mois donné. */
+async function getListingCheckoutsForMonth(listingId: string, year: number, month: number): Promise<string[]> {
+  const dateParam = `${year}-${String(month).padStart(2, "0")}`;
+  const checkoutDates: string[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformReservationsResponse>("/reservations", {
+      listingId,
+      date: dateParam,
+      dateField: "intersection",
+      status: "booked",
+      limit: "250",
+      page: String(page),
+    });
+    for (const reservation of res.data) {
+      if (!reservation.checkOut) continue;
+      if (reservation.checkOut.slice(0, 7) === dateParam) checkoutDates.push(reservation.checkOut.slice(0, 10));
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return checkoutDates;
+}
+
+export interface PropertyCheckoutsResult {
+  propertyId: string;
+  reference: string;
+  /** ID Guesty natif du listing principal (référence du bien, hors
+   * références supplémentaires) — null si non résolu côté VRPlatform. */
+  guestyListingId: string | null;
+  checkoutDates: string[];
+  notFoundReferences: string[];
+}
+
+/** Dates de check-out d'un ou plusieurs mois d'une année, pour chaque bien
+ * du portefeuille — biens à plusieurs listings VRPlatform regroupés, comme
+ * le reste de l'app. Utilisé par l'onglet Ménage. */
+export async function getPropertyCheckoutsForMonths(
+  properties: PortfolioProperty[],
+  year: number,
+  months: number[]
+): Promise<PropertyCheckoutsResult[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+
+      const perListingCheckouts = await Promise.all(
+        listingIds.map(async (listingId) => {
+          const perMonth = await Promise.all(months.map((month) => getListingCheckoutsForMonth(listingId, year, month)));
+          return perMonth.flat();
+        })
+      );
+
+      const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
+
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        guestyListingId: primaryListing?.uniqueRef ?? null,
+        checkoutDates: perListingCheckouts.flat().sort(),
+        notFoundReferences,
+      };
+    })
+  );
+}
+
 export interface YearlyTotal {
   year: number;
   rentsCents: number;
@@ -363,7 +446,7 @@ export interface YearlyTotal {
  * seul bien), sur plusieurs années — utilisé par la section Tendances. */
 export async function getYearlyTotals(properties: PortfolioProperty[], years: number[]): Promise<YearlyTotal[]> {
   const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
-  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l.id]));
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   const propertyListingIds = properties.map((property) => {
     const references = [property.reference, ...property.extraVrplatformReferences];

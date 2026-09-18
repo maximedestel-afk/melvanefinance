@@ -146,3 +146,55 @@ export async function getGuestyListing(guestyListingId: string, fields?: string[
   }
   return response.json() as Promise<GuestyListing>;
 }
+
+interface GuestyCustomFieldValue {
+  fieldId: string;
+  key: string;
+  displayName: string;
+  type: string;
+  value: string;
+}
+
+/** Valeurs des custom fields configurés sur un bien Guesty (nom et clé
+ * propres à chaque compte). */
+async function getPropertyCustomFieldValues(guestyPropertyId: string): Promise<GuestyCustomFieldValue[]> {
+  const token = await getGuestyToken();
+  const response = await fetch(`${API_BASE_URL}/properties-api/custom-fields/${guestyPropertyId}`, {
+    headers: { authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Guesty a répondu ${response.status} pour les custom fields du bien ${guestyPropertyId}.`);
+  }
+  const data = (await response.json()) as { propertyId: string; customFields: GuestyCustomFieldValue[] };
+  return data.customFields;
+}
+
+const CLEANING_FIELD_NAME_PATTERN = /m[ée]nage|cleaning/i;
+
+export interface GuestyCleaningPrices {
+  /** Prix configuré comme custom field (nom contenant "ménage"/"cleaning") — null si aucun champ ne correspond. */
+  customField: number | null;
+  /** Prix du champ standard Guesty prices.cleaningFee. */
+  standard: number | null;
+}
+
+/** Les deux prix de ménage d'un bien Guesty : le custom field (propre au
+ * compte, cherché par nom) et le champ standard prices.cleaningFee — pour
+ * comparer les deux, ils peuvent diverger. */
+export async function getGuestyCleaningPrices(guestyListingId: string): Promise<GuestyCleaningPrices> {
+  const [listing, customFields] = await Promise.all([
+    getGuestyListing(guestyListingId, ["prices"]),
+    getPropertyCustomFieldValues(guestyListingId),
+  ]);
+
+  const field = customFields.find(
+    (f) => CLEANING_FIELD_NAME_PATTERN.test(f.displayName) || CLEANING_FIELD_NAME_PATTERN.test(f.key)
+  );
+  const customFieldValue = field && field.value !== "" ? Number.parseFloat(field.value) : null;
+
+  return {
+    customField: customFieldValue != null && Number.isFinite(customFieldValue) ? customFieldValue : null,
+    standard: listing.prices?.cleaningFee ?? null,
+  };
+}
