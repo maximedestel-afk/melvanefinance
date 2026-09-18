@@ -191,31 +191,31 @@ export async function getPropertyCustomFieldValues(guestyPropertyId: string): Pr
   return data.customFields;
 }
 
-const CLEANING_FIELD_NAME_PATTERN = /m[ée]nage|cleaning/i;
+const CLEANING_FIELD_KEY = "cleaning_rate";
 
 export interface GuestyCleaningPrices {
-  /** Prix configuré comme custom field (nom contenant "ménage"/"cleaning") — null si aucun champ ne correspond. */
+  /** Prix configuré comme custom field (clé `cleaning_rate`) — null si absent. */
   customField: number | null;
   /** Prix du champ standard Guesty prices.cleaningFee. */
   standard: number | null;
 }
 
-/** Les deux prix de ménage d'un bien Guesty : le custom field (propre au
- * compte, cherché par nom) et le champ standard prices.cleaningFee — pour
- * comparer les deux, ils peuvent diverger. */
+/** Les deux prix de ménage d'un bien Guesty : le custom field `cleaning_rate`
+ * et le champ standard prices.cleaningFee — pour comparer les deux, ils
+ * peuvent diverger. */
 export async function getGuestyCleaningPrices(guestyListingId: string): Promise<GuestyCleaningPrices> {
   const [listing, customFields] = await Promise.all([
     getGuestyListing(guestyListingId),
     getPropertyCustomFieldValues(guestyListingId),
   ]);
 
-  const field = customFields.find(
-    (f) => CLEANING_FIELD_NAME_PATTERN.test(f.displayName) || CLEANING_FIELD_NAME_PATTERN.test(f.key)
-  );
-  const customFieldValue = field && field.value !== "" ? Number.parseFloat(field.value) : null;
+  const field = customFields.find((f) => f.key === CLEANING_FIELD_KEY);
+  // Guesty renvoie un nombre JS brut pour les champs de type "number", malgré
+  // le type "string" annoncé dans leur schéma — Number() gère les deux cas.
+  const customFieldValue = field && field.value !== "" && field.value != null ? Number(field.value) : NaN;
 
   return {
-    customField: customFieldValue != null && Number.isFinite(customFieldValue) ? customFieldValue : null,
+    customField: Number.isFinite(customFieldValue) ? customFieldValue : null,
     standard: listing.prices?.cleaningFee ?? null,
   };
 }
