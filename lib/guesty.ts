@@ -114,7 +114,17 @@ export interface GuestyListing {
   prices: GuestyPrices | null;
   cleaning: { defaultCleaningTime: string | null; instructions: string | null } | null;
   cleaningStatus: { value: string | null; updatedAt: string | null } | null;
-  customFields: Record<string, unknown>;
+  customFields: unknown[];
+  bathrooms: number | null;
+  beds: number | null;
+  type: string | null;
+  contactPhone: string | null;
+  owners: string[];
+  propertyLicenseNumber: string | null;
+  /** Tout autre champ Guesty non listé explicitement ci-dessus reste
+   * accessible (ex: financials, pms, integrations, license...) — l'objet
+   * listing complet est bien plus large que ce fichier n'en type. */
+  [key: string]: unknown;
 }
 
 /** Objet listing complet d'un bien Guesty. Le bien est identifié par son ID
