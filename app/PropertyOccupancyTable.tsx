@@ -286,119 +286,124 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedProperties && !loading && !error && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
-            <thead>
-              <tr className="border-b border-black/10 text-left text-[12px] uppercase tracking-wide">
-                <th className="py-2 pr-3">
-                  <button
-                    type="button"
-                    onClick={() => handleSort("reference")}
-                    className={`inline-flex items-center gap-1 transition ${
-                      sortKey === "reference" ? "text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"
-                    }`}
+        <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[14px]">
+              <thead>
+                <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                  <th className="py-3.5 pl-5 pr-4 text-left">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("reference")}
+                      className={`inline-flex items-center gap-1 text-[13px] font-medium transition ${
+                        sortKey === "reference" ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
+                      }`}
+                    >
+                      Référence
+                      {sortKey === "reference" && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+                    </button>
+                  </th>
+                  {sortedProperties[0]?.months.map((m) => (
+                    <th key={m.month} className="py-3.5 px-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleSort(m.month)}
+                        className={`inline-flex flex-row-reverse items-center gap-1 text-[13px] font-medium transition ${
+                          sortKey === m.month ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
+                        }`}
+                      >
+                        {MONTH_LABELS_SHORT[m.month - 1]}
+                        {sortKey === m.month && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+                      </button>
+                    </th>
+                  ))}
+                  {sortedProperties[0]?.months.length !== 1 && (
+                    <th className="py-3.5 pl-4 pr-5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleSort("avgFillRate")}
+                        className={`inline-flex flex-row-reverse items-center gap-1 text-[13px] font-medium transition ${
+                          sortKey === "avgFillRate" ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
+                        }`}
+                      >
+                        Moyenne
+                        {sortKey === "avgFillRate" && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+                      </button>
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedProperties.map((property) => (
+                  <tr
+                    key={property.propertyId}
+                    className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
                   >
-                    Référence
-                    {sortKey === "reference" && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
-                  </button>
-                </th>
-                {sortedProperties[0]?.months.map((m) => (
-                  <th key={m.month} className="py-2 pr-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort(m.month)}
-                      className={`inline-flex items-center gap-1 transition ${
-                        sortKey === m.month ? "text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"
-                      }`}
-                    >
-                      {MONTH_LABELS_SHORT[m.month - 1]}
-                      {sortKey === m.month && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
-                    </button>
-                  </th>
-                ))}
-                {sortedProperties[0]?.months.length !== 1 && (
-                  <th className="py-2 pr-3">
-                    <button
-                      type="button"
-                      onClick={() => handleSort("avgFillRate")}
-                      className={`inline-flex items-center gap-1 transition ${
-                        sortKey === "avgFillRate" ? "text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"
-                      }`}
-                    >
-                      Moyenne
-                      {sortKey === "avgFillRate" && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
-                    </button>
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProperties.map((property) => (
-                <tr key={property.propertyId} className="border-b border-black/5">
-                  <td className="py-2 pr-3 font-medium text-[#1d1d1f]">
-                    {property.reference}
-                    {property.notFoundReferences.length > 0 && (
-                      <span
-                        title={`Référence VRPlatform introuvable : ${property.notFoundReferences.join(", ")}`}
-                        className="ml-1.5 text-amber-600"
-                      >
-                        ⚠
-                      </span>
+                    <td className="py-3.5 pl-5 pr-4 font-medium text-[#1d1d1f]">
+                      {property.reference}
+                      {property.notFoundReferences.length > 0 && (
+                        <span
+                          title={`Référence VRPlatform introuvable : ${property.notFoundReferences.join(", ")}`}
+                          className="ml-1.5 text-amber-600"
+                        >
+                          ⚠
+                        </span>
+                      )}
+                    </td>
+                    {property.months.map((m) => (
+                      <td key={m.month} className="py-3.5 px-4 text-right">
+                        <span
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium tabular-nums"
+                          style={fillRateBadgeStyle(m.fillRate)}
+                        >
+                          {formatPercent(m.fillRate)}
+                        </span>
+                      </td>
+                    ))}
+                    {property.months.length !== 1 && (
+                      <td className="py-3.5 pl-4 pr-5 text-right">
+                        <span
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                          style={fillRateBadgeStyle(avgFillRate(property))}
+                        >
+                          {formatPercent(avgFillRate(property))}
+                        </span>
+                      </td>
                     )}
-                  </td>
-                  {property.months.map((m) => (
-                    <td key={m.month} className="py-2 pr-3">
-                      <span
-                        className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium"
-                        style={fillRateBadgeStyle(m.fillRate)}
-                      >
-                        {formatPercent(m.fillRate)}
-                      </span>
+                  </tr>
+                ))}
+              </tbody>
+              {portfolioAverages && (
+                <tfoot>
+                  <tr className="border-t border-black/[0.08] bg-black/[0.015]">
+                    <td className="py-3.5 pl-5 pr-4 font-semibold text-[#1d1d1f]">
+                      Moyenne ({sortedProperties?.length ?? 0} bien{(sortedProperties?.length ?? 0) !== 1 ? "s" : ""})
                     </td>
-                  ))}
-                  {property.months.length !== 1 && (
-                    <td className="py-2 pr-3">
-                      <span
-                        className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
-                        style={fillRateBadgeStyle(avgFillRate(property))}
-                      >
-                        {formatPercent(avgFillRate(property))}
-                      </span>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-            {portfolioAverages && (
-              <tfoot>
-                <tr className="border-t border-black/10">
-                  <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">
-                    Moyenne ({sortedProperties?.length ?? 0} bien{(sortedProperties?.length ?? 0) !== 1 ? "s" : ""})
-                  </td>
-                  {portfolioAverages.map((m) => (
-                    <td key={m.month} className="py-2 pr-3">
-                      <span
-                        className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
-                        style={fillRateBadgeStyle(m.fillRate)}
-                      >
-                        {formatPercent(m.fillRate)}
-                      </span>
-                    </td>
-                  ))}
-                  {portfolioAverages.length !== 1 && (
-                    <td className="py-2 pr-3">
-                      <span
-                        className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
-                        style={fillRateBadgeStyle(portfolioOverallAverage)}
-                      >
-                        {formatPercent(portfolioOverallAverage)}
-                      </span>
-                    </td>
-                  )}
-                </tr>
-              </tfoot>
-            )}
-          </table>
+                    {portfolioAverages.map((m) => (
+                      <td key={m.month} className="py-3.5 px-4 text-right">
+                        <span
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                          style={fillRateBadgeStyle(m.fillRate)}
+                        >
+                          {formatPercent(m.fillRate)}
+                        </span>
+                      </td>
+                    ))}
+                    {portfolioAverages.length !== 1 && (
+                      <td className="py-3.5 pl-4 pr-5 text-right">
+                        <span
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                          style={fillRateBadgeStyle(portfolioOverallAverage)}
+                        >
+                          {formatPercent(portfolioOverallAverage)}
+                        </span>
+                      </td>
+                    )}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
         </div>
       )}
 

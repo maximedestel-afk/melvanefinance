@@ -79,20 +79,24 @@ function SortHeader({
   activeKey,
   direction,
   onSort,
+  align = "right",
 }: {
   label: string;
   sortKey: SortKey;
   activeKey: SortKey;
   direction: "asc" | "desc";
   onSort: (key: SortKey) => void;
+  align?: "left" | "right";
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className="py-2 pr-3">
+    <th className={`py-3.5 px-4 first:pl-5 last:pr-5 ${align === "right" ? "text-right" : "text-left"}`}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 transition ${isActive ? "text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"}`}
+        className={`inline-flex items-center gap-1 text-[13px] font-medium transition ${
+          align === "right" ? "flex-row-reverse" : ""
+        } ${isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"}`}
       >
         {label}
         {isActive && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
@@ -373,109 +377,127 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && totals && !loading && !error && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
-            <thead>
-              <tr className="border-b border-black/10 text-left text-[12px] uppercase tracking-wide">
-                <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                <SortHeader label="Check-out" sortKey="count" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                <th className="py-2 pr-3">Dates</th>
-                <SortHeader
-                  label="Prix ménage (custom field)"
-                  sortKey="customField"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Prix ménage (Guesty)"
-                  sortKey="guesty"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Produit (custom field)"
-                  sortKey="productCustom"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Produit (Guesty)"
-                  sortKey="productGuesty"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader label="Différence" sortKey="diff" activeKey={sortKey} direction={direction} onSort={handleSort} />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((row) => (
-                <tr key={row.propertyId} className="border-b border-black/5">
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
-                    <span className="font-medium">{row.reference}</span>
-                    {row.notFoundReferences.length > 0 && (
-                      <span
-                        title={`Référence VRPlatform introuvable : ${row.notFoundReferences.join(", ")}`}
-                        className="ml-1.5 text-amber-600"
-                      >
-                        ⚠
-                      </span>
-                    )}
-                    {row.guestyError && (
-                      <span title={`Guesty : ${row.guestyError}`} className="ml-1.5 text-red-600">
-                        ⚠
-                      </span>
-                    )}
+        <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[14px]">
+              <thead>
+                <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                  <SortHeader
+                    label="Bien"
+                    sortKey="reference"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                    align="left"
+                  />
+                  <SortHeader label="Check-out" sortKey="count" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                  <th className="py-3.5 px-4 text-left text-[13px] font-medium text-[#86868b]">Dates</th>
+                  <SortHeader
+                    label="Prix ménage (custom field)"
+                    sortKey="customField"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Prix ménage (Guesty)"
+                    sortKey="guesty"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Produit (custom field)"
+                    sortKey="productCustom"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Produit (Guesty)"
+                    sortKey="productGuesty"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader label="Différence" sortKey="diff" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedRows.map((row) => (
+                  <tr
+                    key={row.propertyId}
+                    className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
+                  >
+                    <td className="py-3.5 pl-5 pr-4 text-[#1d1d1f]">
+                      <span className="font-medium">{row.reference}</span>
+                      {row.notFoundReferences.length > 0 && (
+                        <span
+                          title={`Référence VRPlatform introuvable : ${row.notFoundReferences.join(", ")}`}
+                          className="ml-1.5 text-amber-600"
+                        >
+                          ⚠
+                        </span>
+                      )}
+                      {row.guestyError && (
+                        <span title={`Guesty : ${row.guestyError}`} className="ml-1.5 text-red-600">
+                          ⚠
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right tabular-nums font-semibold text-[#1d1d1f]">{row.checkoutCount}</td>
+                    <td className="py-3.5 px-4 text-[#6e6e73]">
+                      {row.checkoutDates.length > 0 ? row.checkoutDates.map(formatShortDate).join(", ") : "—"}
+                    </td>
+                    <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                      <EuroValue value={row.cleaningFeeCustomField} />
+                    </td>
+                    <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                      <EuroValue value={row.cleaningFeeGuesty} />
+                    </td>
+                    <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                      <EuroValue value={row.productCustom} />
+                    </td>
+                    <td className="py-3.5 px-4 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                      <EuroValue value={row.productGuesty} bold />
+                    </td>
+                    <td
+                      className={`py-3.5 pl-4 pr-5 text-right tabular-nums font-semibold ${
+                        row.diff == null ? "text-[#6e6e73]" : row.diff >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}
+                    >
+                      {row.diff != null ? `${row.diff >= 0 ? "+" : ""}${formatEuros(row.diff)}` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
+                  <td className="py-3.5 pl-5 pr-4">
+                    Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
                   </td>
-                  <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">{row.checkoutCount}</td>
-                  <td className="py-2 pr-3 text-[#6e6e73]">
-                    {row.checkoutDates.length > 0 ? row.checkoutDates.map(formatShortDate).join(", ") : "—"}
+                  <td className="py-3.5 px-4 text-right tabular-nums">{totals.checkoutCount}</td>
+                  <td className="py-3.5 px-4"></td>
+                  <td className="py-3.5 px-4"></td>
+                  <td className="py-3.5 px-4"></td>
+                  <td className="py-3.5 px-4 text-right tabular-nums">
+                    <EuroValue value={totals.productCustom} bold />
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
-                    <EuroValue value={row.cleaningFeeCustomField} />
-                  </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
-                    <EuroValue value={row.cleaningFeeGuesty} />
-                  </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
-                    <EuroValue value={row.productCustom} />
-                  </td>
-                  <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">
-                    <EuroValue value={row.productGuesty} bold />
+                  <td className="py-3.5 px-4 text-right tabular-nums">
+                    <EuroValue value={totals.productGuesty} bold />
                   </td>
                   <td
-                    className={`py-2 pr-3 font-semibold ${
-                      row.diff == null ? "text-[#6e6e73]" : row.diff >= 0 ? "text-emerald-600" : "text-red-600"
+                    className={`py-3.5 pl-4 pr-5 text-right tabular-nums ${
+                      totals.productGuesty - totals.productCustom >= 0 ? "text-emerald-600" : "text-red-600"
                     }`}
                   >
-                    {row.diff != null ? `${row.diff >= 0 ? "+" : ""}${formatEuros(row.diff)}` : "—"}
+                    {totals.productGuesty - totals.productCustom >= 0 ? "+" : ""}
+                    {formatEuros(totals.productGuesty - totals.productCustom)}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-black/10 font-semibold text-[#1d1d1f]">
-                <td className="py-2 pr-3">Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})</td>
-                <td className="py-2 pr-3">{totals.checkoutCount}</td>
-                <td className="py-2 pr-3"></td>
-                <td className="py-2 pr-3"></td>
-                <td className="py-2 pr-3"></td>
-                <td className="py-2 pr-3">
-                  <EuroValue value={totals.productCustom} bold />
-                </td>
-                <td className="py-2 pr-3">
-                  <EuroValue value={totals.productGuesty} bold />
-                </td>
-                <td className={totals.productGuesty - totals.productCustom >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
-                  {totals.productGuesty - totals.productCustom >= 0 ? "+" : ""}
-                  {formatEuros(totals.productGuesty - totals.productCustom)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         </div>
       )}
 
