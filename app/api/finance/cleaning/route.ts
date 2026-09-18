@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
 import { getPropertyCheckoutsForMonths, isVrPlatformConfigured } from "@/lib/vrplatform";
-import { getGuestyCleaningPrices, isGuestyConfigured } from "@/lib/guesty";
+import { getGuestyCleaningPrices, isGuestyConfigured, mapWithGuestyConcurrency } from "@/lib/guesty";
 
 export async function GET(request: Request) {
   const profile = await getCurrentProfile();
@@ -49,11 +49,20 @@ export async function GET(request: Request) {
       months
     );
 
-    const results = await Promise.all(
-      checkoutResults.map(async (r) => {
-        const prices = r.guestyListingId
-          ? await getGuestyCleaningPrices(r.guestyListingId).catch(() => ({ customField: null, standard: null }))
-          : { customField: null, standard: null };
+    const results = await mapWithGuestyConcurrency(checkoutResults, async (r) => {
+      if (!r.guestyListingId) {
+        return {
+          propertyId: r.propertyId,
+          reference: r.reference,
+          checkoutDates: r.checkoutDates,
+          notFoundReferences: r.notFoundReferences,
+          cleaningFeeCustomField: null,
+          cleaningFeeGuesty: null,
+          guestyError: "ID Guesty introuvable pour la référence principale de ce bien.",
+        };
+      }
+      try {
+        const prices = await getGuestyCleaningPrices(r.guestyListingId);
         return {
           propertyId: r.propertyId,
           reference: r.reference,
@@ -61,9 +70,20 @@ export async function GET(request: Request) {
           notFoundReferences: r.notFoundReferences,
           cleaningFeeCustomField: prices.customField,
           cleaningFeeGuesty: prices.standard,
+          guestyError: null,
         };
-      })
-    );
+      } catch (err) {
+        return {
+          propertyId: r.propertyId,
+          reference: r.reference,
+          checkoutDates: r.checkoutDates,
+          notFoundReferences: r.notFoundReferences,
+          cleaningFeeCustomField: null,
+          cleaningFeeGuesty: null,
+          guestyError: err instanceof Error ? err.message : "Erreur Guesty inconnue.",
+        };
+      }
+    });
 
     return NextResponse.json({ year, months, properties: results });
   } catch (err) {

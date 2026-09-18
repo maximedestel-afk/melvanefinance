@@ -21,6 +21,27 @@ export function isGuestyConfigured(): boolean {
   return !!process.env.GUESTY_CLIENT_ID && !!process.env.GUESTY_CLIENT_SECRET;
 }
 
+/** Traite `items` avec au plus `concurrency` appels Guesty en vol à la
+ * fois — appeler l'API en parallèle pour tout le portefeuille dépasse vite
+ * les limites de débit de Guesty et fait échouer silencieusement une
+ * partie des requêtes. */
+export async function mapWithGuestyConcurrency<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency = 3
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await fn(items[current]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 async function fetchNewGuestyToken(): Promise<{ value: string; expiresAt: number }> {
   const clientId = process.env.GUESTY_CLIENT_ID;
   const clientSecret = process.env.GUESTY_CLIENT_SECRET;

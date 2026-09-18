@@ -26,12 +26,14 @@ interface CleaningApiResult {
   notFoundReferences: string[];
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
+  guestyError: string | null;
 }
 
 interface CleaningRow {
   propertyId: string;
   reference: string;
   notFoundReferences: string[];
+  guestyError: string | null;
   checkoutDates: string[];
   checkoutCount: number;
   cleaningFeeCustomField: number | null;
@@ -51,6 +53,7 @@ function toRow(r: CleaningApiResult): CleaningRow {
     propertyId: r.propertyId,
     reference: r.reference,
     notFoundReferences: r.notFoundReferences,
+    guestyError: r.guestyError,
     checkoutDates: r.checkoutDates,
     checkoutCount,
     cleaningFeeCustomField: r.cleaningFeeCustomField,
@@ -419,6 +422,11 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
                         title={`Référence VRPlatform introuvable : ${row.notFoundReferences.join(", ")}`}
                         className="ml-1.5 text-amber-600"
                       >
+                        ⚠
+                      </span>
+                    )}
+                    {row.guestyError && (
+                      <span title={`Guesty : ${row.guestyError}`} className="ml-1.5 text-red-600">
                         ⚠
                       </span>
                     )}
