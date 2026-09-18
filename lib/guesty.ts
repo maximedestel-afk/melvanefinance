@@ -28,7 +28,7 @@ export function isGuestyConfigured(): boolean {
 export async function mapWithGuestyConcurrency<T, R>(
   items: T[],
   fn: (item: T) => Promise<R>,
-  concurrency = 3
+  concurrency = 2
 ): Promise<R[]> {
   const results: R[] = new Array(items.length);
   let nextIndex = 0;
@@ -93,6 +93,30 @@ async function getGuestyToken(): Promise<string> {
   return token.value;
 }
 
+/** Appel Guesty authentifié avec retry en cas de 429/502/503 — un 429 isolé
+ * au milieu d'un lot de requêtes (même limité en concurrence) ne doit pas
+ * se traduire par une donnée manquante silencieuse. */
+async function guestyFetch<T>(url: string | URL): Promise<T> {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const token = await getGuestyToken();
+    const response = await fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    if (response.ok) return response.json() as Promise<T>;
+
+    const isRetryable = response.status === 429 || response.status === 502 || response.status === 503;
+    if (!isRetryable || attempt === maxAttempts) {
+      throw new Error(`Guesty a répondu ${response.status} sur ${url}.`);
+    }
+    const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+    const delayMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : attempt * 800;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  throw new Error(`Guesty : échec après ${maxAttempts} tentatives sur ${url}.`);
+}
+
 export interface GuestyAddress {
   full: string | null;
   lng: number | null;
@@ -154,18 +178,9 @@ export interface GuestyListing {
  * pour ne récupérer que certains champs (ex: ["title", "prices"]) et
  * réduire la charge de réponse. */
 export async function getGuestyListing(guestyListingId: string, fields?: string[]): Promise<GuestyListing> {
-  const token = await getGuestyToken();
   const url = new URL(`${API_BASE_URL}/listings/${guestyListingId}`);
   if (fields && fields.length > 0) url.searchParams.set("fields", fields.join(" "));
-
-  const response = await fetch(url, {
-    headers: { authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Guesty a répondu ${response.status} pour le listing ${guestyListingId}.`);
-  }
-  return response.json() as Promise<GuestyListing>;
+  return guestyFetch<GuestyListing>(url);
 }
 
 export interface GuestyCustomFieldValue {
@@ -179,15 +194,9 @@ export interface GuestyCustomFieldValue {
 /** Valeurs des custom fields configurés sur un bien Guesty (nom et clé
  * propres à chaque compte). */
 export async function getPropertyCustomFieldValues(guestyPropertyId: string): Promise<GuestyCustomFieldValue[]> {
-  const token = await getGuestyToken();
-  const response = await fetch(`${API_BASE_URL}/properties-api/custom-fields/${guestyPropertyId}`, {
-    headers: { authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`Guesty a répondu ${response.status} pour les custom fields du bien ${guestyPropertyId}.`);
-  }
-  const data = (await response.json()) as { propertyId: string; customFields: GuestyCustomFieldValue[] };
+  const data = await guestyFetch<{ propertyId: string; customFields: GuestyCustomFieldValue[] }>(
+    `${API_BASE_URL}/properties-api/custom-fields/${guestyPropertyId}`
+  );
   return data.customFields;
 }
 
