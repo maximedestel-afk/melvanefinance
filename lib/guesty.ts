@@ -1,19 +1,27 @@
 // Intégration Guesty (Open API) — pour des données sur les biens que
 // VRPlatform n'expose pas (ex: prix du ménage, équipements, chambres...).
 // Authentification OAuth2 client_credentials, jamais depuis le client.
+//
+// Guesty limite chaque client_id à 5 tokens actifs : un token par appel
+// (ou par cold start serverless) épuiserait vite ce quota. Le token est
+// donc mis en cache dans Supabase (table `guesty_oauth_cache`, accédée en
+// service_role) — partagé entre toutes les instances Vercel — avec un
+// cache mémoire en plus pour éviter un aller-retour DB à chaque appel dans
+// une même instance déjà chaude.
+
+import { createAdminClient } from "./supabase/admin";
 
 const API_BASE_URL = "https://open-api.guesty.com/v1";
 const TOKEN_URL = "https://open-api.guesty.com/oauth2/token";
+const TOKEN_CACHE_ROW_ID = 1;
 
-let cachedToken: { value: string; expiresAt: number } | null = null;
+let memoryCachedToken: { value: string; expiresAt: number } | null = null;
 
 export function isGuestyConfigured(): boolean {
   return !!process.env.GUESTY_CLIENT_ID && !!process.env.GUESTY_CLIENT_SECRET;
 }
 
-async function getGuestyToken(): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now()) return cachedToken.value;
-
+async function fetchNewGuestyToken(): Promise<{ value: string; expiresAt: number }> {
   const clientId = process.env.GUESTY_CLIENT_ID;
   const clientSecret = process.env.GUESTY_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -35,9 +43,33 @@ async function getGuestyToken(): Promise<string> {
     throw new Error(`Guesty a refusé l'authentification (${response.status}).`);
   }
   const data = (await response.json()) as { access_token: string; expires_in: number };
-  // Marge de 60s avant expiration pour éviter d'utiliser un token tout juste périmé.
-  cachedToken = { value: data.access_token, expiresAt: Date.now() + (data.expires_in - 60) * 1000 };
-  return cachedToken.value;
+  // Marge de 5 min avant expiration pour éviter d'utiliser un token tout juste périmé.
+  return { value: data.access_token, expiresAt: Date.now() + (data.expires_in - 300) * 1000 };
+}
+
+async function getGuestyToken(): Promise<string> {
+  if (memoryCachedToken && memoryCachedToken.expiresAt > Date.now()) return memoryCachedToken.value;
+
+  const supabase = createAdminClient();
+  const { data: cached } = await supabase
+    .from("guesty_oauth_cache")
+    .select("access_token, expires_at")
+    .eq("id", TOKEN_CACHE_ROW_ID)
+    .maybeSingle();
+
+  if (cached && new Date(cached.expires_at).getTime() > Date.now()) {
+    memoryCachedToken = { value: cached.access_token, expiresAt: new Date(cached.expires_at).getTime() };
+    return cached.access_token;
+  }
+
+  const token = await fetchNewGuestyToken();
+  memoryCachedToken = token;
+  await supabase.from("guesty_oauth_cache").upsert({
+    id: TOKEN_CACHE_ROW_ID,
+    access_token: token.value,
+    expires_at: new Date(token.expiresAt).toISOString(),
+  });
+  return token.value;
 }
 
 export interface GuestyAddress {
