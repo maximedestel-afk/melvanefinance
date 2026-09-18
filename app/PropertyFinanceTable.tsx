@@ -68,13 +68,6 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleani
     property.isFixedRent && property.fixedRentAmountCents != null
       ? property.fixedRentAmountCents * selectedMonths.length
       : null;
-  const baseProfitCents = property.isFixedRent
-    ? fixedRentCents != null
-      ? netRevenueCents - fixedRentCents
-      : null
-    : commissionCents;
-  const profitCents = baseProfitCents != null ? baseProfitCents + cityTaxCents : null;
-
   const checkoutCount = cleaning?.checkoutDates.length ?? 0;
   const cleaningProductGuesty = cleaning?.cleaningFeeGuesty != null ? checkoutCount * cleaning.cleaningFeeGuesty : null;
   const cleaningProductCustom = cleaning?.cleaningFeeCustomField != null ? checkoutCount * cleaning.cleaningFeeCustomField : null;
@@ -82,6 +75,14 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleani
     cleaningProductGuesty != null && cleaningProductCustom != null
       ? Math.round((cleaningProductGuesty - cleaningProductCustom) * 100)
       : null;
+
+  // Profit = (Commission, ou Net Revenue − Loyer fixe pour le modèle fixe) + City Tax + Profit ménage.
+  const baseProfitCents = property.isFixedRent
+    ? fixedRentCents != null
+      ? netRevenueCents - fixedRentCents
+      : null
+    : commissionCents;
+  const profitCents = baseProfitCents != null ? baseProfitCents + cityTaxCents + (cleaningProfitCents ?? 0) : null;
 
   return {
     propertyId: property.propertyId,
@@ -437,7 +438,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
               <tr className="border-b border-black/10 text-left text-[12px] uppercase tracking-wide">
                 <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} />
                 <SortHeader
-                  label="Taux de remplissage"
+                  label="TR"
                   sortKey="fillRate"
                   activeKey={sortKey}
                   direction={direction}
@@ -452,7 +453,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   onSort={handleSort}
                 />
                 <SortHeader
-                  label="Net Commissionable Revenue"
+                  label="Net Revenue"
                   sortKey="netRevenue"
                   activeKey={sortKey}
                   direction={direction}
@@ -473,7 +474,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   onSort={handleSort}
                 />
                 <SortHeader
-                  label="Profit ménage"
+                  label="Ménage"
                   sortKey="cleaningProfit"
                   activeKey={sortKey}
                   direction={direction}
