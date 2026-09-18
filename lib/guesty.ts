@@ -168,7 +168,7 @@ export async function getGuestyListing(guestyListingId: string, fields?: string[
   return response.json() as Promise<GuestyListing>;
 }
 
-interface GuestyCustomFieldValue {
+export interface GuestyCustomFieldValue {
   fieldId: string;
   key: string;
   displayName: string;
@@ -178,7 +178,7 @@ interface GuestyCustomFieldValue {
 
 /** Valeurs des custom fields configurés sur un bien Guesty (nom et clé
  * propres à chaque compte). */
-async function getPropertyCustomFieldValues(guestyPropertyId: string): Promise<GuestyCustomFieldValue[]> {
+export async function getPropertyCustomFieldValues(guestyPropertyId: string): Promise<GuestyCustomFieldValue[]> {
   const token = await getGuestyToken();
   const response = await fetch(`${API_BASE_URL}/properties-api/custom-fields/${guestyPropertyId}`, {
     headers: { authorization: `Bearer ${token}` },
@@ -205,7 +205,7 @@ export interface GuestyCleaningPrices {
  * comparer les deux, ils peuvent diverger. */
 export async function getGuestyCleaningPrices(guestyListingId: string): Promise<GuestyCleaningPrices> {
   const [listing, customFields] = await Promise.all([
-    getGuestyListing(guestyListingId, ["prices"]),
+    getGuestyListing(guestyListingId),
     getPropertyCustomFieldValues(guestyListingId),
   ]);
 
