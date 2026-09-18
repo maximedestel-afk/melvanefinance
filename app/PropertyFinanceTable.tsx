@@ -68,7 +68,12 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleani
     property.isFixedRent && property.fixedRentAmountCents != null
       ? property.fixedRentAmountCents * selectedMonths.length
       : null;
-  const profitCents = property.isFixedRent ? (fixedRentCents != null ? netRevenueCents - fixedRentCents : null) : commissionCents;
+  const baseProfitCents = property.isFixedRent
+    ? fixedRentCents != null
+      ? netRevenueCents - fixedRentCents
+      : null
+    : commissionCents;
+  const profitCents = baseProfitCents != null ? baseProfitCents + cityTaxCents : null;
 
   const checkoutCount = cleaning?.checkoutDates.length ?? 0;
   const cleaningProductGuesty = cleaning?.cleaningFeeGuesty != null ? checkoutCount * cleaning.cleaningFeeGuesty : null;
@@ -447,13 +452,6 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   onSort={handleSort}
                 />
                 <SortHeader
-                  label="City Tax"
-                  sortKey="cityTax"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
                   label="Net Commissionable Revenue"
                   sortKey="netRevenue"
                   activeKey={sortKey}
@@ -468,13 +466,12 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   onSort={handleSort}
                 />
                 <SortHeader
-                  label="Loyer fixe"
-                  sortKey="fixedRent"
+                  label="City Tax"
+                  sortKey="cityTax"
                   activeKey={sortKey}
                   direction={direction}
                   onSort={handleSort}
                 />
-                <SortHeader label="Profit" sortKey="profit" activeKey={sortKey} direction={direction} onSort={handleSort} />
                 <SortHeader
                   label="Profit ménage"
                   sortKey="cleaningProfit"
@@ -482,6 +479,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   direction={direction}
                   onSort={handleSort}
                 />
+                <SortHeader
+                  label="Loyer fixe"
+                  sortKey="fixedRent"
+                  activeKey={sortKey}
+                  direction={direction}
+                  onSort={handleSort}
+                />
+                <SortHeader label="Profit" sortKey="profit" activeKey={sortKey} direction={direction} onSort={handleSort} />
               </tr>
             </thead>
             <tbody>
@@ -512,9 +517,6 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <td className="py-2 pr-3 text-[#1d1d1f]">
                     <Money cents={row.channelFeesCents} />
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
-                    <Money cents={row.cityTaxCents} />
-                  </td>
                   <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">
                     <Money cents={row.netRevenueCents} bold />
                   </td>
@@ -522,14 +524,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     <Money cents={row.commissionCents} />
                   </td>
                   <td className="py-2 pr-3 text-[#1d1d1f]">
-                    <Money cents={row.fixedRentCents} />
-                  </td>
-                  <td
-                    className={`py-2 pr-3 font-semibold ${
-                      row.profitCents == null ? "text-[#6e6e73]" : row.profitCents >= 0 ? "text-emerald-600" : "text-red-600"
-                    }`}
-                  >
-                    {row.profitCents != null ? `${row.profitCents >= 0 ? "+" : ""}${formatEuros(row.profitCents / 100)}` : "—"}
+                    <Money cents={row.cityTaxCents} />
                   </td>
                   <td
                     className={`py-2 pr-3 font-semibold ${
@@ -543,6 +538,16 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     {row.cleaningProfitCents != null
                       ? `${row.cleaningProfitCents >= 0 ? "+" : ""}${formatEuros(row.cleaningProfitCents / 100)}`
                       : "—"}
+                  </td>
+                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                    <Money cents={row.fixedRentCents} />
+                  </td>
+                  <td
+                    className={`py-2 pr-3 font-semibold ${
+                      row.profitCents == null ? "text-[#6e6e73]" : row.profitCents >= 0 ? "text-emerald-600" : "text-red-600"
+                    }`}
+                  >
+                    {row.profitCents != null ? `${row.profitCents >= 0 ? "+" : ""}${formatEuros(row.profitCents / 100)}` : "—"}
                   </td>
                 </tr>
               ))}
@@ -565,23 +570,23 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <Money cents={totals.channelFeesCents} bold />
                 </td>
                 <td className="py-2 pr-3">
-                  <Money cents={totals.cityTaxCents} bold />
-                </td>
-                <td className="py-2 pr-3">
                   <Money cents={totals.netRevenueCents} bold />
                 </td>
                 <td className="py-2 pr-3">
                   <Money cents={totals.commissionCents} bold />
                 </td>
                 <td className="py-2 pr-3">
+                  <Money cents={totals.cityTaxCents} bold />
+                </td>
+                <td className={totals.cleaningProfitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
+                  {totals.cleaningProfitCents >= 0 ? "+" : ""}
+                  {formatEuros(totals.cleaningProfitCents / 100)}
+                </td>
+                <td className="py-2 pr-3">
                   <Money cents={totals.fixedRentCents} bold />
                 </td>
                 <td className={totals.profitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
                   {totals.profitCents >= 0 ? "+" : ""}
-                  {formatEuros(totals.profitCents / 100)}
-                </td>
-                <td className={totals.cleaningProfitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
-                  {totals.cleaningProfitCents >= 0 ? "+" : ""}
                   {formatEuros(totals.cleaningProfitCents / 100)}
                 </td>
               </tr>
