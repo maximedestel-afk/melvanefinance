@@ -196,7 +196,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     }
   }
 
-  const rows = results?.map(toRow) ?? null;
+  const rows = results?.map(toRow).filter((r) => r.checkoutCount > 0) ?? null;
 
   const sortedRows = rows
     ? [...rows].sort((a, b) => {
@@ -376,7 +376,11 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
-      {sortedRows && totals && !loading && !error && (
+      {sortedRows && sortedRows.length === 0 && !loading && !error && (
+        <p className="text-[13px] text-[#6e6e73]">Aucun bien n&apos;a eu de check-out sur cette période.</p>
+      )}
+
+      {sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
         <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[14px]">
