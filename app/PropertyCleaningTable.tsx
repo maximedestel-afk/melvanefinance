@@ -47,8 +47,7 @@ function toRow(r: CleaningApiResult): CleaningRow {
   const checkoutCount = r.checkoutDates.length;
   const productCustom = r.cleaningFeeCustomField != null ? checkoutCount * r.cleaningFeeCustomField : null;
   const productGuesty = r.cleaningFeeGuesty != null ? checkoutCount * r.cleaningFeeGuesty : null;
-  const diff =
-    r.cleaningFeeGuesty != null && r.cleaningFeeCustomField != null ? r.cleaningFeeGuesty - r.cleaningFeeCustomField : null;
+  const diff = productGuesty != null && productCustom != null ? productGuesty - productCustom : null;
   return {
     propertyId: r.propertyId,
     reference: r.reference,
