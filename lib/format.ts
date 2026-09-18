@@ -3,7 +3,7 @@ export function formatEuros(value: number): string {
 }
 
 export function formatPercent(value: number): string {
-  return `${(value * 100).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 1 })} %`;
+  return `${Math.round(value * 100)} %`;
 }
 
 export const MONTH_LABELS_SHORT = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
