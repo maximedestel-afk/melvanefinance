@@ -112,20 +112,24 @@ function SortHeader({
   activeKey,
   direction,
   onSort,
+  align = "right",
 }: {
   label: string;
   sortKey: SortKey;
   activeKey: SortKey;
   direction: "asc" | "desc";
   onSort: (key: SortKey) => void;
+  align?: "left" | "right";
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className="py-2 pr-3">
+    <th className={`py-3.5 px-4 first:pl-5 last:pr-5 ${align === "right" ? "text-right" : "text-left"}`}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 transition ${isActive ? "text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"}`}
+        className={`inline-flex items-center gap-1 text-[13px] font-medium transition ${
+          align === "right" ? "flex-row-reverse" : ""
+        } ${isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"}`}
       >
         {label}
         {isActive && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
@@ -432,68 +436,70 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && totals && !loading && !error && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-[14px]">
-            <thead>
-              <tr className="border-b border-black/10 text-left text-[12px] uppercase tracking-wide">
-                <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                <SortHeader
-                  label="TR"
-                  sortKey="fillRate"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader label="Rents" sortKey="rents" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                <SortHeader
-                  label="Channel Fees"
-                  sortKey="channelFees"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Net Revenue"
-                  sortKey="netRevenue"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Commission"
-                  sortKey="commission"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="City Tax"
-                  sortKey="cityTax"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Ménage"
-                  sortKey="cleaningProfit"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader
-                  label="Loyer fixe"
-                  sortKey="fixedRent"
-                  activeKey={sortKey}
-                  direction={direction}
-                  onSort={handleSort}
-                />
-                <SortHeader label="Profit" sortKey="profit" activeKey={sortKey} direction={direction} onSort={handleSort} />
-              </tr>
-            </thead>
+        <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[14px]">
+              <thead>
+                <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                  <SortHeader
+                    label="Bien"
+                    sortKey="reference"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                    align="left"
+                  />
+                  <SortHeader label="TR" sortKey="fillRate" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                  <SortHeader label="Rents" sortKey="rents" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                  <SortHeader
+                    label="Channel Fees"
+                    sortKey="channelFees"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Net Revenue"
+                    sortKey="netRevenue"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Commission"
+                    sortKey="commission"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="City Tax"
+                    sortKey="cityTax"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Ménage"
+                    sortKey="cleaningProfit"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
+                    label="Loyer fixe"
+                    sortKey="fixedRent"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader label="Profit" sortKey="profit" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                </tr>
+              </thead>
             <tbody>
               {sortedRows.map((row) => (
-                <tr key={row.propertyId} className="border-b border-black/5">
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                <tr key={row.propertyId} className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]">
+                  <td className="py-3.5 pl-5 pr-4 text-[#1d1d1f]">
                     <span className="font-medium">{row.reference}</span>
                     {row.notFoundReferences.length > 0 && (
                       <span
@@ -504,31 +510,31 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                       </span>
                     )}
                   </td>
-                  <td className="py-2 pr-3">
+                  <td className="py-3.5 px-4 text-right">
                     <span
-                      className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium"
+                      className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium tabular-nums"
                       style={fillRateBadgeStyle(row.fillRate)}
                     >
                       {formatPercent(row.fillRate)}
                     </span>
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.rentsCents} />
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.channelFeesCents} />
                   </td>
-                  <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">
+                  <td className="py-3.5 px-4 text-right tabular-nums font-semibold text-[#1d1d1f]">
                     <Money cents={row.netRevenueCents} bold />
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.commissionCents} />
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.cityTaxCents} />
                   </td>
                   <td
-                    className={`py-2 pr-3 font-semibold ${
+                    className={`py-3.5 px-4 text-right tabular-nums font-semibold ${
                       row.cleaningProfitCents == null
                         ? "text-[#6e6e73]"
                         : row.cleaningProfitCents >= 0
@@ -540,11 +546,11 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                       ? `${row.cleaningProfitCents >= 0 ? "+" : ""}${formatEuros(row.cleaningProfitCents / 100)}`
                       : "—"}
                   </td>
-                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.fixedRentCents} />
                   </td>
                   <td
-                    className={`py-2 pr-3 font-semibold ${
+                    className={`py-3.5 pl-4 pr-5 text-right tabular-nums font-semibold ${
                       row.profitCents == null ? "text-[#6e6e73]" : row.profitCents >= 0 ? "text-emerald-600" : "text-red-600"
                     }`}
                   >
@@ -554,45 +560,56 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t border-black/10 font-semibold text-[#1d1d1f]">
-                <td className="py-2 pr-3">Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})</td>
-                <td className="py-2 pr-3">
+              <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
+                <td className="py-3.5 pl-5 pr-4">
+                  Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
+                </td>
+                <td className="py-3.5 px-4 text-right">
                   <span
-                    className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold"
+                    className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
                     style={fillRateBadgeStyle(totals.fillRate)}
                   >
                     {formatPercent(totals.fillRate)}
                   </span>
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.rentsCents} bold />
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.channelFeesCents} bold />
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.netRevenueCents} bold />
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.commissionCents} bold />
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.cityTaxCents} bold />
                 </td>
-                <td className={totals.cleaningProfitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
+                <td
+                  className={`py-3.5 px-4 text-right tabular-nums ${
+                    totals.cleaningProfitCents >= 0 ? "text-emerald-600" : "text-red-600"
+                  }`}
+                >
                   {totals.cleaningProfitCents >= 0 ? "+" : ""}
                   {formatEuros(totals.cleaningProfitCents / 100)}
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.fixedRentCents} bold />
                 </td>
-                <td className={totals.profitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
+                <td
+                  className={`py-3.5 pl-4 pr-5 text-right tabular-nums ${
+                    totals.profitCents >= 0 ? "text-emerald-600" : "text-red-600"
+                  }`}
+                >
                   {totals.profitCents >= 0 ? "+" : ""}
-                  {formatEuros(totals.cleaningProfitCents / 100)}
+                  {formatEuros(totals.profitCents / 100)}
                 </td>
               </tr>
             </tfoot>
-          </table>
+            </table>
+          </div>
         </div>
       )}
 
