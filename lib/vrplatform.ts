@@ -94,6 +94,7 @@ interface VrPlatformLineMappingsResponse {
 
 const RENTS_ACCOUNT = "Rents";
 const CHANNEL_COMMISSION_ACCOUNTS = new Set(["Channel Commissions - Airbnb", "Channel Commissions (Reference Account)"]);
+const CITY_TAX_ACCOUNT = "City Taxes Revenue";
 
 /** Table "type de ligne de réservation" → nom du compte comptable,
  * configurée côté VRPlatform (Réglages > Reservation Line Mappings). */
@@ -117,17 +118,19 @@ async function getReservationLineAccountMap(): Promise<Map<string, string>> {
 function classifyReservationLines(
   lines: VrPlatformReservationLine[] | null,
   accountByLineType: Map<string, string>
-): { rentsCents: number; channelFeesCents: number } {
+): { rentsCents: number; channelFeesCents: number; cityTaxCents: number } {
   let rentsCents = 0;
   let channelFeesCents = 0;
-  if (!lines) return { rentsCents, channelFeesCents };
+  let cityTaxCents = 0;
+  if (!lines) return { rentsCents, channelFeesCents, cityTaxCents };
   for (const line of lines) {
     if (!line.type) continue;
     const account = accountByLineType.get(line.type);
     if (account === RENTS_ACCOUNT) rentsCents += line.amount ?? 0;
     else if (account && CHANNEL_COMMISSION_ACCOUNTS.has(account)) channelFeesCents += Math.abs(line.amount ?? 0);
+    else if (account === CITY_TAX_ACCOUNT) cityTaxCents += Math.abs(line.amount ?? 0);
   }
-  return { rentsCents, channelFeesCents };
+  return { rentsCents, channelFeesCents, cityTaxCents };
 }
 
 export interface MonthlyFinance {
@@ -135,6 +138,7 @@ export interface MonthlyFinance {
   month: number;
   rentsCents: number;
   channelFeesCents: number;
+  cityTaxCents: number;
   netRevenueCents: number;
   nightsBooked: number;
   daysInMonth: number;
@@ -158,6 +162,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     month: i + 1,
     rentsCents: 0,
     channelFeesCents: 0,
+    cityTaxCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
     daysInMonth: daysInMonth(year, i + 1),
@@ -201,10 +206,11 @@ async function addListingMonthlyFinancials(
 
       const checkOutDate = new Date(`${reservation.checkOut}T00:00:00Z`);
       if (checkOutDate.getUTCFullYear() === year) {
-        const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+        const { rentsCents, channelFeesCents, cityTaxCents } = classifyReservationLines(reservation.lines, accountByLineType);
         const entry = months[checkOutDate.getUTCMonth()];
         entry.rentsCents += rentsCents;
         entry.channelFeesCents += channelFeesCents;
+        entry.cityTaxCents += cityTaxCents;
       }
     }
 

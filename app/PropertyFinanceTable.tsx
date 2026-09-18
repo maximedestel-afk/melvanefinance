@@ -5,7 +5,17 @@ import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } fr
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type SortKey = "reference" | "fillRate" | "rents" | "channelFees" | "netRevenue" | "commission" | "fixedRent" | "profit";
+type SortKey =
+  | "reference"
+  | "fillRate"
+  | "rents"
+  | "channelFees"
+  | "cityTax"
+  | "netRevenue"
+  | "commission"
+  | "fixedRent"
+  | "profit"
+  | "cleaningProfit";
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -20,6 +30,13 @@ interface PropertyOption {
   rentType: RentType | null;
 }
 
+interface CleaningApiResult {
+  propertyId: string;
+  checkoutDates: string[];
+  cleaningFeeCustomField: number | null;
+  cleaningFeeGuesty: number | null;
+}
+
 interface FinanceRow {
   propertyId: string;
   reference: string;
@@ -28,17 +45,20 @@ interface FinanceRow {
   fillRate: number;
   rentsCents: number;
   channelFeesCents: number;
+  cityTaxCents: number;
   netRevenueCents: number;
   commissionCents: number | null;
   fixedRentCents: number | null;
   profitCents: number | null;
+  cleaningProfitCents: number | null;
 }
 
-function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): FinanceRow {
+function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleaning?: CleaningApiResult): FinanceRow {
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
   const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
   const channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
+  const cityTaxCents = selected.reduce((sum, m) => sum + m.cityTaxCents, 0);
   const netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   const commissionCents =
     !property.isFixedRent && property.commissionPercent != null
@@ -49,6 +69,15 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): Finan
       ? property.fixedRentAmountCents * selectedMonths.length
       : null;
   const profitCents = property.isFixedRent ? (fixedRentCents != null ? netRevenueCents - fixedRentCents : null) : commissionCents;
+
+  const checkoutCount = cleaning?.checkoutDates.length ?? 0;
+  const cleaningProductGuesty = cleaning?.cleaningFeeGuesty != null ? checkoutCount * cleaning.cleaningFeeGuesty : null;
+  const cleaningProductCustom = cleaning?.cleaningFeeCustomField != null ? checkoutCount * cleaning.cleaningFeeCustomField : null;
+  const cleaningProfitCents =
+    cleaningProductGuesty != null && cleaningProductCustom != null
+      ? Math.round((cleaningProductGuesty - cleaningProductCustom) * 100)
+      : null;
+
   return {
     propertyId: property.propertyId,
     reference: property.reference,
@@ -57,10 +86,12 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[]): Finan
     fillRate,
     rentsCents,
     channelFeesCents,
+    cityTaxCents,
     netRevenueCents,
     commissionCents,
     fixedRentCents,
     profitCents,
+    cleaningProfitCents,
   };
 }
 
@@ -117,6 +148,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [results, setResults] = useState<PropertyMonthlyResult[] | null>(null);
+  const [cleaningResults, setCleaningResults] = useState<CleaningApiResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,17 +191,24 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        year: String(year),
-        propertyIds: matchingProperties.map((p) => p.id).join(","),
-      });
-      const res = await fetch(`/api/finance/monthly?${params.toString()}`);
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      const propertyIds = matchingProperties.map((p) => p.id).join(",");
+      const monthlyParams = new URLSearchParams({ year: String(year), propertyIds });
+      const cleaningParams = new URLSearchParams({ year: String(year), months: selectedMonths.join(","), propertyIds });
+      const [monthlyRes, cleaningRes] = await Promise.all([
+        fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
+        fetch(`/api/finance/cleaning?${cleaningParams.toString()}`),
+      ]);
+      const monthlyData = await monthlyRes.json();
+      if (monthlyData.error) {
+        setError(monthlyData.error);
         setResults(null);
+        setCleaningResults(null);
       } else {
-        setResults(data.properties);
+        setResults(monthlyData.properties);
+        // Le profit ménage dépend de Guesty, optionnel : une erreur ici (pas
+        // configuré, etc.) n'empêche pas d'afficher le reste du tableau.
+        const cleaningData = await cleaningRes.json();
+        setCleaningResults(cleaningData.error ? null : cleaningData.properties);
       }
     } catch {
       setError("Impossible de charger les données financières.");
@@ -187,7 +226,11 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     }
   }
 
-  const rows = results?.map((r) => toRow(r, selectedMonths)) ?? null;
+  const cleaningByPropertyId = useMemo(
+    () => new Map((cleaningResults ?? []).map((c) => [c.propertyId, c])),
+    [cleaningResults]
+  );
+  const rows = results?.map((r) => toRow(r, selectedMonths, cleaningByPropertyId.get(r.propertyId))) ?? null;
 
   const sortedRows = rows
     ? [...rows].sort((a, b) => {
@@ -205,6 +248,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           case "channelFees":
             cmp = a.channelFeesCents - b.channelFeesCents;
             break;
+          case "cityTax":
+            cmp = a.cityTaxCents - b.cityTaxCents;
+            break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
@@ -217,6 +263,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           case "profit":
             cmp = (a.profitCents ?? 0) - (b.profitCents ?? 0);
             break;
+          case "cleaningProfit":
+            cmp = (a.cleaningProfitCents ?? 0) - (b.cleaningProfitCents ?? 0);
+            break;
         }
         return direction === "asc" ? cmp : -cmp;
       })
@@ -227,10 +276,12 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         fillRate: sortedRows.length > 0 ? sortedRows.reduce((sum, r) => sum + r.fillRate, 0) / sortedRows.length : 0,
         rentsCents: sortedRows.reduce((sum, r) => sum + r.rentsCents, 0),
         channelFeesCents: sortedRows.reduce((sum, r) => sum + r.channelFeesCents, 0),
+        cityTaxCents: sortedRows.reduce((sum, r) => sum + r.cityTaxCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         commissionCents: sortedRows.reduce((sum, r) => sum + (r.commissionCents ?? 0), 0),
         fixedRentCents: sortedRows.reduce((sum, r) => sum + (r.fixedRentCents ?? 0), 0),
         profitCents: sortedRows.reduce((sum, r) => sum + (r.profitCents ?? 0), 0),
+        cleaningProfitCents: sortedRows.reduce((sum, r) => sum + (r.cleaningProfitCents ?? 0), 0),
       }
     : null;
 
@@ -396,6 +447,13 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   onSort={handleSort}
                 />
                 <SortHeader
+                  label="City Tax"
+                  sortKey="cityTax"
+                  activeKey={sortKey}
+                  direction={direction}
+                  onSort={handleSort}
+                />
+                <SortHeader
                   label="Net Commissionable Revenue"
                   sortKey="netRevenue"
                   activeKey={sortKey}
@@ -417,6 +475,13 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   onSort={handleSort}
                 />
                 <SortHeader label="Profit" sortKey="profit" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                <SortHeader
+                  label="Profit ménage"
+                  sortKey="cleaningProfit"
+                  activeKey={sortKey}
+                  direction={direction}
+                  onSort={handleSort}
+                />
               </tr>
             </thead>
             <tbody>
@@ -447,6 +512,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <td className="py-2 pr-3 text-[#1d1d1f]">
                     <Money cents={row.channelFeesCents} />
                   </td>
+                  <td className="py-2 pr-3 text-[#1d1d1f]">
+                    <Money cents={row.cityTaxCents} />
+                  </td>
                   <td className="py-2 pr-3 font-semibold text-[#1d1d1f]">
                     <Money cents={row.netRevenueCents} bold />
                   </td>
@@ -462,6 +530,19 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     }`}
                   >
                     {row.profitCents != null ? `${row.profitCents >= 0 ? "+" : ""}${formatEuros(row.profitCents / 100)}` : "—"}
+                  </td>
+                  <td
+                    className={`py-2 pr-3 font-semibold ${
+                      row.cleaningProfitCents == null
+                        ? "text-[#6e6e73]"
+                        : row.cleaningProfitCents >= 0
+                          ? "text-emerald-600"
+                          : "text-red-600"
+                    }`}
+                  >
+                    {row.cleaningProfitCents != null
+                      ? `${row.cleaningProfitCents >= 0 ? "+" : ""}${formatEuros(row.cleaningProfitCents / 100)}`
+                      : "—"}
                   </td>
                 </tr>
               ))}
@@ -484,6 +565,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <Money cents={totals.channelFeesCents} bold />
                 </td>
                 <td className="py-2 pr-3">
+                  <Money cents={totals.cityTaxCents} bold />
+                </td>
+                <td className="py-2 pr-3">
                   <Money cents={totals.netRevenueCents} bold />
                 </td>
                 <td className="py-2 pr-3">
@@ -495,6 +579,10 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                 <td className={totals.profitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
                   {totals.profitCents >= 0 ? "+" : ""}
                   {formatEuros(totals.profitCents / 100)}
+                </td>
+                <td className={totals.cleaningProfitCents >= 0 ? "py-2 pr-3 text-emerald-600" : "py-2 pr-3 text-red-600"}>
+                  {totals.cleaningProfitCents >= 0 ? "+" : ""}
+                  {formatEuros(totals.cleaningProfitCents / 100)}
                 </td>
               </tr>
             </tfoot>
