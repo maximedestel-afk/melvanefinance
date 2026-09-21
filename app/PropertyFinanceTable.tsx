@@ -11,6 +11,7 @@ type SortKey =
   | "rents"
   | "channelFees"
   | "cityTax"
+  | "transferFees"
   | "netRevenue"
   | "commission"
   | "fixedRent"
@@ -46,6 +47,7 @@ interface FinanceRow {
   rentsCents: number;
   channelFeesCents: number;
   cityTaxCents: number;
+  transferFeesCents: number;
   netRevenueCents: number;
   commissionCents: number | null;
   fixedRentCents: number | null;
@@ -59,6 +61,7 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleani
   const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
   const channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
   const cityTaxCents = selected.reduce((sum, m) => sum + m.cityTaxCents, 0);
+  const transferFeesCents = selected.reduce((sum, m) => sum + m.transferFeesCents, 0);
   const netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   const commissionCents =
     !property.isFixedRent && property.commissionPercent != null
@@ -93,6 +96,7 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleani
     rentsCents,
     channelFeesCents,
     cityTaxCents,
+    transferFeesCents,
     netRevenueCents,
     commissionCents,
     fixedRentCents,
@@ -270,6 +274,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           case "cityTax":
             cmp = a.cityTaxCents - b.cityTaxCents;
             break;
+          case "transferFees":
+            cmp = a.transferFeesCents - b.transferFeesCents;
+            break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
@@ -296,6 +303,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         rentsCents: sortedRows.reduce((sum, r) => sum + r.rentsCents, 0),
         channelFeesCents: sortedRows.reduce((sum, r) => sum + r.channelFeesCents, 0),
         cityTaxCents: sortedRows.reduce((sum, r) => sum + r.cityTaxCents, 0),
+        transferFeesCents: sortedRows.reduce((sum, r) => sum + r.transferFeesCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         commissionCents: sortedRows.reduce((sum, r) => sum + (r.commissionCents ?? 0), 0),
         fixedRentCents: sortedRows.reduce((sum, r) => sum + (r.fixedRentCents ?? 0), 0),
@@ -498,6 +506,13 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     onSort={handleSort}
                   />
                   <SortHeader
+                    label="Transfer Fees"
+                    sortKey="transferFees"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                  />
+                  <SortHeader
                     label="Ménage"
                     sortKey="cleaningProfit"
                     activeKey={sortKey}
@@ -559,6 +574,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.cityTaxCents} />
                   </td>
+                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                    <Money cents={row.transferFeesCents} />
+                  </td>
                   <td
                     className={`py-3.5 px-4 text-right tabular-nums font-semibold ${
                       row.cleaningProfitCents == null
@@ -612,6 +630,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                 </td>
                 <td className="py-3.5 px-4 text-right tabular-nums">
                   <Money cents={totals.cityTaxCents} bold />
+                </td>
+                <td className="py-3.5 px-4 text-right tabular-nums">
+                  <Money cents={totals.transferFeesCents} bold />
                 </td>
                 <td
                   className={`py-3.5 px-4 text-right tabular-nums ${

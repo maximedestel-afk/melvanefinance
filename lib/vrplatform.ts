@@ -95,6 +95,7 @@ interface VrPlatformLineMappingsResponse {
 const RENTS_ACCOUNT = "Rents";
 const CHANNEL_COMMISSION_ACCOUNTS = new Set(["Channel Commissions - Airbnb", "Channel Commissions (Reference Account)"]);
 const CITY_TAX_ACCOUNT = "City Taxes Revenue";
+const TRANSFER_FEES_ACCOUNT = "Transfer Fees Revenues";
 
 /** Table "type de ligne de réservation" → nom du compte comptable,
  * configurée côté VRPlatform (Réglages > Reservation Line Mappings). */
@@ -133,12 +134,80 @@ function classifyReservationLines(
   return { rentsCents, channelFeesCents, cityTaxCents };
 }
 
+interface VrPlatformAccountsResponse {
+  data: { id: string; name: string }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Résout l'ID d'un compte comptable VRPlatform à partir de son nom — les
+ * "Transfer Fees Revenues" ne sont pas des lignes de réservation classables
+ * via /reservations/line-mappings (ce sont des frais récurrents facturés
+ * automatiquement par réservation), il faut donc interroger /reports/journal-entries
+ * par ID de compte plutôt que par type de ligne. Cet endpoint /accounts et
+ * /reports/journal-entries requièrent le scope "reports:read", pas forcément
+ * accordé à la clé API — une erreur ici dégrade silencieusement (Transfer
+ * Fees reste à 0) plutôt que de faire échouer tout l'onglet Revenus. */
+async function getAccountIdByName(name: string): Promise<string | null> {
+  try {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformAccountsResponse>("/accounts", { limit: "250", page: String(page) });
+      const found = res.data.find((a) => a.name === name);
+      if (found) return found.id;
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+interface VrPlatformJournalEntriesResponse {
+  data: { txnAt: string; centTotal: number }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Cumule, par mois, les écritures d'un compte comptable donné (ex: Transfer
+ * Fees Revenues) pour un listing sur une année — ces frais récurrents sont
+ * posés en écritures liées à la réservation mais n'apparaissent pas dans
+ * reservation.lines, contrairement aux Rents/Channel Fees/City Tax. */
+async function addListingTransferFees(
+  months: MonthlyFinance[],
+  listingId: string,
+  year: number,
+  transferFeesAccountId: string
+): Promise<void> {
+  try {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformJournalEntriesResponse>("/reports/journal-entries", {
+        accountIds: transferFeesAccountId,
+        listingIds: listingId,
+        date: String(year),
+        status: "active",
+        limit: "250",
+        page: String(page),
+      });
+      for (const entry of res.data) {
+        const month = Number(entry.txnAt.slice(5, 7));
+        if (month >= 1 && month <= 12) months[month - 1].transferFeesCents += Math.abs(entry.centTotal);
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+}
+
 export interface MonthlyFinance {
   /** 1 (janvier) à 12 (décembre). */
   month: number;
   rentsCents: number;
   channelFeesCents: number;
   cityTaxCents: number;
+  transferFeesCents: number;
   netRevenueCents: number;
   nightsBooked: number;
   daysInMonth: number;
@@ -163,6 +232,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     rentsCents: 0,
     channelFeesCents: 0,
     cityTaxCents: 0,
+    transferFeesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
     daysInMonth: daysInMonth(year, i + 1),
@@ -265,7 +335,11 @@ export async function getPortfolioMonthlyFinancials(
   properties: PortfolioProperty[],
   year: number
 ): Promise<PropertyMonthlyResult[]> {
-  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const [listings, accountByLineType, transferFeesAccountId] = await Promise.all([
+    listVrPlatformListings(),
+    getReservationLineAccountMap(),
+    getAccountIdByName(TRANSFER_FEES_ACCOUNT),
+  ]);
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   return Promise.all(
@@ -275,6 +349,7 @@ export async function getPortfolioMonthlyFinancials(
       const months = emptyMonths(year);
       for (const listingId of listingIds) {
         await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
+        if (transferFeesAccountId) await addListingTransferFees(months, listingId, year, transferFeesAccountId);
       }
       return {
         propertyId: property.propertyId,
