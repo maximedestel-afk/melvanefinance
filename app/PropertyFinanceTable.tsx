@@ -127,11 +127,11 @@ function SortHeader({
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className={`py-3.5 px-4 first:pl-5 last:pr-5 ${align === "right" ? "text-right" : "text-left"}`}>
+    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 text-[13px] font-medium transition ${
+        className={`inline-flex items-center gap-1 text-[12px] font-medium transition ${
           align === "right" ? "flex-row-reverse" : ""
         } ${isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"}`}
       >
@@ -464,7 +464,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           )}
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[14px]">
+            <table className="w-full border-collapse text-[12.5px]">
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                   <SortHeader
@@ -532,7 +532,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
             <tbody>
               {sortedRows.map((row) => (
                 <tr key={row.propertyId} className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]">
-                  <td className="py-3.5 pl-5 pr-4 text-[#1d1d1f]">
+                  <td className="py-2 pl-3 pr-2.5 text-[#1d1d1f]">
                     <button
                       type="button"
                       onClick={() => removeRow(row.propertyId)}
@@ -551,34 +551,34 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                       </span>
                     )}
                   </td>
-                  <td className="py-3.5 px-4 text-right">
+                  <td className="py-2 px-2.5 text-right">
                     <span
-                      className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium tabular-nums"
+                      className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
                       style={fillRateBadgeStyle(row.fillRate)}
                     >
                       {formatPercent(row.fillRate)}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.rentsCents} />
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.channelFeesCents} />
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums font-semibold text-[#1d1d1f]">
                     <Money cents={row.netRevenueCents} bold />
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.commissionCents} />
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.cityTaxCents} />
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.transferFeesCents} />
                   </td>
                   <td
-                    className={`py-3.5 px-4 text-right tabular-nums font-semibold ${
+                    className={`py-2 px-2.5 text-right tabular-nums font-semibold ${
                       row.cleaningProfitCents == null
                         ? "text-[#6e6e73]"
                         : row.cleaningProfitCents >= 0
@@ -590,11 +590,11 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                       ? `${row.cleaningProfitCents >= 0 ? "+" : ""}${formatEuros(row.cleaningProfitCents / 100)}`
                       : "—"}
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums text-[#1d1d1f]">
+                  <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.fixedRentCents} />
                   </td>
                   <td
-                    className={`py-3.5 pl-4 pr-5 text-right tabular-nums font-semibold ${
+                    className={`py-2 pl-2.5 pr-3 text-right tabular-nums font-semibold ${
                       row.profitCents == null ? "text-[#6e6e73]" : row.profitCents >= 0 ? "text-emerald-600" : "text-red-600"
                     }`}
                   >
@@ -605,48 +605,48 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
             </tbody>
             <tfoot>
               <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                <td className="py-3.5 pl-5 pr-4">
+                <td className="py-2 pl-3 pr-2.5">
                   Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
                 </td>
-                <td className="py-3.5 px-4 text-right">
+                <td className="py-2 px-2.5 text-right">
                   <span
-                    className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                    className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
                     style={fillRateBadgeStyle(totals.fillRate)}
                   >
                     {formatPercent(totals.fillRate)}
                   </span>
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.rentsCents} bold />
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.channelFeesCents} bold />
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.netRevenueCents} bold />
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.commissionCents} bold />
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.cityTaxCents} bold />
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.transferFeesCents} bold />
                 </td>
                 <td
-                  className={`py-3.5 px-4 text-right tabular-nums ${
+                  className={`py-2 px-2.5 text-right tabular-nums ${
                     totals.cleaningProfitCents >= 0 ? "text-emerald-600" : "text-red-600"
                   }`}
                 >
                   {totals.cleaningProfitCents >= 0 ? "+" : ""}
                   {formatEuros(totals.cleaningProfitCents / 100)}
                 </td>
-                <td className="py-3.5 px-4 text-right tabular-nums">
+                <td className="py-2 px-2.5 text-right tabular-nums">
                   <Money cents={totals.fixedRentCents} bold />
                 </td>
                 <td
-                  className={`py-3.5 pl-4 pr-5 text-right tabular-nums ${
+                  className={`py-2 pl-2.5 pr-3 text-right tabular-nums ${
                     totals.profitCents >= 0 ? "text-emerald-600" : "text-red-600"
                   }`}
                 >
