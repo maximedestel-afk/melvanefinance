@@ -1,5 +1,6 @@
 import { createClient } from "./supabase/server";
-import type { Profile, PropertyFinanceInfo } from "./types";
+import { createAdminClient } from "./supabase/admin";
+import type { Profile, PropertyFinanceInfo, RentType } from "./types";
 
 export async function getCurrentProfile(): Promise<Profile | null> {
   const supabase = await createClient();
@@ -65,4 +66,55 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
       bonusFdPercent: data?.bonus_fd_percent ?? null,
     };
   });
+}
+
+export interface OwnerPropertyInfo {
+  id: string;
+  reference: string;
+  name: string | null;
+  rentType: RentType | null;
+  commissionPercent: number | null;
+  extraVrplatformReferences: string[];
+}
+
+/** Biens appartenant au propriétaire dont l'email est fourni — utilisé par
+ * l'espace propriétaire. En service_role (comme les autres accès
+ * privilégiés de cette app) car les comptes propriétaires n'ont pas de ligne
+ * `profiles`/role admin sur laquelle s'appuierait le RLS de M.G.B. L'accès
+ * est déjà borné applicativement : seul l'email de l'utilisateur authentifié
+ * est utilisé pour filtrer. */
+export async function listOwnerProperties(email: string): Promise<OwnerPropertyInfo[]> {
+  const supabase = createAdminClient();
+
+  const [
+    { data: owners, error: ownersError },
+    { data: properties, error: propertiesError },
+    { data: settings, error: settingsError },
+  ] = await Promise.all([
+    supabase.from("property_owner").select("property_id, rent_type, commission_percent").ilike("email", email),
+    supabase.from("properties").select("id, reference, name"),
+    supabase.from("property_finance_settings").select("property_id, extra_vrplatform_references"),
+  ]);
+  if (ownersError) throw ownersError;
+  if (propertiesError) throw propertiesError;
+  if (settingsError) throw settingsError;
+
+  const propertyById = new Map((properties ?? []).map((p) => [p.id, p]));
+  const settingsByProperty = new Map((settings ?? []).map((s) => [s.property_id, s]));
+
+  return (owners ?? [])
+    .map((owner): OwnerPropertyInfo | null => {
+      const property = propertyById.get(owner.property_id);
+      if (!property) return null;
+      const setting = settingsByProperty.get(owner.property_id);
+      return {
+        id: property.id,
+        reference: property.reference,
+        name: property.name,
+        rentType: owner.rent_type ?? null,
+        commissionPercent: owner.commission_percent ?? null,
+        extraVrplatformReferences: setting?.extra_vrplatform_references ?? [],
+      };
+    })
+    .filter((p): p is OwnerPropertyInfo => p !== null);
 }

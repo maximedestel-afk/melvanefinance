@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
 import { signOut } from "@/lib/actions";
 import { DashboardClient } from "./DashboardClient";
+import { ProvisionOwnersButton } from "./ProvisionOwnersButton";
 
 export default async function DashboardPage() {
   const profile = await getCurrentProfile();
@@ -24,11 +25,14 @@ export default async function DashboardPage() {
           <h1 className="text-[26px] font-semibold tracking-tight text-[#1d1d1f]">Analyse financière</h1>
           <p className="text-[14px] text-[#6e6e73]">Portefeuille M.G.B — données VRPlatform</p>
         </div>
-        <form action={signOut}>
-          <button type="submit" className="btn-secondary btn-sm">
-            Se déconnecter
-          </button>
-        </form>
+        <div className="flex items-center gap-3">
+          <ProvisionOwnersButton />
+          <form action={signOut}>
+            <button type="submit" className="btn-secondary btn-sm">
+              Se déconnecter
+            </button>
+          </form>
+        </div>
       </header>
 
       <DashboardClient
