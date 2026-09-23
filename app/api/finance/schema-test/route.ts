@@ -9,16 +9,17 @@ export async function GET() {
 
   const supabase = createAdminClient();
 
-  const [providers, propertiesWithProvider, propertiesSample] = await Promise.all([
-    supabase.from("cleaning_providers").select("*").limit(5),
-    supabase.from("properties").select("id, reference, cleaning_provider_id").limit(5),
-    supabase.from("properties").select("*").limit(1),
+  const [ownerSample, settingsSample, joinTable] = await Promise.all([
+    supabase.from("property_owner").select("*").limit(1),
+    supabase.from("property_finance_settings").select("*").limit(1),
+    supabase.from("property_cleaning_providers").select("*").limit(5),
   ]);
 
   return NextResponse.json({
-    providers: { data: providers.data, error: providers.error?.message },
-    propertiesWithProvider: { data: propertiesWithProvider.data, error: propertiesWithProvider.error?.message },
-    propertiesSampleColumns: propertiesSample.data?.[0] ? Object.keys(propertiesSample.data[0]) : null,
-    propertiesSampleError: propertiesSample.error?.message,
+    propertyOwnerColumns: ownerSample.data?.[0] ? Object.keys(ownerSample.data[0]) : null,
+    propertyOwnerError: ownerSample.error?.message,
+    propertyFinanceSettingsColumns: settingsSample.data?.[0] ? Object.keys(settingsSample.data[0]) : null,
+    propertyFinanceSettingsError: settingsSample.error?.message,
+    joinTable: { data: joinTable.data, error: joinTable.error?.message },
   });
 }
