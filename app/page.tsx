@@ -39,6 +39,7 @@ export default async function DashboardPage() {
           tags: p.tags,
           rentType: p.rentType,
           cleaningProviderName: p.cleaningProviderName,
+          bonusFdPercent: p.bonusFdPercent,
         }))}
       />
     </div>

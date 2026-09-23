@@ -6,11 +6,12 @@ import { PropertyComparisonTable } from "./PropertyComparisonTable";
 import { PropertyOccupancyTable } from "./PropertyOccupancyTable";
 import { PropertyFinanceTable } from "./PropertyFinanceTable";
 import { PropertyCleaningTable } from "./PropertyCleaningTable";
+import { PropertyBonusTable } from "./PropertyBonusTable";
 import { TrendsSection } from "./TrendsSection";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type Tab = "overview" | "occupancy" | "finance" | "cleaning";
+type Tab = "overview" | "occupancy" | "finance" | "cleaning" | "bonus";
 
 export function DashboardClient({
   properties,
@@ -22,6 +23,7 @@ export function DashboardClient({
     tags: string[];
     rentType: RentType | null;
     cleaningProviderName: string | null;
+    bonusFdPercent: number | null;
   }[];
 }) {
   const currentYear = new Date().getFullYear();
@@ -93,6 +95,15 @@ export function DashboardClient({
         >
           Ménage
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("bonus")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "bonus" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Bonus Ménage
+        </button>
       </div>
 
       {tab === "overview" && (
@@ -153,6 +164,13 @@ export function DashboardClient({
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Ménage</h2>
           <PropertyCleaningTable properties={properties} />
+        </section>
+      )}
+
+      {tab === "bonus" && (
+        <section className="card space-y-3 p-5">
+          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Bonus Ménage</h2>
+          <PropertyBonusTable properties={properties} />
         </section>
       )}
     </div>

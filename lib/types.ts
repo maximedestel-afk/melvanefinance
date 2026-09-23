@@ -29,4 +29,7 @@ export interface PropertyFinanceInfo {
   /** Nom du prestataire de ménage assigné (table `cleaning_providers` de
    * M.G.B, liée via `property_data.cleaning_provider_id`). */
   cleaningProviderName: string | null;
+  /** Pourcentage de bonus ménage (`property_data.bonus_fd_percent`), utilisé
+   * pour le calcul Net Revenue × FD% / jours dans l'onglet Bonus Ménage. */
+  bonusFdPercent: number | null;
 }
