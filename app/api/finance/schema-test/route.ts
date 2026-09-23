@@ -27,5 +27,8 @@ export async function GET() {
     if (hit.length > 0) matches[table] = hit;
   }
 
-  return NextResponse.json({ matches }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json(
+    { supabaseUrl: supabaseUrl(), matches },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
