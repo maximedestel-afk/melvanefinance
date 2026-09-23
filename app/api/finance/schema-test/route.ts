@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
 import { supabaseUrl } from "@/lib/supabase/env";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -25,5 +27,5 @@ export async function GET() {
     ])
   );
 
-  return NextResponse.json({ columnsByTable });
+  return NextResponse.json({ columnsByTable }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
