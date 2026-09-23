@@ -110,6 +110,10 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [losses, setLosses] = useState<{ id: string; name: string; amountCents: number }[]>([]);
+  const [lossName, setLossName] = useState("");
+  const [lossAmount, setLossAmount] = useState("");
+
   const fdPercentByPropertyId = useMemo(
     () => new Map(allProperties.map((p) => [p.id, p.bonusFdPercent])),
     [allProperties]
@@ -185,6 +189,18 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
   }
 
+  function addLoss() {
+    const amount = Number.parseFloat(lossAmount.replace(",", "."));
+    if (!lossName.trim() || !Number.isFinite(amount) || amount <= 0) return;
+    setLosses((prev) => [...prev, { id: crypto.randomUUID(), name: lossName.trim(), amountCents: Math.round(amount * 100) }]);
+    setLossName("");
+    setLossAmount("");
+  }
+
+  function removeLoss(id: string) {
+    setLosses((prev) => prev.filter((l) => l.id !== id));
+  }
+
   const rows =
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
@@ -218,6 +234,9 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
         bonusCentsPerDay: sortedRows.reduce((sum, r) => sum + (r.bonusCentsPerDay ?? 0), 0),
       }
     : null;
+
+  const totalLossCents = losses.reduce((sum, l) => sum + l.amountCents, 0);
+  const adjustedBonusCentsPerDay = totals ? totals.bonusCentsPerDay - totalLossCents : null;
 
   return (
     <div className="space-y-4">
@@ -365,6 +384,61 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
 
       {sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
         <div className="space-y-2">
+          <div className="rounded-[10px] border border-black/10 bg-white p-3">
+            <span className="field-label">Perte de biens</span>
+            <div className="mt-1.5 flex flex-wrap items-end gap-2">
+              <div>
+                <label className="text-[12px] text-[#6e6e73]" htmlFor="loss-name">
+                  Bien (libre)
+                </label>
+                <input
+                  id="loss-name"
+                  type="text"
+                  value={lossName}
+                  onChange={(e) => setLossName(e.target.value)}
+                  placeholder="Référence ou nom"
+                  className="mt-0.5 block w-40 rounded-[8px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#6e6e73]" htmlFor="loss-amount">
+                  Montant à déduire (€)
+                </label>
+                <input
+                  id="loss-amount"
+                  type="text"
+                  inputMode="decimal"
+                  value={lossAmount}
+                  onChange={(e) => setLossAmount(e.target.value)}
+                  placeholder="0,00"
+                  className="mt-0.5 block w-32 rounded-[8px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                />
+              </div>
+              <button type="button" onClick={addLoss} className="btn-secondary btn-sm">
+                Ajouter
+              </button>
+            </div>
+            {losses.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {losses.map((loss) => (
+                  <li key={loss.id} className="flex items-center justify-between text-[13px] text-[#1d1d1f]">
+                    <span>
+                      {loss.name} <span className="text-[#6e6e73]">— {formatEuros(loss.amountCents / 100)}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeLoss(loss.id)}
+                      title="Retirer cette perte"
+                      className="text-[#c7c7cc] transition hover:text-red-600"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {removedRowIds.size > 0 && (
             <p className="text-[13px] text-[#6e6e73]">
               {removedRowIds.size} bien{removedRowIds.size !== 1 ? "s" : ""} masqué{removedRowIds.size !== 1 ? "s" : ""} de cette liste ·{" "}
@@ -447,6 +521,28 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                       <Money cents={totals.bonusCentsPerDay} bold />
                     </td>
                   </tr>
+                  {losses.length > 0 && (
+                    <>
+                      <tr className="border-t border-black/[0.08] text-[#1d1d1f]">
+                        <td className="py-2 pl-3 pr-2.5">
+                          Perte de biens ({losses.length})
+                        </td>
+                        <td className="py-2 px-2.5"></td>
+                        <td className="py-2 px-2.5"></td>
+                        <td className="py-2 pl-2.5 pr-3 text-right tabular-nums text-red-600">
+                          −{formatEuros(totalLossCents / 100)}
+                        </td>
+                      </tr>
+                      <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
+                        <td className="py-2 pl-3 pr-2.5">Total ajusté</td>
+                        <td className="py-2 px-2.5"></td>
+                        <td className="py-2 px-2.5"></td>
+                        <td className="py-2 pl-2.5 pr-3 text-right tabular-nums">
+                          <Money cents={adjustedBonusCentsPerDay} bold />
+                        </td>
+                      </tr>
+                    </>
+                  )}
                 </tfoot>
               </table>
             </div>
