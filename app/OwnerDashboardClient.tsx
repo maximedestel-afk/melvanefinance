@@ -33,8 +33,11 @@ function buildOwnerRows(
   const commissionPercent = property.commissionPercent ?? 0;
 
   const rows = visible.map((m) => {
+    const actualFillRatePercent = m.fillRate * 100;
+    // Règle de trois par mois : revenu à X% = revenu réel × (X / remplissage réel),
+    // ex. 2000€ à 50% de remplissage → 2000 × (85/50) = 3400€ à 85%.
     const targetRevenueCents =
-      avgNightlyRateCents != null ? avgNightlyRateCents * m.daysInMonth * (targetFillRate / 100) : 0;
+      actualFillRatePercent > 0 ? m.netRevenueCents * (targetFillRate / actualFillRatePercent) : 0;
     const expensesCents = 0;
     const commissionCents = targetRevenueCents * (commissionPercent / 100);
     const netRevenueCents = targetRevenueCents - commissionCents - expensesCents;
