@@ -13,22 +13,6 @@ interface Loss {
   amountCents: number;
 }
 
-// Persistée dans le navigateur : la liste des pertes de biens doit rester en
-// place tant qu'on ne les efface pas explicitement, y compris en changeant
-// d'onglet ou en rechargeant la page (le composant est démonté à chaque
-// changement d'onglet du tableau de bord).
-const LOSSES_STORAGE_KEY = "melvane-bonus-menage-pertes";
-
-function loadStoredLosses(): Loss[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(LOSSES_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Loss[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
   variable: "Variable",
@@ -132,18 +116,25 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [losses, setLosses] = useState<Loss[]>(loadStoredLosses);
+  const [losses, setLosses] = useState<Loss[]>([]);
   const [lossName, setLossName] = useState("");
   const [lossAmount, setLossAmount] = useState("");
+  const [lossError, setLossError] = useState<string | null>(null);
 
+  // Stockées côté Supabase (table bonus_menage_losses) — partagées entre
+  // utilisateurs/appareils, et le composant est démonté à chaque changement
+  // d'onglet du tableau de bord donc l'état local seul ne suffirait pas.
   useEffect(() => {
-    try {
-      window.localStorage.setItem(LOSSES_STORAGE_KEY, JSON.stringify(losses));
-    } catch {
-      // Stockage indisponible (navigation privée, quota...) — la saisie reste
-      // utilisable pour la session en cours, seule la persistance est perdue.
-    }
-  }, [losses]);
+    (async () => {
+      try {
+        const res = await fetch("/api/finance/bonus-losses");
+        const data = await res.json();
+        if (!data.error) setLosses(data.losses);
+      } catch {
+        // Ignoré — la boîte reste utilisable, juste vide au chargement.
+      }
+    })();
+  }, []);
 
   const fdPercentByPropertyId = useMemo(
     () => new Map(allProperties.map((p) => [p.id, p.bonusFdPercent])),
@@ -220,16 +211,43 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
   }
 
-  function addLoss() {
+  async function addLoss() {
     const amount = Number.parseFloat(lossAmount.replace(",", "."));
     if (!lossName.trim() || !Number.isFinite(amount) || amount <= 0) return;
-    setLosses((prev) => [...prev, { id: crypto.randomUUID(), name: lossName.trim(), amountCents: Math.round(amount * 100) }]);
-    setLossName("");
-    setLossAmount("");
+    setLossError(null);
+    try {
+      const res = await fetch("/api/finance/bonus-losses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: lossName.trim(), amountCents: Math.round(amount * 100) }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setLossError(data.error);
+        return;
+      }
+      setLosses((prev) => [...prev, data.loss]);
+      setLossName("");
+      setLossAmount("");
+    } catch {
+      setLossError("Impossible d'enregistrer cette perte.");
+    }
   }
 
-  function removeLoss(id: string) {
+  async function removeLoss(id: string) {
+    const previous = losses;
     setLosses((prev) => prev.filter((l) => l.id !== id));
+    try {
+      const res = await fetch(`/api/finance/bonus-losses?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) {
+        setLossError(data.error);
+        setLosses(previous);
+      }
+    } catch {
+      setLossError("Impossible de supprimer cette perte.");
+      setLosses(previous);
+    }
   }
 
   const rows =
@@ -460,6 +478,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
             ))}
           </ul>
         )}
+        {lossError && <p className="mt-1.5 text-[12px] text-red-600">{lossError}</p>}
       </div>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
