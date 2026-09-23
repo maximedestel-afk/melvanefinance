@@ -19,13 +19,13 @@ export async function GET() {
     cache: "no-store",
   });
   const schema = await res.json();
-  const tablesOfInterest = ["tasks", "profile_properties", "cleaning_providers", "profiles"];
-  const columnsByTable = Object.fromEntries(
-    tablesOfInterest.map((t) => [
-      t,
-      schema.definitions?.[t] ? Object.keys(schema.definitions[t].properties ?? {}) : null,
-    ])
-  );
+  const definitions = schema.definitions ?? {};
+  const matches: Record<string, string[]> = {};
+  for (const [table, def] of Object.entries(definitions)) {
+    const columns = Object.keys((def as { properties?: object }).properties ?? {});
+    const hit = columns.filter((c) => /clean|provider|prestataire/i.test(c));
+    if (hit.length > 0) matches[table] = hit;
+  }
 
-  return NextResponse.json({ columnsByTable }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json({ matches }, { headers: { "Cache-Control": "no-store, max-age=0" } });
 }
