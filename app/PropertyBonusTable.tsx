@@ -188,7 +188,8 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   const rows =
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
-      .map((r) => toRow(r, selectedMonths, fdPercentByPropertyId.get(r.propertyId) ?? null)) ?? null;
+      .map((r) => toRow(r, selectedMonths, fdPercentByPropertyId.get(r.propertyId) ?? null))
+      .filter((r) => r.fdPercent != null) ?? null;
 
   const sortedRows = rows
     ? [...rows].sort((a, b) => {
@@ -358,7 +359,11 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
-      {sortedRows && totals && !loading && !error && (
+      {sortedRows && sortedRows.length === 0 && !loading && !error && (
+        <p className="text-[13px] text-[#6e6e73]">Aucun bien sélectionné n&apos;a de FD% renseigné.</p>
+      )}
+
+      {sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
         <div className="space-y-2">
           {removedRowIds.size > 0 && (
             <p className="text-[13px] text-[#6e6e73]">
