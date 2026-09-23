@@ -185,11 +185,29 @@ export async function getGuestyListing(guestyListingId: string, fields?: string[
 
 /** Diagnostic temporaire — liste brute des réservations Guesty d'un listing,
  * pour comparer avec VRPlatform (à retirer une fois l'investigation finie). */
+interface GuestyReservationsPage {
+  results: { listingId: string; [key: string]: unknown }[];
+  count: number;
+}
+
+// Le paramètre filters= est ignoré par cet endpoint (renvoie un "Bookings
+// Report" figé sur tout le compte) — on pagine donc toutes les réservations
+// du compte et on filtre côté serveur sur listingId.
 export async function getGuestyReservationsRaw(guestyListingId: string): Promise<unknown> {
-  const url = new URL(`${API_BASE_URL}/reservations`);
-  url.searchParams.set("filters", JSON.stringify([{ field: "listingId", operator: "$eq", value: guestyListingId }]));
-  url.searchParams.set("limit", "100");
-  return guestyFetch<unknown>(url);
+  const limit = 100;
+  let skip = 0;
+  const matches: unknown[] = [];
+  let total = Infinity;
+  while (skip < total) {
+    const url = new URL(`${API_BASE_URL}/reservations`);
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("skip", String(skip));
+    const page = await guestyFetch<GuestyReservationsPage>(url);
+    total = page.count;
+    matches.push(...page.results.filter((r) => r.listingId === guestyListingId));
+    skip += limit;
+  }
+  return { total, matches };
 }
 
 export interface GuestyCustomFieldValue {
