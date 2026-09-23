@@ -205,7 +205,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
       .map((r) => toRow(r, selectedMonths, fdPercentByPropertyId.get(r.propertyId) ?? null))
-      .filter((r) => r.fdPercent != null) ?? null;
+      .filter((r) => r.fdPercent != null && r.bonusCentsPerDay !== 0) ?? null;
 
   const sortedRows = rows
     ? [...rows].sort((a, b) => {
@@ -434,7 +434,9 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && sortedRows.length === 0 && !loading && !error && (
-        <p className="text-[13px] text-[#6e6e73]">Aucun bien sélectionné n&apos;a de FD% renseigné.</p>
+        <p className="text-[13px] text-[#6e6e73]">
+          Aucun bien sélectionné n&apos;a de FD% renseigné ou de bonus non nul sur cette période.
+        </p>
       )}
 
       {sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
@@ -523,16 +525,16 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                   </tr>
                   {losses.length > 0 && (
                     <>
-                      <tr className="border-t border-black/[0.08] text-[#1d1d1f]">
-                        <td className="py-2 pl-3 pr-2.5">
-                          Perte de biens ({losses.length})
-                        </td>
-                        <td className="py-2 px-2.5"></td>
-                        <td className="py-2 px-2.5"></td>
-                        <td className="py-2 pl-2.5 pr-3 text-right tabular-nums text-red-600">
-                          −{formatEuros(totalLossCents / 100)}
-                        </td>
-                      </tr>
+                      {losses.map((loss) => (
+                        <tr key={loss.id} className="border-t border-black/[0.05] text-[#1d1d1f]">
+                          <td className="py-1.5 pl-3 pr-2.5 text-[#6e6e73]">Perte — {loss.name}</td>
+                          <td className="py-1.5 px-2.5"></td>
+                          <td className="py-1.5 px-2.5"></td>
+                          <td className="py-1.5 pl-2.5 pr-3 text-right tabular-nums text-red-600">
+                            −{formatEuros(loss.amountCents / 100)}
+                          </td>
+                        </tr>
+                      ))}
                       <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                         <td className="py-2 pl-3 pr-2.5">Total ajusté</td>
                         <td className="py-2 px-2.5"></td>
