@@ -38,6 +38,7 @@ export default async function DashboardPage() {
           name: p.name,
           tags: p.tags,
           rentType: p.rentType,
+          cleaningProviderName: p.cleaningProviderName,
         }))}
       />
     </div>

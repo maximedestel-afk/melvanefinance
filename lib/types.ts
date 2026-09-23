@@ -26,4 +26,7 @@ export interface PropertyFinanceInfo {
    * bien (voir l'onglet Finances de M.G.B). */
   extraVrplatformReferences: string[];
   tags: string[];
+  /** Nom du prestataire de ménage assigné (table `cleaning_providers` de
+   * M.G.B, liée via `property_data.cleaning_provider_id`). */
+  cleaningProviderName: string | null;
 }

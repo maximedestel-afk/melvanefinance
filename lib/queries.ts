@@ -28,21 +28,30 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
     { data: properties, error: propertiesError },
     { data: owners, error: ownersError },
     { data: settings, error: settingsError },
+    { data: propertyData, error: propertyDataError },
+    { data: cleaningProviders, error: cleaningProvidersError },
   ] = await Promise.all([
     supabase.from("properties").select("id, reference, name, tags").order("reference", { ascending: true }),
     supabase.from("property_owner").select("property_id, rent_type, rent_amount, charges_amount, commission_percent"),
     supabase.from("property_finance_settings").select("property_id, extra_vrplatform_references"),
+    supabase.from("property_data").select("property_id, cleaning_provider_id"),
+    supabase.from("cleaning_providers").select("id, name"),
   ]);
   if (propertiesError) throw propertiesError;
   if (ownersError) throw ownersError;
   if (settingsError) throw settingsError;
+  if (propertyDataError) throw propertyDataError;
+  if (cleaningProvidersError) throw cleaningProvidersError;
 
   const ownerByProperty = new Map((owners ?? []).map((o) => [o.property_id, o]));
   const settingsByProperty = new Map((settings ?? []).map((s) => [s.property_id, s]));
+  const propertyDataByProperty = new Map((propertyData ?? []).map((d) => [d.property_id, d]));
+  const providerNameById = new Map((cleaningProviders ?? []).map((p) => [p.id, p.name]));
 
   return (properties ?? []).map((property) => {
     const owner = ownerByProperty.get(property.id);
     const setting = settingsByProperty.get(property.id);
+    const data = propertyDataByProperty.get(property.id);
     return {
       id: property.id,
       reference: property.reference,
@@ -52,6 +61,7 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
       commissionPercent: owner?.commission_percent ?? null,
       extraVrplatformReferences: setting?.extra_vrplatform_references ?? [],
       tags: property.tags ?? [],
+      cleaningProviderName: data?.cleaning_provider_id ? (providerNameById.get(data.cleaning_provider_id) ?? null) : null,
     };
   });
 }

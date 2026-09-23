@@ -40,6 +40,7 @@ interface PropertyOption {
   reference: string;
   tags: string[];
   rentType: RentType | null;
+  cleaningProviderName: string | null;
 }
 
 interface CleaningApiResult {
@@ -167,12 +168,20 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
     [allProperties]
   );
+  const allCleaningProviders = useMemo(
+    () =>
+      Array.from(new Set(allProperties.map((p) => p.cleaningProviderName).filter((n): n is string => n != null))).sort(
+        (a, b) => a.localeCompare(b, "fr")
+      ),
+    [allProperties]
+  );
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
+  const [selectedCleaningProviders, setSelectedCleaningProviders] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [hiddenColumns, setHiddenColumns] = useState<Set<ColumnKey>>(new Set());
@@ -186,9 +195,12 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       const isSelected = selectedPropertyIds.includes(p.id);
       const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
       const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
-      return isSelected && matchesTags && matchesRentType;
+      const matchesCleaningProvider =
+        selectedCleaningProviders.length === 0 ||
+        (p.cleaningProviderName != null && selectedCleaningProviders.includes(p.cleaningProviderName));
+      return isSelected && matchesTags && matchesRentType && matchesCleaningProvider;
     });
-  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes]);
+  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes, selectedCleaningProviders]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
@@ -206,6 +218,10 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
 
   function toggleRentType(rentType: RentType) {
     setSelectedRentTypes((prev) => (prev.includes(rentType) ? prev.filter((t) => t !== rentType) : [...prev, rentType]));
+  }
+
+  function toggleCleaningProvider(name: string) {
+    setSelectedCleaningProviders((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]));
   }
 
   function toggleColumn(col: ColumnKey) {
@@ -466,6 +482,31 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
                   }`}
                 >
                   {tag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {allCleaningProviders.length > 0 && (
+        <div>
+          <span className="field-label">Prestataire de ménage</span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {allCleaningProviders.map((name) => {
+              const active = selectedCleaningProviders.includes(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => toggleCleaningProvider(name)}
+                  className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                    active
+                      ? "border-[#0071e3] bg-[#0071e3] text-white"
+                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
+                >
+                  {name}
                 </button>
               );
             })}

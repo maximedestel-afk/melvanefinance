@@ -15,7 +15,14 @@ type Tab = "overview" | "occupancy" | "finance" | "cleaning";
 export function DashboardClient({
   properties,
 }: {
-  properties: { id: string; reference: string; name: string | null; tags: string[]; rentType: RentType | null }[];
+  properties: {
+    id: string;
+    reference: string;
+    name: string | null;
+    tags: string[];
+    rentType: RentType | null;
+    cleaningProviderName: string | null;
+  }[];
 }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 3 + i);
