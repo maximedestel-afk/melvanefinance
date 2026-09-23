@@ -228,3 +228,54 @@ export async function getGuestyCleaningPrices(guestyListingId: string): Promise<
     standard: listing.prices?.cleaningFee ?? null,
   };
 }
+
+// --- TEMPORAIRE : diagnostic réservations Guesty vs VRPlatform (à retirer
+// après usage, voir app/api/admin/zeev-reservations-check/route.ts). ---
+
+export interface GuestyReservationSummary {
+  _id: string;
+  listingId: string;
+  status: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  confirmationCode: string | null;
+  guestName: string | null;
+  source: string | null;
+}
+
+interface GuestyReservationsPage {
+  results: Record<string, unknown>[];
+  count: number;
+}
+
+/** L'API Guesty /v1/reservations ignore silencieusement listingId= et
+ * filters= côté serveur (constaté empiriquement) : il faut paginer tout le
+ * compte et filtrer côté client. */
+export async function getAllGuestyReservations(): Promise<GuestyReservationSummary[]> {
+  const limit = 100;
+  let skip = 0;
+  let total = Infinity;
+  const all: GuestyReservationSummary[] = [];
+  while (skip < total) {
+    const url = new URL(`${API_BASE_URL}/reservations`);
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("skip", String(skip));
+    const page = await guestyFetch<GuestyReservationsPage>(url);
+    total = page.count;
+    for (const r of page.results) {
+      const guest = r.guest as Record<string, unknown> | undefined;
+      all.push({
+        _id: String(r._id),
+        listingId: String(r.listingId ?? ""),
+        status: (r.status as string) ?? null,
+        checkIn: (r.checkIn as string) ?? null,
+        checkOut: (r.checkOut as string) ?? null,
+        confirmationCode: (r.confirmationCode as string) ?? null,
+        guestName: (guest?.fullName as string) ?? null,
+        source: (r.source as string) ?? null,
+      });
+    }
+    skip += limit;
+  }
+  return all;
+}
