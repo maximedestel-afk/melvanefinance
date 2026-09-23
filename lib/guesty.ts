@@ -183,6 +183,15 @@ export async function getGuestyListing(guestyListingId: string, fields?: string[
   return guestyFetch<GuestyListing>(url);
 }
 
+/** Diagnostic temporaire — liste brute des réservations Guesty d'un listing,
+ * pour comparer avec VRPlatform (à retirer une fois l'investigation finie). */
+export async function getGuestyReservationsRaw(guestyListingId: string): Promise<unknown> {
+  const url = new URL(`${API_BASE_URL}/reservations`);
+  url.searchParams.set("listingId", guestyListingId);
+  url.searchParams.set("limit", "100");
+  return guestyFetch<unknown>(url);
+}
+
 export interface GuestyCustomFieldValue {
   fieldId: string;
   key: string;
