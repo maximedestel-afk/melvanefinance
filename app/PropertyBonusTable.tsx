@@ -1,11 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
 type SortKey = "reference" | "netRevenue" | "fdPercent" | "bonus";
+
+interface Loss {
+  id: string;
+  name: string;
+  amountCents: number;
+}
+
+// Persistée dans le navigateur : la liste des pertes de biens doit rester en
+// place tant qu'on ne les efface pas explicitement, y compris en changeant
+// d'onglet ou en rechargeant la page (le composant est démonté à chaque
+// changement d'onglet du tableau de bord).
+const LOSSES_STORAGE_KEY = "melvane-bonus-menage-pertes";
+
+function loadStoredLosses(): Loss[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOSSES_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Loss[]) : [];
+  } catch {
+    return [];
+  }
+}
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -110,9 +132,18 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [losses, setLosses] = useState<{ id: string; name: string; amountCents: number }[]>([]);
+  const [losses, setLosses] = useState<Loss[]>(loadStoredLosses);
   const [lossName, setLossName] = useState("");
   const [lossAmount, setLossAmount] = useState("");
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LOSSES_STORAGE_KEY, JSON.stringify(losses));
+    } catch {
+      // Stockage indisponible (navigation privée, quota...) — la saisie reste
+      // utilisable pour la session en cours, seule la persistance est perdue.
+    }
+  }, [losses]);
 
   const fdPercentByPropertyId = useMemo(
     () => new Map(allProperties.map((p) => [p.id, p.bonusFdPercent])),
