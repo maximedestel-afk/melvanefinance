@@ -187,7 +187,7 @@ export async function getGuestyListing(guestyListingId: string, fields?: string[
  * pour comparer avec VRPlatform (à retirer une fois l'investigation finie). */
 export async function getGuestyReservationsRaw(guestyListingId: string): Promise<unknown> {
   const url = new URL(`${API_BASE_URL}/reservations`);
-  url.searchParams.set("listingId", guestyListingId);
+  url.searchParams.set("filters", JSON.stringify([{ field: "listingId", operator: "$eq", value: guestyListingId }]));
   url.searchParams.set("limit", "100");
   return guestyFetch<unknown>(url);
 }
