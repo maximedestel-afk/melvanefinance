@@ -179,6 +179,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
+  const [showProperties, setShowProperties] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
   const [selectedCleaningProviders, setSelectedCleaningProviders] = useState<string[]>([]);
@@ -409,36 +410,52 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       <div>
         <div className="flex items-center justify-between">
           <span className="field-label">Biens</span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[12px] text-[#6e6e73]">
+              {selectedPropertyIds.length}/{allProperties.length}
+            </span>
             <button
               type="button"
-              onClick={() => setSelectedPropertyIds(allProperties.map((p) => p.id))}
+              onClick={() => setShowProperties((v) => !v)}
               className="text-[12px] font-medium text-[#0071e3] hover:underline"
             >
-              Tout sélectionner
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedPropertyIds([])}
-              className="text-[12px] font-medium text-[#0071e3] hover:underline"
-            >
-              Tout désélectionner
+              {showProperties ? "Masquer" : "Choisir les biens"}
             </button>
           </div>
         </div>
-        <div className="mt-1 grid max-h-56 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto rounded-[10px] border border-black/10 bg-white p-3 sm:grid-cols-3 md:grid-cols-4">
-          {allProperties.map((p) => (
-            <label key={p.id} className="flex items-center gap-1.5 text-[13px] text-[#1d1d1f]">
-              <input
-                type="checkbox"
-                checked={selectedPropertyIds.includes(p.id)}
-                onChange={() => toggleProperty(p.id)}
-                className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
-              />
-              {p.reference}
-            </label>
-          ))}
-        </div>
+        {showProperties && (
+          <>
+            <div className="mt-1 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPropertyIds(allProperties.map((p) => p.id))}
+                className="text-[12px] font-medium text-[#0071e3] hover:underline"
+              >
+                Tout sélectionner
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPropertyIds([])}
+                className="text-[12px] font-medium text-[#0071e3] hover:underline"
+              >
+                Tout désélectionner
+              </button>
+            </div>
+            <div className="mt-1 grid max-h-56 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto rounded-[10px] border border-black/10 bg-white p-3 sm:grid-cols-3 md:grid-cols-4">
+              {allProperties.map((p) => (
+                <label key={p.id} className="flex items-center gap-1.5 text-[13px] text-[#1d1d1f]">
+                  <input
+                    type="checkbox"
+                    checked={selectedPropertyIds.includes(p.id)}
+                    onChange={() => toggleProperty(p.id)}
+                    className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                  />
+                  {p.reference}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       <div>
