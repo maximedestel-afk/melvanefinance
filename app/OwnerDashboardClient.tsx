@@ -23,8 +23,12 @@ function buildOwnerRows(
   const visible = property.months.filter(
     (m) => selectedMonths.includes(m.month) && (m.netRevenueCents !== 0 || m.nightsBooked > 0)
   );
-  const totalRevenueCents = visible.reduce((sum, m) => sum + m.netRevenueCents, 0);
-  const totalNights = visible.reduce((sum, m) => sum + m.nightsBooked, 0);
+  // Le tarif moyen par nuit ne doit compter que les mois à revenu réel non nul —
+  // un mois à 0€ avec des nuits réservées (ex: séjour offert, erreur de facturation)
+  // ferait chuter artificiellement la moyenne.
+  const nightlyRateSource = visible.filter((m) => m.netRevenueCents !== 0);
+  const totalRevenueCents = nightlyRateSource.reduce((sum, m) => sum + m.netRevenueCents, 0);
+  const totalNights = nightlyRateSource.reduce((sum, m) => sum + m.nightsBooked, 0);
   const avgNightlyRateCents = totalNights > 0 ? totalRevenueCents / totalNights : null;
   const commissionPercent = property.commissionPercent ?? 0;
 
