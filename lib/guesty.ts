@@ -229,15 +229,79 @@ export async function getGuestyCleaningPrices(guestyListingId: string): Promise<
   };
 }
 
-// TEMPORAIRE — diagnostic brut du calendrier Guesty d'un listing (à retirer
-// après usage, voir app/api/admin/guesty-calendar-test/route.ts). Endpoint
-// /v1/availability-pricing/api/calendar/listings/{id}, les endpoints
-// /listings/:id/calendar historiques étant dépréciés depuis 2022.
-export async function getGuestyCalendarRaw(guestyListingId: string, startDate: string, endDate: string): Promise<unknown> {
+export type GuestyCalendarDayStatus = "available" | "occupied" | "blocked";
+
+export interface GuestyCalendarDay {
+  date: string;
+  status: GuestyCalendarDayStatus;
+  guestName: string | null;
+  confirmationCode: string | null;
+  source: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+}
+
+interface RawCalendarBlockRef {
+  reservationId?: string;
+  reservation?: {
+    confirmationCode?: string;
+    source?: string;
+    guest?: { fullName?: string };
+    checkIn?: string;
+    checkOut?: string;
+  };
+}
+
+interface RawCalendarDay {
+  date: string;
+  status: string;
+  blockRefs: RawCalendarBlockRef[];
+}
+
+interface RawCalendarResponse {
+  data: { days: RawCalendarDay[] };
+}
+
+/** Calendrier jour par jour d'un listing Guesty (disponible / occupé / bloqué
+ * manuellement), utilisé par la vue calendrier de l'espace propriétaire.
+ * Endpoint /v1/availability-pricing/api/calendar/listings/{id} — les
+ * endpoints /listings/:id/calendar historiques sont dépréciés depuis 2022.
+ * Un jour est "occupé" s'il référence une réservation, "bloqué" si son statut
+ * n'est ni "available" ni lié à une réservation (blocage manuel côté PMS). */
+export async function getGuestyCalendarMonth(
+  guestyListingId: string,
+  startDate: string,
+  endDate: string
+): Promise<GuestyCalendarDay[]> {
   const url = new URL(`https://open-api.guesty.com/v1/availability-pricing/api/calendar/listings/${guestyListingId}`);
   url.searchParams.set("startDate", startDate);
   url.searchParams.set("endDate", endDate);
-  return guestyFetch<unknown>(url);
+  const res = await guestyFetch<RawCalendarResponse>(url);
+
+  return res.data.days.map((day) => {
+    const reservationBlock = day.blockRefs.find((b) => b.reservationId && b.reservation);
+    if (reservationBlock?.reservation) {
+      const r = reservationBlock.reservation;
+      return {
+        date: day.date,
+        status: "occupied",
+        guestName: r.guest?.fullName ?? null,
+        confirmationCode: r.confirmationCode ?? null,
+        source: r.source ?? null,
+        checkIn: r.checkIn ?? null,
+        checkOut: r.checkOut ?? null,
+      };
+    }
+    return {
+      date: day.date,
+      status: day.status === "available" ? "available" : "blocked",
+      guestName: null,
+      confirmationCode: null,
+      source: null,
+      checkIn: null,
+      checkOut: null,
+    };
+  });
 }
 
 // --- TEMPORAIRE : diagnostic réservations Guesty vs VRPlatform (à retirer

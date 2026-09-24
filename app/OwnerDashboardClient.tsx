@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
+import { OwnerCalendarModal } from "./OwnerCalendarModal";
 
 interface OwnerRow {
   month: number;
@@ -84,6 +85,7 @@ function PropertyOwnerCard({
     [property, selectedMonths, targetFillRate, targetPriceCents]
   );
   const commissionPercent = property.commissionPercent;
+  const [openMonth, setOpenMonth] = useState<number | null>(null);
 
   return (
     <div className="card space-y-3 p-5">
@@ -140,8 +142,13 @@ function PropertyOwnerCard({
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr key={row.month} className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]">
-                    <td className="py-2.5 pl-4 pr-2.5 font-medium text-[#1d1d1f]">
+                  <tr
+                    key={row.month}
+                    onClick={() => setOpenMonth(row.month)}
+                    title="Voir le calendrier du mois"
+                    className="cursor-pointer border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.03]"
+                  >
+                    <td className="py-2.5 pl-4 pr-2.5 font-medium text-[#1d1d1f] underline decoration-black/15 underline-offset-2">
                       {MONTH_LABELS_SHORT[row.month - 1]} {year}
                     </td>
                     <td className="py-2.5 px-2.5 text-right tabular-nums text-[#1d1d1f]">
@@ -168,6 +175,16 @@ function PropertyOwnerCard({
             </table>
           </div>
         </div>
+      )}
+
+      {openMonth != null && (
+        <OwnerCalendarModal
+          propertyId={property.propertyId}
+          propertyLabel={property.reference}
+          year={year}
+          month={openMonth}
+          onClose={() => setOpenMonth(null)}
+        />
       )}
     </div>
   );

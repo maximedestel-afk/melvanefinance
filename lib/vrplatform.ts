@@ -289,6 +289,15 @@ async function addListingMonthlyFinancials(
   }
 }
 
+/** ID Guesty natif du listing VRPlatform correspondant à une référence de
+ * bien — utilisé par la vue calendrier de l'espace propriétaire pour
+ * interroger l'API Guesty directement. */
+export async function getGuestyListingIdForReference(reference: string): Promise<string | null> {
+  const listings = await listVrPlatformListings();
+  const match = listings.find((l) => l.name.trim().toLowerCase() === reference.trim().toLowerCase());
+  return match?.uniqueRef ?? null;
+}
+
 export interface PortfolioProperty {
   propertyId: string;
   reference: string;
