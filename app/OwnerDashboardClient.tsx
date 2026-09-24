@@ -18,7 +18,8 @@ interface OwnerRow {
 function buildOwnerRows(
   property: PropertyMonthlyResult,
   selectedMonths: number[],
-  targetFillRate: number
+  targetFillRate: number,
+  targetPriceCents: number | null
 ): { rows: OwnerRow[]; avgNightlyRateCents: number | null } {
   const visible = property.months.filter(
     (m) => selectedMonths.includes(m.month) && (m.netRevenueCents !== 0 || m.nightsBooked > 0)
@@ -33,11 +34,16 @@ function buildOwnerRows(
   const commissionPercent = property.commissionPercent ?? 0;
 
   const rows = visible.map((m) => {
-    const actualFillRatePercent = m.fillRate * 100;
-    // Règle de trois par mois : revenu à X% = revenu réel × (X / remplissage réel),
-    // ex. 2000€ à 50% de remplissage → 2000 × (85/50) = 3400€ à 85%.
-    const targetRevenueCents =
-      actualFillRatePercent > 0 ? m.netRevenueCents * (targetFillRate / actualFillRatePercent) : 0;
+    let targetRevenueCents: number;
+    if (targetPriceCents != null) {
+      // Prix cible à la nuit fixé manuellement : revenu à X% = prix × jours du mois × X%.
+      targetRevenueCents = targetPriceCents * m.daysInMonth * (targetFillRate / 100);
+    } else {
+      const actualFillRatePercent = m.fillRate * 100;
+      // Règle de trois par mois : revenu à X% = revenu réel × (X / remplissage réel),
+      // ex. 2000€ à 50% de remplissage → 2000 × (85/50) = 3400€ à 85%.
+      targetRevenueCents = actualFillRatePercent > 0 ? m.netRevenueCents * (targetFillRate / actualFillRatePercent) : 0;
+    }
     const expensesCents = 0;
     const commissionCents = targetRevenueCents * (commissionPercent / 100);
     const netRevenueCents = targetRevenueCents - commissionCents - expensesCents;
@@ -66,19 +72,49 @@ function PropertyOwnerCard({
   selectedMonths: number[];
   targetFillRate: number;
 }) {
+  const [useTargetPrice, setUseTargetPrice] = useState(false);
+  const [targetPriceInput, setTargetPriceInput] = useState("");
+  const targetPriceCents =
+    useTargetPrice && targetPriceInput !== "" && Number.isFinite(Number(targetPriceInput))
+      ? Math.round(Number(targetPriceInput) * 100)
+      : null;
+
   const { rows, avgNightlyRateCents } = useMemo(
-    () => buildOwnerRows(property, selectedMonths, targetFillRate),
-    [property, selectedMonths, targetFillRate]
+    () => buildOwnerRows(property, selectedMonths, targetFillRate, targetPriceCents),
+    [property, selectedMonths, targetFillRate, targetPriceCents]
   );
   const commissionPercent = property.commissionPercent;
 
   return (
     <div className="card space-y-3 p-5">
-      <div>
-        <h2 className="text-[16px] font-semibold text-[#1d1d1f]">{property.reference}</h2>
-        {avgNightlyRateCents != null && (
-          <p className="text-[13px] text-[#6e6e73]">Tarif moyen par nuit ≈ {formatEuros(avgNightlyRateCents / 100)}</p>
-        )}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-semibold text-[#1d1d1f]">{property.reference}</h2>
+          {avgNightlyRateCents != null && (
+            <p className="text-[13px] text-[#6e6e73]">Tarif moyen par nuit ≈ {formatEuros(avgNightlyRateCents / 100)}</p>
+          )}
+        </div>
+
+        <label className="flex items-center gap-1.5 text-[13px] text-[#1d1d1f]">
+          <input
+            type="checkbox"
+            checked={useTargetPrice}
+            onChange={(e) => setUseTargetPrice(e.target.checked)}
+            className="h-4 w-4 rounded border-black/20"
+          />
+          Prix cible à la nuit
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={targetPriceInput}
+            onChange={(e) => setTargetPriceInput(e.target.value)}
+            disabled={!useTargetPrice}
+            placeholder="€"
+            className="w-24 rounded-[10px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15 disabled:bg-black/[0.03] disabled:text-[#86868b]"
+          />
+          <span className="text-[#6e6e73]">€</span>
+        </label>
       </div>
 
       {rows.length === 0 ? (
