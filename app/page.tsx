@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
 import { signOut } from "@/lib/actions";
@@ -26,6 +27,9 @@ export default async function DashboardPage() {
           <p className="text-[14px] text-[#6e6e73]">Portefeuille M.G.B — données VRPlatform</p>
         </div>
         <div className="flex items-center gap-3">
+          <Link href="/owner" className="btn-secondary btn-sm">
+            Espace propriétaire
+          </Link>
           <ProvisionOwnersButton />
           <form action={signOut}>
             <button type="submit" className="btn-secondary btn-sm">
