@@ -43,9 +43,16 @@ export async function GET() {
 
 // Crée un compte Supabase Auth (mot de passe par défaut "Melvane") pour
 // chaque email distinct de property_owner qui n'en a pas encore — les
-// comptes propriétaires n'ont pas de ligne `profiles`, seul leur email les
-// identifie côté espace propriétaire (/owner). Idempotent : ignore les
-// emails déjà provisionnés.
+// comptes propriétaires ne doivent avoir accès qu'à l'espace propriétaire
+// (/owner), jamais à M.G.B. Idempotent : ignore les emails déjà provisionnés.
+//
+// M.G.B a un mécanisme (probablement un trigger sur auth.users) qui crée
+// automatiquement une ligne `profiles` en rôle admin pour tout nouvel
+// utilisateur Auth — ça a donné un accès admin M.G.B involontaire aux
+// premiers comptes propriétaires créés ici. Comme /owner ne lit jamais
+// `profiles` (seulement l'email dans property_owner), on supprime
+// systématiquement toute ligne `profiles` correspondant à un email
+// propriétaire après provisioning, pour neutraliser ce trigger.
 export async function POST() {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -78,5 +85,18 @@ export async function POST() {
     }
   }
 
-  return NextResponse.json({ totalEmails: emails.length, created, skipped, errors });
+  const { data: removedProfiles, error: cleanupError } = await supabase
+    .from("profiles")
+    .delete()
+    .in("email", emails)
+    .select("email");
+  if (cleanupError) errors.push(`Nettoyage profils : ${cleanupError.message}`);
+
+  return NextResponse.json({
+    totalEmails: emails.length,
+    created,
+    skipped,
+    profilesRemoved: removedProfiles?.length ?? 0,
+    errors,
+  });
 }
