@@ -229,6 +229,17 @@ export async function getGuestyCleaningPrices(guestyListingId: string): Promise<
   };
 }
 
+// TEMPORAIRE — diagnostic brut du calendrier Guesty d'un listing (à retirer
+// après usage, voir app/api/admin/guesty-calendar-test/route.ts). Endpoint
+// /v1/availability-pricing/api/calendar/listings/{id}, les endpoints
+// /listings/:id/calendar historiques étant dépréciés depuis 2022.
+export async function getGuestyCalendarRaw(guestyListingId: string, startDate: string, endDate: string): Promise<unknown> {
+  const url = new URL(`https://open-api.guesty.com/v1/availability-pricing/api/calendar/listings/${guestyListingId}`);
+  url.searchParams.set("startDate", startDate);
+  url.searchParams.set("endDate", endDate);
+  return guestyFetch<unknown>(url);
+}
+
 // --- TEMPORAIRE : diagnostic réservations Guesty vs VRPlatform (à retirer
 // après usage, voir app/api/admin/zeev-reservations-check/route.ts). ---
 
