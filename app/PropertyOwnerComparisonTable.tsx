@@ -25,9 +25,13 @@ interface PropertyOption {
 }
 
 interface ComparisonRow {
+  key: string;
+  /** Référence du bien en mode agrégé, libellé du mois en mode détail. */
+  label: string;
+  /** null en mode agrégé (une ligne par bien) ; numéro du mois en mode
+   * détail (une ligne par mois, quand un seul bien est sélectionné). */
+  month: number | null;
   propertyId: string;
-  reference: string;
-  rentType: RentType | null;
   notFoundReferences: string[];
   hasReservation: boolean;
   fillRate: number;
@@ -39,35 +43,66 @@ interface ComparisonRow {
   excessCents: number | null;
 }
 
-function toRow(property: PropertyMonthlyResult, rentType: RentType | null, selectedMonths: number[]): ComparisonRow {
-  const selected = property.months.filter((m) => selectedMonths.includes(m.month));
-  const hasReservation = selected.some((m) => m.nightsBooked > 0);
-  const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
-  // Net Commissionable Revenue (VRPlatform) = Rents − Channel Fees.
-  const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
-  const commissionPercent = property.commissionPercent;
+function computeFigures(rentType: RentType | null, commissionPercent: number | null, netCommissionableRevenueCents: number, fixedRentAmountCents: number | null, months: number) {
   const commissionCents = Math.round((netCommissionableRevenueCents * (commissionPercent ?? 0)) / 100);
   const netRevenueCents = netCommissionableRevenueCents - commissionCents;
   const loyerCents =
-    rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && property.fixedRentAmountCents != null
-      ? property.fixedRentAmountCents * selectedMonths.length
+    rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && fixedRentAmountCents != null
+      ? fixedRentAmountCents * months
       : null;
   const excessCents = loyerCents != null ? netRevenueCents - loyerCents : null;
+  return { commissionCents, netRevenueCents, loyerCents, excessCents };
+}
+
+/** Une ligne par bien, agrégée sur tous les mois sélectionnés. */
+function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | null, selectedMonths: number[]): ComparisonRow {
+  const selected = property.months.filter((m) => selectedMonths.includes(m.month));
+  const hasReservation = selected.some((m) => m.nightsBooked > 0);
+  const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
+  const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
+  const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, selectedMonths.length);
 
   return {
+    key: property.propertyId,
+    label: property.reference,
+    month: null,
     propertyId: property.propertyId,
-    reference: property.reference,
-    rentType,
     notFoundReferences: property.notFoundReferences,
     hasReservation,
     fillRate,
     netCommissionableRevenueCents,
-    commissionPercent,
-    commissionCents,
-    netRevenueCents,
-    loyerCents,
-    excessCents,
+    commissionPercent: property.commissionPercent,
+    ...figures,
   };
+}
+
+/** Une ligne par mois, pour un seul bien sélectionné — mêmes colonnes que
+ * le mode agrégé mais détaillées mois par mois. */
+function toMonthlyRows(
+  property: PropertyMonthlyResult,
+  rentType: RentType | null,
+  selectedMonths: number[],
+  year: number
+): ComparisonRow[] {
+  return property.months
+    .filter((m) => selectedMonths.includes(m.month))
+    .map((m): ComparisonRow => {
+      const netCommissionableRevenueCents = m.netRevenueCents;
+      const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, 1);
+      return {
+        key: `${property.propertyId}-${m.month}`,
+        label: `${MONTH_LABELS_SHORT[m.month - 1]} ${year}`,
+        month: m.month,
+        propertyId: property.propertyId,
+        notFoundReferences: property.notFoundReferences,
+        hasReservation: m.nightsBooked > 0,
+        fillRate: m.fillRate,
+        netCommissionableRevenueCents,
+        commissionPercent: property.commissionPercent,
+        ...figures,
+      };
+    })
+    .sort((a, b) => (a.month ?? 0) - (b.month ?? 0));
 }
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
@@ -199,11 +234,18 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
     }
   }
 
-  const rows =
-    results
-      ?.filter((r) => !removedRowIds.has(r.propertyId))
-      .map((r) => toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths))
-      .filter((r) => r.hasReservation) ?? null;
+  const isSingleProperty = results != null && results.length === 1;
+
+  const rows = results
+    ? isSingleProperty
+      ? toMonthlyRows(results[0], rentTypeByPropertyId.get(results[0].propertyId) ?? null, selectedMonths, year).filter(
+          (r) => r.hasReservation
+        )
+      : results
+          .filter((r) => !removedRowIds.has(r.propertyId))
+          .map((r) => toAggregateRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths))
+          .filter((r) => r.hasReservation)
+    : null;
 
   function removeRow(propertyId: string) {
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
@@ -214,7 +256,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
         let cmp: number;
         switch (sortKey) {
           case "reference":
-            cmp = a.reference.localeCompare(b.reference, "fr");
+            cmp = a.month != null && b.month != null ? a.month - b.month : a.label.localeCompare(b.label, "fr");
             break;
           case "fillRate":
             cmp = a.fillRate - b.fillRate;
@@ -422,7 +464,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                 <thead>
                   <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                     <SortHeader
-                      label="Bien"
+                      label={isSingleProperty ? "Mois" : "Bien"}
                       sortKey="reference"
                       activeKey={sortKey}
                       direction={direction}
@@ -457,18 +499,20 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                 </thead>
                 <tbody>
                   {sortedRows.map((row) => (
-                    <tr key={row.propertyId} className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]">
+                    <tr key={row.key} className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]">
                       <td className="py-2 pl-3 pr-2.5 text-[#1d1d1f]">
-                        <button
-                          type="button"
-                          onClick={() => removeRow(row.propertyId)}
-                          title="Retirer ce bien de la liste"
-                          className="mr-1.5 text-[#c7c7cc] transition hover:text-red-600"
-                        >
-                          ✕
-                        </button>
-                        <span className="font-medium">{row.reference}</span>
-                        {row.notFoundReferences.length > 0 && (
+                        {row.month == null && (
+                          <button
+                            type="button"
+                            onClick={() => removeRow(row.propertyId)}
+                            title="Retirer ce bien de la liste"
+                            className="mr-1.5 text-[#c7c7cc] transition hover:text-red-600"
+                          >
+                            ✕
+                          </button>
+                        )}
+                        <span className="font-medium">{row.label}</span>
+                        {row.month == null && row.notFoundReferences.length > 0 && (
                           <span
                             title={`Référence VRPlatform introuvable : ${row.notFoundReferences.join(", ")}`}
                             className="ml-1.5 text-amber-600"
@@ -513,7 +557,9 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                 <tfoot>
                   <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                     <td className="py-2 pl-3 pr-2.5">
-                      Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
+                      {isSingleProperty
+                        ? `Total (${sortedRows.length} mois)`
+                        : `Total (${sortedRows.length} bien${sortedRows.length !== 1 ? "s" : ""})`}
                     </td>
                     <td className="py-2 px-2.5 text-right">
                       <span
