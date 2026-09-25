@@ -29,6 +29,7 @@ interface ComparisonRow {
   reference: string;
   rentType: RentType | null;
   notFoundReferences: string[];
+  hasReservation: boolean;
   fillRate: number;
   netCommissionableRevenueCents: number;
   commissionPercent: number | null;
@@ -40,6 +41,7 @@ interface ComparisonRow {
 
 function toRow(property: PropertyMonthlyResult, rentType: RentType | null, selectedMonths: number[]): ComparisonRow {
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
+  const hasReservation = selected.some((m) => m.nightsBooked > 0);
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
   // Net Commissionable Revenue (VRPlatform) = Rents − Channel Fees.
   const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
@@ -57,6 +59,7 @@ function toRow(property: PropertyMonthlyResult, rentType: RentType | null, selec
     reference: property.reference,
     rentType,
     notFoundReferences: property.notFoundReferences,
+    hasReservation,
     fillRate,
     netCommissionableRevenueCents,
     commissionPercent,
@@ -199,7 +202,8 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
   const rows =
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
-      .map((r) => toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths)) ?? null;
+      .map((r) => toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths))
+      .filter((r) => r.hasReservation) ?? null;
 
   function removeRow(propertyId: string) {
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
