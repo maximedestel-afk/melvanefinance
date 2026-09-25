@@ -234,7 +234,8 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
     }
   }
 
-  const isSingleProperty = results != null && results.length === 1;
+  const singlePropertyReference = results != null && results.length === 1 ? results[0].reference : null;
+  const isSingleProperty = singlePropertyReference != null;
 
   const rows = results
     ? isSingleProperty
@@ -444,12 +445,22 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
       <p className="text-[13px] text-[#6e6e73]">
         {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
         {matchingProperties.length !== 1 ? "s" : ""}
+        {matchingProperties.length === 1
+          ? " — un seul bien : le tableau passera en détail mois par mois."
+          : " — plusieurs biens : le tableau affiche une ligne agrégée par bien."}
       </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && totals && !loading && !error && (
         <div className="space-y-2">
+          {isSingleProperty ? (
+            <p className="inline-block rounded-full bg-[#0071e3]/10 px-3 py-1 text-[12px] font-medium text-[#0071e3]">
+              Vue détaillée mois par mois — {singlePropertyReference}
+            </p>
+          ) : (
+            <p className="text-[12px] font-medium text-[#6e6e73]">Vue agrégée — une ligne par bien</p>
+          )}
           {removedRowIds.size > 0 && (
             <p className="text-[13px] text-[#6e6e73]">
               {removedRowIds.size} bien{removedRowIds.size !== 1 ? "s" : ""} masqué{removedRowIds.size !== 1 ? "s" : ""} de cette liste ·{" "}
