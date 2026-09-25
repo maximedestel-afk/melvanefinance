@@ -201,6 +201,68 @@ async function addListingTransferFees(
   }
 }
 
+// Comptes des sections "Operating & Maintenance Expenses", "Adjustments" et
+// "Processing Fees" de la configuration du owner statement VRPlatform
+// (GET /statements/layouts, "Default Statement Layout" de l'équipe) — pas de
+// correspondance fiable par nom de compte (ex: deux comptes "Payout
+// Adjustments" distincts), d'où la liste d'IDs en dur plutôt qu'une
+// résolution par nom comme pour Transfer Fees Revenues.
+const EXPENSE_ACCOUNT_IDS = [
+  // Operating & Maintenance Expenses
+  "562002c2-4ee2-49ab-98ad-78760e928a76", // Maintenance
+  "4c2860e2-0acc-4b22-b665-38005b8cd610", // Housekeeping
+  "3daed64f-aad5-4286-b38d-b11eebe2bf18", // Supplies
+  "9a650331-1cc2-40e0-a6e9-462ee6c70d5d", // Insurance
+  "988fd364-33c5-4c4a-896e-80a42e7a768e", // Delivery
+  "7dfff8bb-3be8-4498-8ba5-8d2798c91815", // Waiting Time
+  "7c08b758-4760-4300-aa1f-8af38f7f8b4f", // Expense Reimbursement Revenue
+  "26c88bed-c6e3-4fd6-a422-2cea05ec784c", // Expense Reimbursement Revenue - Supplies
+  "9927d0a7-fb96-48bb-a585-9359b2b6e36e", // Expense Reimbursement Revenue - Maintenance
+  "dea04c5a-824f-4dc6-80f9-eee706a7de3a", // Expense Markup Revenue
+  // Adjustments
+  "8aa7d442-e286-43ce-a8db-161c3cf4ae7a", // Payout Adjustments (expense)
+  "e2f66f13-dc2a-4f0c-a536-29fa20427fff", // Payout Adjustments (revenue)
+  "6486ff97-60a2-4bed-93c8-eae682a5939e", // Co-Host Payouts
+  "891ffc56-15ee-4ac7-9ace-b670e31361dd", // Guest Refund
+  "a9c0d5aa-0f0d-492d-a49a-2d86972baa63", // VRBO comm share Expenses
+  "b14d1581-0ca4-4a5d-8a61-d8161c15f38a", // VRBO comm share Revenues
+  // Processing Fees
+  "eaedcd1b-99d7-4532-96eb-d2144dc7b9ca", // Transfer Fees Expenses
+  "53bfbbf0-7432-4521-a275-86abee55b5b3", // Transfer Fees Revenues
+];
+
+/** Cumule, par mois, les montants signés des comptes EXPENSE_ACCOUNT_IDS pour
+ * un listing sur une année. Signé (pas de valeur absolue ici) : le groupe
+ * mélange des comptes de dépense et de remboursement/markup (classification
+ * revenue) qui doivent se nette entre eux avant qu'on prenne la valeur
+ * absolue du total — sinon un remboursement s'additionnerait à la dépense
+ * qu'il compense au lieu de l'annuler. */
+async function getListingExpenseCentsByMonth(listingId: string, year: number): Promise<number[]> {
+  const totals = new Array(12).fill(0) as number[];
+  try {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformJournalEntriesResponse>("/reports/journal-entries", {
+        accountIds: EXPENSE_ACCOUNT_IDS.join(","),
+        listingIds: listingId,
+        date: String(year),
+        status: "active",
+        limit: "250",
+        page: String(page),
+      });
+      for (const entry of res.data) {
+        const month = Number(entry.txnAt.slice(5, 7));
+        if (month >= 1 && month <= 12) totals[month - 1] += entry.centTotal;
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+  return totals;
+}
+
 export interface MonthlyFinance {
   /** 1 (janvier) à 12 (décembre). */
   month: number;
@@ -208,6 +270,10 @@ export interface MonthlyFinance {
   channelFeesCents: number;
   cityTaxCents: number;
   transferFeesCents: number;
+  /** Somme des sections "Operating & Maintenance Expenses", "Adjustments" et
+   * "Processing Fees" de la configuration du owner statement VRPlatform
+   * (voir EXPENSE_ACCOUNT_IDS) — 0 si non demandé via includeExpenses. */
+  expensesCents: number;
   netRevenueCents: number;
   nightsBooked: number;
   daysInMonth: number;
@@ -233,6 +299,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     channelFeesCents: 0,
     cityTaxCents: 0,
     transferFeesCents: 0,
+    expensesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
     daysInMonth: daysInMonth(year, i + 1),
@@ -339,10 +406,14 @@ export interface PropertyMonthlyResult {
 /** Rents, Channel Fees, Net Commissionable Revenue et taux de remplissage de
  * chaque mois d'une année, pour chaque bien du portefeuille — un seul appel
  * VRPlatform pour la liste des listings et le mapping comptable, puis un
- * calcul par bien (en parallèle) sur ses listings résolus. */
+ * calcul par bien (en parallèle) sur ses listings résolus. `includeExpenses`
+ * ajoute un appel /reports/journal-entries supplémentaire par listing (voir
+ * EXPENSE_ACCOUNT_IDS) — désactivé par défaut pour ne pas ralentir les
+ * onglets qui n'en ont pas besoin. */
 export async function getPortfolioMonthlyFinancials(
   properties: PortfolioProperty[],
-  year: number
+  year: number,
+  options: { includeExpenses?: boolean } = {}
 ): Promise<PropertyMonthlyResult[]> {
   const [listings, accountByLineType, transferFeesAccountId] = await Promise.all([
     listVrPlatformListings(),
@@ -356,9 +427,17 @@ export async function getPortfolioMonthlyFinancials(
       const references = [property.reference, ...property.extraVrplatformReferences];
       const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
       const months = emptyMonths(year);
+      const rawExpenseCentsByMonth = new Array(12).fill(0) as number[];
       for (const listingId of listingIds) {
         await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
         if (transferFeesAccountId) await addListingTransferFees(months, listingId, year, transferFeesAccountId);
+        if (options.includeExpenses) {
+          const listingExpenses = await getListingExpenseCentsByMonth(listingId, year);
+          for (let i = 0; i < 12; i++) rawExpenseCentsByMonth[i] += listingExpenses[i];
+        }
+      }
+      if (options.includeExpenses) {
+        for (let i = 0; i < 12; i++) months[i].expensesCents = Math.abs(rawExpenseCentsByMonth[i]);
       }
       return {
         propertyId: property.propertyId,

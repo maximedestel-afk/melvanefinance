@@ -20,6 +20,7 @@ export async function GET(request: Request) {
 
   const propertyIdsParam = searchParams.get("propertyIds");
   const propertyIds = propertyIdsParam ? new Set(propertyIdsParam.split(",")) : null;
+  const includeExpenses = searchParams.get("includeExpenses") === "1";
 
   try {
     const allProperties = await listPropertiesForFinance();
@@ -37,7 +38,8 @@ export async function GET(request: Request) {
         commissionPercent: p.commissionPercent,
         extraVrplatformReferences: p.extraVrplatformReferences,
       })),
-      year
+      year,
+      { includeExpenses }
     );
     return NextResponse.json({ year, properties: results });
   } catch (err) {

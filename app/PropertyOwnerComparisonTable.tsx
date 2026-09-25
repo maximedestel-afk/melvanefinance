@@ -5,7 +5,15 @@ import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } fr
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type SortKey = "reference" | "fillRate" | "netCommissionableRevenue" | "commission" | "netRevenue" | "loyer" | "excess";
+type SortKey =
+  | "reference"
+  | "fillRate"
+  | "netCommissionableRevenue"
+  | "commission"
+  | "expenses"
+  | "netRevenue"
+  | "loyer"
+  | "excess";
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -38,6 +46,7 @@ interface ComparisonRow {
   netCommissionableRevenueCents: number;
   commissionPercent: number | null;
   commissionCents: number;
+  expensesCents: number;
   netRevenueCents: number;
   loyerCents: number | null;
   excessCents: number | null;
@@ -60,6 +69,7 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
   const hasReservation = selected.some((m) => m.nightsBooked > 0);
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
   const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
+  const expensesCents = selected.reduce((sum, m) => sum + m.expensesCents, 0);
   const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, selectedMonths.length);
 
   return {
@@ -72,6 +82,7 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
     fillRate,
     netCommissionableRevenueCents,
     commissionPercent: property.commissionPercent,
+    expensesCents,
     ...figures,
   };
 }
@@ -99,6 +110,7 @@ function toMonthlyRows(
         fillRate: m.fillRate,
         netCommissionableRevenueCents,
         commissionPercent: property.commissionPercent,
+        expensesCents: m.expensesCents,
         ...figures,
       };
     })
@@ -117,6 +129,7 @@ function SortHeader({
   direction,
   onSort,
   align = "right",
+  title,
 }: {
   label: string;
   sortKey: SortKey;
@@ -124,10 +137,11 @@ function SortHeader({
   direction: "asc" | "desc";
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
+  title?: string;
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`}>
+    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`} title={title}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -208,7 +222,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
     setError(null);
     try {
       const propertyIds = matchingProperties.map((p) => p.id).join(",");
-      const params = new URLSearchParams({ year: String(year), propertyIds });
+      const params = new URLSearchParams({ year: String(year), propertyIds, includeExpenses: "1" });
       const res = await fetch(`/api/finance/monthly?${params.toString()}`);
       const data = await res.json();
       if (data.error) {
@@ -268,6 +282,9 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
           case "commission":
             cmp = a.commissionCents - b.commissionCents;
             break;
+          case "expenses":
+            cmp = a.expensesCents - b.expensesCents;
+            break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
@@ -287,6 +304,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
         fillRate: sortedRows.length > 0 ? sortedRows.reduce((sum, r) => sum + r.fillRate, 0) / sortedRows.length : 0,
         netCommissionableRevenueCents: sortedRows.reduce((sum, r) => sum + r.netCommissionableRevenueCents, 0),
         commissionCents: sortedRows.reduce((sum, r) => sum + r.commissionCents, 0),
+        expensesCents: sortedRows.reduce((sum, r) => sum + r.expensesCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         loyerCents: sortedRows.reduce((sum, r) => sum + (r.loyerCents ?? 0), 0),
         excessCents: sortedRows.reduce((sum, r) => sum + (r.excessCents ?? 0), 0),
@@ -498,6 +516,14 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                       onSort={handleSort}
                     />
                     <SortHeader
+                      label="Expenses"
+                      sortKey="expenses"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Operating & Maintenance Expenses + Adjustments + Processing Fees (configuration du owner statement VRPlatform)"
+                    />
+                    <SortHeader
                       label="Net Revenue"
                       sortKey="netRevenue"
                       activeKey={sortKey}
@@ -549,6 +575,9 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                           <span className="ml-1 text-[11px] text-[#86868b]">({row.commissionPercent}%)</span>
                         )}
                       </td>
+                      <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                        <Money cents={row.expensesCents} />
+                      </td>
                       <td className="py-2 px-2.5 text-right tabular-nums font-semibold text-[#1d1d1f]">
                         <Money cents={row.netRevenueCents} bold />
                       </td>
@@ -585,6 +614,9 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                     </td>
                     <td className="py-2 px-2.5 text-right tabular-nums">
                       <Money cents={totals.commissionCents} bold />
+                    </td>
+                    <td className="py-2 px-2.5 text-right tabular-nums">
+                      <Money cents={totals.expensesCents} bold />
                     </td>
                     <td className="py-2 px-2.5 text-right tabular-nums">
                       <Money cents={totals.netRevenueCents} bold />
