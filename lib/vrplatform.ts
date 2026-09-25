@@ -231,18 +231,34 @@ const EXPENSE_ACCOUNT_IDS = [
   "53bfbbf0-7432-4521-a275-86abee55b5b3", // Transfer Fees Revenues
 ];
 
-/** Cumule, par mois, les montants signés des comptes EXPENSE_ACCOUNT_IDS pour
- * un listing sur une année. Signé (pas de valeur absolue ici) : le groupe
- * mélange des comptes de dépense et de remboursement/markup (classification
- * revenue) qui doivent se nette entre eux avant qu'on prenne la valeur
- * absolue du total — sinon un remboursement s'additionnerait à la dépense
- * qu'il compense au lieu de l'annuler. */
-async function getListingExpenseCentsByMonth(listingId: string, year: number): Promise<number[]> {
-  const totals = new Array(12).fill(0) as number[];
+interface VrPlatformExpenseJournalEntry {
+  txnAt: string;
+  centTotal: number;
+  /** "owners" ou "manager" — les frais récurrents (Transfer Fees, VRBO comm
+   * share...) sont postés en PAIRE miroir (même montant, signe opposé) sur
+   * deux comptes différents, un côté "owners" et un côté "manager". Sommer
+   * les deux comptes de la paire annule tout à zéro : il faut ne garder que
+   * le côté "owners", qui représente le vrai coût côté propriétaire. Les
+   * écritures hors frais récurrents (dépenses ponctuelles, remboursements)
+   * n'ont qu'un seul côté, déjà "owners". */
+  party?: string;
+  description?: string;
+  account?: { id: string; name: string };
+}
+interface VrPlatformExpenseJournalEntriesResponse {
+  data: VrPlatformExpenseJournalEntry[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Toutes les écritures "owners" des comptes EXPENSE_ACCOUNT_IDS pour un
+ * listing sur une année — voir le commentaire sur `party` ci-dessus pour
+ * pourquoi le filtre sur "owners" est indispensable. */
+async function getListingExpenseEntries(listingId: string, year: number): Promise<VrPlatformExpenseJournalEntry[]> {
+  const entries: VrPlatformExpenseJournalEntry[] = [];
   try {
     let page = 1;
     for (;;) {
-      const res = await vrPlatformFetch<VrPlatformJournalEntriesResponse>("/reports/journal-entries", {
+      const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
         accountIds: EXPENSE_ACCOUNT_IDS.join(","),
         listingIds: listingId,
         date: String(year),
@@ -251,8 +267,7 @@ async function getListingExpenseCentsByMonth(listingId: string, year: number): P
         page: String(page),
       });
       for (const entry of res.data) {
-        const month = Number(entry.txnAt.slice(5, 7));
-        if (month >= 1 && month <= 12) totals[month - 1] += entry.centTotal;
+        if (entry.party == null || entry.party === "owners") entries.push(entry);
       }
       if (page >= res.pagination.totalPage) break;
       page++;
@@ -260,7 +275,57 @@ async function getListingExpenseCentsByMonth(listingId: string, year: number): P
   } catch {
     // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
   }
+  return entries;
+}
+
+async function getListingExpenseCentsByMonth(listingId: string, year: number): Promise<number[]> {
+  const totals = new Array(12).fill(0) as number[];
+  for (const entry of await getListingExpenseEntries(listingId, year)) {
+    const month = Number(entry.txnAt.slice(5, 7));
+    if (month >= 1 && month <= 12) totals[month - 1] += entry.centTotal;
+  }
   return totals;
+}
+
+export interface ExpenseLineItem {
+  accountName: string;
+  cents: number;
+}
+
+export interface PropertyExpenseBreakdown {
+  lines: ExpenseLineItem[];
+  totalCents: number;
+}
+
+/** Détail des lignes qui composent l'Expenses d'un bien sur des mois donnés
+ * d'une année — une ligne par compte VRPlatform (voir EXPENSE_ACCOUNT_IDS),
+ * triées par montant absolu décroissant. */
+export async function getPropertyExpenseBreakdown(
+  property: PortfolioProperty,
+  year: number,
+  months: number[]
+): Promise<PropertyExpenseBreakdown> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const references = [property.reference, ...property.extraVrplatformReferences];
+  const { listingIds } = resolveListingIds(references, listingsByName);
+
+  const byAccount = new Map<string, number>();
+  for (const listingId of listingIds) {
+    for (const entry of await getListingExpenseEntries(listingId, year)) {
+      const month = Number(entry.txnAt.slice(5, 7));
+      if (!months.includes(month)) continue;
+      const name = entry.account?.name ?? "Autre";
+      byAccount.set(name, (byAccount.get(name) ?? 0) + entry.centTotal);
+    }
+  }
+
+  const lines = Array.from(byAccount.entries())
+    .map(([accountName, cents]) => ({ accountName, cents }))
+    .sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
+  const totalCents = lines.reduce((sum, l) => sum + l.cents, 0);
+
+  return { lines, totalCents };
 }
 
 export interface MonthlyFinance {

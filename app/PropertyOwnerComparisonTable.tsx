@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
+import { ExpenseDetailModal } from "./ExpenseDetailModal";
 
 type SortKey =
   | "reference"
@@ -179,6 +180,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [results, setResults] = useState<PropertyMonthlyResult[] | null>(null);
   const [removedRowIds, setRemovedRowIds] = useState<Set<string>>(new Set());
+  const [expenseDetailRow, setExpenseDetailRow] = useState<ComparisonRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -576,7 +578,14 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                         )}
                       </td>
                       <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
-                        <Money cents={row.expensesCents} />
+                        <button
+                          type="button"
+                          onClick={() => setExpenseDetailRow(row)}
+                          title="Voir le détail des lignes"
+                          className="underline decoration-black/15 underline-offset-2 hover:decoration-[#0071e3]"
+                        >
+                          <Money cents={row.expensesCents} />
+                        </button>
                       </td>
                       <td className="py-2 px-2.5 text-right tabular-nums font-semibold text-[#1d1d1f]">
                         <Money cents={row.netRevenueCents} bold />
@@ -644,6 +653,16 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
         <p className="text-[13px] text-[#6e6e73]">
           Choisis une année, un ou plusieurs mois, filtre par bien/tag si besoin, puis charge les données.
         </p>
+      )}
+
+      {expenseDetailRow && (
+        <ExpenseDetailModal
+          propertyId={expenseDetailRow.propertyId}
+          propertyLabel={isSingleProperty ? (singlePropertyReference ?? expenseDetailRow.label) : expenseDetailRow.label}
+          year={year}
+          months={expenseDetailRow.month != null ? [expenseDetailRow.month] : selectedMonths}
+          onClose={() => setExpenseDetailRow(null)}
+        />
       )}
     </div>
   );
