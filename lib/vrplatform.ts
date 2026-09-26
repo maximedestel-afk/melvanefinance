@@ -244,6 +244,7 @@ interface VrPlatformExpenseJournalEntry {
   party?: string;
   description?: string;
   account?: { id: string; name: string };
+  reservationId?: string;
 }
 interface VrPlatformExpenseJournalEntriesResponse {
   data: VrPlatformExpenseJournalEntry[];
@@ -287,6 +288,19 @@ async function getListingExpenseCentsByMonth(listingId: string, year: number): P
   return totals;
 }
 
+/** Cumule les mêmes écritures que getListingExpenseCentsByMonth, mais
+ * groupées par réservation plutôt que par mois — utilisé par la page
+ * Réservations pour attribuer les dépenses (Transfer Fees, Adjustments...)
+ * à la réservation qui les a déclenchées. */
+async function getListingExpenseCentsByReservation(listingId: string, year: number): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  for (const entry of await getListingExpenseEntries(listingId, year)) {
+    if (!entry.reservationId) continue;
+    totals.set(entry.reservationId, (totals.get(entry.reservationId) ?? 0) + entry.centTotal);
+  }
+  return totals;
+}
+
 export interface ExpenseLineItem {
   accountName: string;
   cents: number;
@@ -326,6 +340,106 @@ export async function getPropertyExpenseBreakdown(
   const totalCents = lines.reduce((sum, l) => sum + l.cents, 0);
 
   return { lines, totalCents };
+}
+
+interface VrPlatformReservationDetailed {
+  id: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  nights: number;
+  guestName: string | null;
+  confirmationCode: string | null;
+  bookingPlatform: string | null;
+  status: "booked" | "canceled" | "inactive";
+  lines: VrPlatformReservationLine[] | null;
+}
+interface VrPlatformReservationsDetailedResponse {
+  data: VrPlatformReservationDetailed[];
+  pagination: { page: number; totalPage: number };
+}
+
+export interface ReservationDetail {
+  reservationId: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guestName: string | null;
+  confirmationCode: string | null;
+  bookingPlatform: string | null;
+  /** Rents / nuits — prix brut côté hébergement, avant déduction des
+   * Channel Fees. */
+  grossNightlyRateCents: number | null;
+  netCommissionableRevenueCents: number;
+  commissionCents: number;
+  expensesCents: number;
+  netRevenueCents: number;
+}
+
+/** Détail réservation par réservation (et non agrégé par mois) pour un bien
+ * sur des mois donnés d'une année — mêmes grandeurs que l'onglet Owner
+ * (Net Commissionable Revenue, Commission, Expenses, Net Revenue), sans
+ * Loyer/Excess qui n'ont pas de sens au niveau d'une réservation, plus le
+ * prix brut par nuit. Une réservation est attribuée au mois de son
+ * check-out, comme le reste de l'app (voir addListingMonthlyFinancials). */
+export async function getPropertyReservationDetails(
+  property: PortfolioProperty,
+  year: number,
+  months: number[]
+): Promise<ReservationDetail[]> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const references = [property.reference, ...property.extraVrplatformReferences];
+  const { listingIds } = resolveListingIds(references, listingsByName);
+  const commissionPercent = property.commissionPercent ?? 0;
+
+  const results: ReservationDetail[] = [];
+
+  for (const listingId of listingIds) {
+    const expenseByReservation = await getListingExpenseCentsByReservation(listingId, year);
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+        listingId,
+        date: String(year),
+        dateField: "intersection",
+        status: "booked",
+        limit: "250",
+        page: String(page),
+        includeLines: "true",
+      });
+      for (const reservation of res.data) {
+        if (!reservation.checkIn || !reservation.checkOut) continue;
+        const checkOutDate = new Date(`${reservation.checkOut}T00:00:00Z`);
+        if (checkOutDate.getUTCFullYear() !== year || !months.includes(checkOutDate.getUTCMonth() + 1)) continue;
+
+        const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+        const netCommissionableRevenueCents = rentsCents - channelFeesCents;
+        const commissionCents = Math.round((netCommissionableRevenueCents * commissionPercent) / 100);
+        const netRevenueCents = netCommissionableRevenueCents - commissionCents;
+        const expensesCents = Math.abs(expenseByReservation.get(reservation.id) ?? 0);
+        const grossNightlyRateCents = reservation.nights > 0 ? Math.round(rentsCents / reservation.nights) : null;
+
+        results.push({
+          reservationId: reservation.id,
+          checkIn: reservation.checkIn,
+          checkOut: reservation.checkOut,
+          nights: reservation.nights,
+          guestName: reservation.guestName,
+          confirmationCode: reservation.confirmationCode,
+          bookingPlatform: reservation.bookingPlatform,
+          grossNightlyRateCents,
+          netCommissionableRevenueCents,
+          commissionCents,
+          expensesCents,
+          netRevenueCents,
+        });
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  }
+
+  return results.sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
 export interface MonthlyFinance {

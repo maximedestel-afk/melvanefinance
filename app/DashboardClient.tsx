@@ -8,11 +8,12 @@ import { PropertyFinanceTable } from "./PropertyFinanceTable";
 import { PropertyCleaningTable } from "./PropertyCleaningTable";
 import { PropertyBonusTable } from "./PropertyBonusTable";
 import { PropertyOwnerComparisonTable } from "./PropertyOwnerComparisonTable";
+import { PropertyReservationsTable } from "./PropertyReservationsTable";
 import { TrendsSection } from "./TrendsSection";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type Tab = "overview" | "occupancy" | "finance" | "cleaning" | "bonus" | "owner-comparison";
+type Tab = "overview" | "occupancy" | "finance" | "cleaning" | "bonus" | "owner-comparison" | "reservations";
 
 export function DashboardClient({
   properties,
@@ -115,6 +116,15 @@ export function DashboardClient({
         >
           Owner
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("reservations")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "reservations" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Réservations
+        </button>
       </div>
       </div>
 
@@ -190,6 +200,13 @@ export function DashboardClient({
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Owner</h2>
           <PropertyOwnerComparisonTable properties={properties} />
+        </section>
+      )}
+
+      {tab === "reservations" && (
+        <section className="card space-y-3 p-5">
+          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Réservations</h2>
+          <PropertyReservationsTable properties={properties} />
         </section>
       )}
     </div>
