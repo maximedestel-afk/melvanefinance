@@ -14,7 +14,8 @@ type SortKey =
   | "expenses"
   | "netRevenue"
   | "loyer"
-  | "excess";
+  | "excess"
+  | "avgGrossNightlyRate";
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -51,6 +52,10 @@ interface ComparisonRow {
   netRevenueCents: number;
   loyerCents: number | null;
   excessCents: number | null;
+  rentsCents: number;
+  nightsBooked: number;
+  /** Rents / nuits — prix brut avant déduction des Channel Fees. */
+  avgGrossNightlyRateCents: number | null;
 }
 
 function computeFigures(rentType: RentType | null, commissionPercent: number | null, netCommissionableRevenueCents: number, fixedRentAmountCents: number | null, months: number) {
@@ -71,6 +76,9 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
   const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   const expensesCents = selected.reduce((sum, m) => sum + m.expensesCents, 0);
+  const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
+  const nightsBooked = selected.reduce((sum, m) => sum + m.nightsBooked, 0);
+  const avgGrossNightlyRateCents = nightsBooked > 0 ? Math.round(rentsCents / nightsBooked) : null;
   const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, selectedMonths.length);
 
   return {
@@ -84,6 +92,9 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
     netCommissionableRevenueCents,
     commissionPercent: property.commissionPercent,
     expensesCents,
+    rentsCents,
+    nightsBooked,
+    avgGrossNightlyRateCents,
     ...figures,
   };
 }
@@ -112,6 +123,9 @@ function toMonthlyRows(
         netCommissionableRevenueCents,
         commissionPercent: property.commissionPercent,
         expensesCents: m.expensesCents,
+        rentsCents: m.rentsCents,
+        nightsBooked: m.nightsBooked,
+        avgGrossNightlyRateCents: m.nightsBooked > 0 ? Math.round(m.rentsCents / m.nightsBooked) : null,
         ...figures,
       };
     })
@@ -296,6 +310,9 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
           case "excess":
             cmp = (a.excessCents ?? 0) - (b.excessCents ?? 0);
             break;
+          case "avgGrossNightlyRate":
+            cmp = (a.avgGrossNightlyRateCents ?? 0) - (b.avgGrossNightlyRateCents ?? 0);
+            break;
         }
         return direction === "asc" ? cmp : -cmp;
       })
@@ -310,6 +327,11 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         loyerCents: sortedRows.reduce((sum, r) => sum + (r.loyerCents ?? 0), 0),
         excessCents: sortedRows.reduce((sum, r) => sum + (r.excessCents ?? 0), 0),
+        avgGrossNightlyRateCents: (() => {
+          const rentsCents = sortedRows.reduce((sum, r) => sum + r.rentsCents, 0);
+          const nightsBooked = sortedRows.reduce((sum, r) => sum + r.nightsBooked, 0);
+          return nightsBooked > 0 ? Math.round(rentsCents / nightsBooked) : null;
+        })(),
       }
     : null;
 
@@ -534,6 +556,14 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                     />
                     <SortHeader label="Loyer" sortKey="loyer" activeKey={sortKey} direction={direction} onSort={handleSort} />
                     <SortHeader label="Excess" sortKey="excess" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeader
+                      label="Prix moyen brut/nuit"
+                      sortKey="avgGrossNightlyRate"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Rents ÷ nuits, avant déduction des Channel Fees"
+                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -594,11 +624,14 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                         <Money cents={row.loyerCents} />
                       </td>
                       <td
-                        className={`py-2 pl-2.5 pr-3 text-right tabular-nums font-semibold ${
+                        className={`py-2 px-2.5 text-right tabular-nums font-semibold ${
                           row.excessCents == null ? "text-[#6e6e73]" : row.excessCents >= 0 ? "text-emerald-600" : "text-red-600"
                         }`}
                       >
                         {row.excessCents != null ? `${row.excessCents >= 0 ? "+" : ""}${formatEuros(row.excessCents / 100)}` : "—"}
+                      </td>
+                      <td className="py-2 pl-2.5 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                        <Money cents={row.avgGrossNightlyRateCents} />
                       </td>
                     </tr>
                   ))}
@@ -634,12 +667,15 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                       <Money cents={totals.loyerCents} bold />
                     </td>
                     <td
-                      className={`py-2 pl-2.5 pr-3 text-right tabular-nums ${
+                      className={`py-2 px-2.5 text-right tabular-nums ${
                         totals.excessCents >= 0 ? "text-emerald-600" : "text-red-600"
                       }`}
                     >
                       {totals.excessCents >= 0 ? "+" : ""}
                       {formatEuros(totals.excessCents / 100)}
+                    </td>
+                    <td className="py-2 pl-2.5 pr-3 text-right tabular-nums">
+                      <Money cents={totals.avgGrossNightlyRateCents} bold />
                     </td>
                   </tr>
                 </tfoot>
