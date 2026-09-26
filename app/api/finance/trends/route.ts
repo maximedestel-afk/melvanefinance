@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
 import { getYearlyTotals, isVrPlatformConfigured } from "@/lib/vrplatform";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -41,7 +43,7 @@ export async function GET(request: Request) {
       })),
       years
     );
-    return NextResponse.json({ years: totals });
+    return NextResponse.json({ years: totals }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Erreur VRPlatform inconnue." },
