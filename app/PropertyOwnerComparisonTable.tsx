@@ -53,8 +53,11 @@ interface ComparisonRow {
   loyerCents: number | null;
   excessCents: number | null;
   rentsCents: number;
-  nightsBooked: number;
-  /** Rents / nuits — prix brut avant déduction des Channel Fees. */
+  /** Nuits des réservations dont le check-out tombe dans la période — même
+   * base d'attribution que rentsCents (voir MonthlyFinance.checkoutNights).
+   * Ne pas confondre avec les nuits d'occupation du mois calendaire. */
+  checkoutNights: number;
+  /** Rents / checkoutNights — prix brut avant déduction des Channel Fees. */
   avgGrossNightlyRateCents: number | null;
 }
 
@@ -77,8 +80,8 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
   const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   const expensesCents = selected.reduce((sum, m) => sum + m.expensesCents, 0);
   const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
-  const nightsBooked = selected.reduce((sum, m) => sum + m.nightsBooked, 0);
-  const avgGrossNightlyRateCents = nightsBooked > 0 ? Math.round(rentsCents / nightsBooked) : null;
+  const checkoutNights = selected.reduce((sum, m) => sum + m.checkoutNights, 0);
+  const avgGrossNightlyRateCents = checkoutNights > 0 ? Math.round(rentsCents / checkoutNights) : null;
   const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, selectedMonths.length);
 
   return {
@@ -93,7 +96,7 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
     commissionPercent: property.commissionPercent,
     expensesCents,
     rentsCents,
-    nightsBooked,
+    checkoutNights,
     avgGrossNightlyRateCents,
     ...figures,
   };
@@ -124,8 +127,8 @@ function toMonthlyRows(
         commissionPercent: property.commissionPercent,
         expensesCents: m.expensesCents,
         rentsCents: m.rentsCents,
-        nightsBooked: m.nightsBooked,
-        avgGrossNightlyRateCents: m.nightsBooked > 0 ? Math.round(m.rentsCents / m.nightsBooked) : null,
+        checkoutNights: m.checkoutNights,
+        avgGrossNightlyRateCents: m.checkoutNights > 0 ? Math.round(m.rentsCents / m.checkoutNights) : null,
         ...figures,
       };
     })
@@ -329,8 +332,8 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
         excessCents: sortedRows.reduce((sum, r) => sum + (r.excessCents ?? 0), 0),
         avgGrossNightlyRateCents: (() => {
           const rentsCents = sortedRows.reduce((sum, r) => sum + r.rentsCents, 0);
-          const nightsBooked = sortedRows.reduce((sum, r) => sum + r.nightsBooked, 0);
-          return nightsBooked > 0 ? Math.round(rentsCents / nightsBooked) : null;
+          const checkoutNights = sortedRows.reduce((sum, r) => sum + r.checkoutNights, 0);
+          return checkoutNights > 0 ? Math.round(rentsCents / checkoutNights) : null;
         })(),
       }
     : null;

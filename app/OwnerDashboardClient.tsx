@@ -27,10 +27,15 @@ function buildOwnerRows(
   );
   // Le tarif moyen par nuit ne doit compter que les mois à revenu réel non nul —
   // un mois à 0€ avec des nuits réservées (ex: séjour offert, erreur de facturation)
-  // ferait chuter artificiellement la moyenne.
+  // ferait chuter artificiellement la moyenne. On divise par checkoutNights
+  // (nuits des réservations dont le check-out tombe dans le mois), pas
+  // nightsBooked (nuits d'occupation réparties par intersection) : ces deux
+  // bases ne sont pas comparables avec netRevenueCents, qui est lui aussi
+  // attribué en entier au mois de check-out — les mélanger fausse la moyenne
+  // dès qu'une réservation est à cheval sur deux mois.
   const nightlyRateSource = visible.filter((m) => m.netRevenueCents !== 0);
   const totalRevenueCents = nightlyRateSource.reduce((sum, m) => sum + m.netRevenueCents, 0);
-  const totalNights = nightlyRateSource.reduce((sum, m) => sum + m.nightsBooked, 0);
+  const totalNights = nightlyRateSource.reduce((sum, m) => sum + m.checkoutNights, 0);
   const avgNightlyRateCents = totalNights > 0 ? totalRevenueCents / totalNights : null;
   const commissionPercent = property.commissionPercent ?? 0;
 

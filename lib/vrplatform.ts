@@ -454,7 +454,18 @@ export interface MonthlyFinance {
    * (voir EXPENSE_ACCOUNT_IDS) — 0 si non demandé via includeExpenses. */
   expensesCents: number;
   netRevenueCents: number;
+  /** Nuits occupées dans le mois calendaire (réparties par intersection —
+   * une réservation à cheval sur deux mois compte ses nuits dans chacun).
+   * Sert au taux de remplissage. Ne pas diviser rentsCents par ce champ :
+   * rentsCents est attribué en entier au mois de check-out (voir
+   * checkoutNights), pas réparti par intersection comme nightsBooked — les
+   * deux bases ne sont pas comparables. */
   nightsBooked: number;
+  /** Nuits totales des réservations dont le check-out tombe dans ce mois —
+   * même base d'attribution que rentsCents (réservation entière, mois de
+   * check-out), contrairement à nightsBooked. À utiliser pour calculer un
+   * prix moyen par nuit (rentsCents / checkoutNights). */
+  checkoutNights: number;
   daysInMonth: number;
   fillRate: number;
 }
@@ -481,6 +492,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     expensesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
+    checkoutNights: 0,
     daysInMonth: daysInMonth(year, i + 1),
     fillRate: 0,
   }));
@@ -527,6 +539,9 @@ async function addListingMonthlyFinancials(
         entry.rentsCents += rentsCents;
         entry.channelFeesCents += channelFeesCents;
         entry.cityTaxCents += cityTaxCents;
+        const checkInMs = Date.parse(`${reservation.checkIn}T00:00:00Z`);
+        const checkOutMs = Date.parse(`${reservation.checkOut}T00:00:00Z`);
+        entry.checkoutNights += Math.round((checkOutMs - checkInMs) / MS_PER_DAY);
       }
     }
 
