@@ -479,7 +479,7 @@ function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-function overlapNights(checkIn: string, checkOut: string, year: number, month: number): number {
+export function overlapNights(checkIn: string, checkOut: string, year: number, month: number): number {
   const checkInMs = Date.parse(`${checkIn}T00:00:00Z`);
   const checkOutMs = Date.parse(`${checkOut}T00:00:00Z`);
   const monthStartMs = Date.UTC(year, month - 1, 1);
