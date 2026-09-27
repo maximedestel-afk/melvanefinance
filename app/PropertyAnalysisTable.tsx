@@ -368,7 +368,7 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
             id="analysis-property"
             value={propertyId}
             onChange={(e) => setPropertyId(e.target.value)}
-            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+            className="mt-1 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-[7px] text-[14px] font-medium text-[#0071e3] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
           >
             {properties.map((p) => (
               <option key={p.id} value={p.id}>
