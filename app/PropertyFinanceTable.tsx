@@ -414,17 +414,21 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
       </div>
 
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setShowProperties((v) => !v)}
             className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
-            🏠 Biens ({selectedPropertyIds.length}/{allProperties.length})
+            🏠 Choisir les biens ({selectedPropertyIds.length}/{allProperties.length})
             <span aria-hidden className={`transition-transform ${showProperties ? "rotate-180" : ""}`}>
               ▾
             </span>
           </button>
+          <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
+            {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
+            {matchingProperties.length !== 1 ? "s" : ""} (après filtres)
+          </span>
         </div>
         {showProperties && (
           <>
@@ -508,11 +512,6 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           </div>
         </div>
       )}
-
-      <p className="text-[13px] text-[#6e6e73]">
-        {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
-        {matchingProperties.length !== 1 ? "s" : ""}
-      </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
