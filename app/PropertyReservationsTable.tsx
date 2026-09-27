@@ -354,10 +354,12 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedReservations.map((r) => (
+                    {sortedReservations.map((r, rowIndex) => (
                       <tr
                         key={r.reservationId}
-                        className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
+                        className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
+                          rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                        }`}
                       >
                         <td className="py-1.5 pl-3 pr-2 text-[#1d1d1f]">
                           <div className="font-medium">{r.guestName ?? "Voyageur inconnu"}</div>
