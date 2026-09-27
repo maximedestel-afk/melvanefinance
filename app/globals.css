@@ -74,6 +74,10 @@ body {
   --viz-series-1: #2a78d6;
   --viz-good: #0ca30c;
   --viz-critical: #d03b3b;
+  /* Reprennent exactement les couleurs du calendrier (CalendarGrid) pour le
+     graphique prix/nuit — vendue = bleu "occupée", libre = vert "libre". */
+  --viz-sold: #0071e3;
+  --viz-free: #059669;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -88,5 +92,7 @@ body {
     --viz-series-1: #3987e5;
     --viz-good: #0ca30c;
     --viz-critical: #e66767;
+    --viz-sold: #3987e5;
+    --viz-free: #059669;
   }
 }
