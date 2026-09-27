@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
+import { formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 
 interface PropertyOption {
   id: string;
@@ -22,6 +22,9 @@ interface ReservationDetail {
   commissionCents: number;
   expensesCents: number;
   netRevenueCents: number;
+  /** Taux d'occupation du mois de check-out de la réservation (onglet
+   * Remplissage), pas propre à la réservation elle-même. */
+  occupancyRateOfMonth: number | null;
 }
 
 type SortKey =
@@ -32,7 +35,8 @@ type SortKey =
   | "netCommissionableRevenue"
   | "commission"
   | "expenses"
-  | "netRevenue";
+  | "netRevenue"
+  | "occupancyRateOfMonth";
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
@@ -52,6 +56,7 @@ function SortHeader({
   direction,
   onSort,
   align = "right",
+  title,
 }: {
   label: string;
   sortKey: SortKey;
@@ -59,10 +64,11 @@ function SortHeader({
   direction: "asc" | "desc";
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
+  title?: string;
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`}>
+    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`} title={title}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -166,6 +172,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
             break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
+            break;
+          case "occupancyRateOfMonth":
+            cmp = (a.occupancyRateOfMonth ?? 0) - (b.occupancyRateOfMonth ?? 0);
             break;
         }
         return direction === "asc" ? cmp : -cmp;
@@ -307,6 +316,14 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         direction={direction}
                         onSort={handleSort}
                       />
+                      <SortHeader
+                        label="TO"
+                        sortKey="occupancyRateOfMonth"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        title="TO du mois de la réservation"
+                      />
                     </tr>
                   </thead>
                   <tbody>
@@ -339,8 +356,11 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.expensesCents} />
                         </td>
-                        <td className="py-2 pl-2.5 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                        <td className="py-2 px-2.5 text-right tabular-nums font-semibold text-[#1d1d1f]">
                           <Money cents={r.netRevenueCents} bold />
+                        </td>
+                        <td className="py-2 pl-2.5 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                          {r.occupancyRateOfMonth != null ? formatPercent(r.occupancyRateOfMonth) : "—"}
                         </td>
                       </tr>
                     ))}
@@ -363,9 +383,10 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                       <td className="py-2 px-2.5 text-right tabular-nums">
                         <Money cents={totals.expensesCents} bold />
                       </td>
-                      <td className="py-2 pl-2.5 pr-3 text-right tabular-nums">
+                      <td className="py-2 px-2.5 text-right tabular-nums">
                         <Money cents={totals.netRevenueCents} bold />
                       </td>
+                      <td className="py-2 pl-2.5 pr-3"></td>
                     </tr>
                   </tfoot>
                 </table>
