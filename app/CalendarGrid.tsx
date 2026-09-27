@@ -22,9 +22,18 @@ const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: st
 
 const WEEKDAY_LABELS = ["L", "M", "M", "J", "V", "S", "D"];
 
-/** Grille calendrier réutilisable (libre/occupée/bloquée, prix/nuit affiché
- * dans chaque case) — utilisée par la modale de l'espace propriétaire et
- * l'onglet Analyse admin, sur le même modèle que le calendrier M.G.B. */
+const NBSP = " ";
+
+/** Grille calendrier réutilisable (libre/occupée/bloquée, prix/nuit et
+ * source de la réservation affichés dans chaque case) — utilisée par la
+ * modale de l'espace propriétaire et l'onglet Analyse admin, sur le même
+ * modèle que le calendrier M.G.B.
+ *
+ * Toutes les cases (y compris les cases vides en début de grille) ont la
+ * même hauteur fixe : une case dont le contenu varie (prix ou source
+ * absents un jour donné) réserve quand même la ligne correspondante avec
+ * une espace insécable, pour que les chiffres des jours restent alignés
+ * sur la même grille d'une ligne à l'autre. */
 export function CalendarGrid({ days }: { days: CalendarDay[] }) {
   const leadingBlanks = days.length > 0 ? (new Date(`${days[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
 
@@ -46,14 +55,16 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
           </div>
         ))}
         {Array.from({ length: leadingBlanks }).map((_, i) => (
-          <div key={`blank-${i}`} />
+          <div key={`blank-${i}`} className="h-16" />
         ))}
         {days.map((day) => {
           const style = STATUS_STYLE[day.status];
           const dayNumber = Number.parseInt(day.date.slice(8, 10), 10);
           const titleParts: string[] = [];
           if (day.status === "occupied") {
-            titleParts.push(`${day.guestName ?? "Voyageur"}${day.source ? ` — ${day.source}` : ""}${day.confirmationCode ? ` (${day.confirmationCode})` : ""}`);
+            titleParts.push(
+              `${day.guestName ?? "Voyageur"}${day.source ? ` — ${day.source}` : ""}${day.confirmationCode ? ` (${day.confirmationCode})` : ""}`
+            );
           } else {
             titleParts.push(style.label);
             if (day.status === "blocked" && day.note) titleParts.push(day.note);
@@ -64,14 +75,15 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
             <div
               key={day.date}
               title={title}
-              className={`flex aspect-square flex-col items-center justify-center gap-0.5 rounded-[8px] border text-[13px] font-medium ${style.className}`}
+              className={`flex h-16 w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-[8px] border px-0.5 text-[13px] font-medium ${style.className}`}
             >
               <span>{dayNumber}</span>
-              {day.priceCents != null && (
-                <span className="text-[9.5px] font-normal leading-none opacity-80">
-                  {Math.round(day.priceCents / 100)}€
-                </span>
-              )}
+              <span className="text-[9.5px] font-normal leading-none opacity-80">
+                {day.priceCents != null ? `${Math.round(day.priceCents / 100)}€` : NBSP}
+              </span>
+              <span className="w-full truncate text-center text-[8.5px] font-normal leading-none opacity-70">
+                {day.status === "occupied" && day.source ? day.source : NBSP}
+              </span>
             </div>
           );
         })}

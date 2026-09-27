@@ -302,6 +302,23 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
     };
   }, [monthly, monthData, cleaning, rentType]);
 
+  // Pour les nuits occupées, affiche le prix réellement facturé pour la
+  // réservation (prix brut/nuit calculé depuis VRPlatform, cf. Réservations)
+  // plutôt que le tarif calendrier Guesty, qui reflète le prix affiché
+  // aujourd'hui et pas ce qui a été effectivement payé.
+  const enrichedCalendarDays = useMemo(() => {
+    if (!calendarDays) return null;
+    const reservationByConfirmation = new Map(
+      (reservations ?? []).filter((r) => r.confirmationCode).map((r) => [r.confirmationCode, r])
+    );
+    return calendarDays.map((day) => {
+      if (day.status !== "occupied" || !day.confirmationCode) return day;
+      const reservation = reservationByConfirmation.get(day.confirmationCode);
+      if (!reservation || reservation.grossNightlyRateCents == null) return day;
+      return { ...day, priceCents: reservation.grossNightlyRateCents };
+    });
+  }, [calendarDays, reservations]);
+
   const sortedReservations = reservations
     ? [...reservations].sort((a, b) => {
         let cmp: number;
@@ -521,9 +538,9 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
 
           <div>
             <p className="mb-2 text-[12px] font-medium text-[#6e6e73]">Calendrier</p>
-            {calendarDays ? (
-              <div className="max-w-[480px] rounded-[14px] border border-black/[0.06] bg-white p-3.5">
-                <CalendarGrid days={calendarDays} />
+            {enrichedCalendarDays ? (
+              <div className="max-w-[560px] rounded-[14px] border border-black/[0.06] bg-white p-3.5">
+                <CalendarGrid days={enrichedCalendarDays} />
               </div>
             ) : (
               <p className="text-[13px] text-[#6e6e73]">Calendrier indisponible.</p>
