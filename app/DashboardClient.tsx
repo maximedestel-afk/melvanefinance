@@ -21,6 +21,7 @@ export function DashboardClient({
     name: string | null;
     tags: string[];
     rentType: RentType | null;
+    ownerEmail: string | null;
     cleaningProviderName: string | null;
     bonusFdPercent: number | null;
   }[];

@@ -38,6 +38,7 @@ interface PropertyOption {
   reference: string;
   tags: string[];
   rentType: RentType | null;
+  ownerEmail: string | null;
 }
 
 interface ComparisonRow {
@@ -202,6 +203,13 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
     () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
     [allProperties]
   );
+  const allOwners = useMemo(
+    () =>
+      Array.from(new Set(allProperties.map((p) => p.ownerEmail).filter((e): e is string => e != null))).sort((a, b) =>
+        a.localeCompare(b, "fr")
+      ),
+    [allProperties]
+  );
   const rentTypeByPropertyId = useMemo(() => new Map(allProperties.map((p) => [p.id, p.rentType])), [allProperties]);
 
   const [year, setYear] = useState(currentYear);
@@ -211,6 +219,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
   const [showProperties, setShowProperties] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
+  const [selectedOwner, setSelectedOwner] = useState<string>("");
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [results, setResults] = useState<PropertyMonthlyResult[] | null>(null);
@@ -224,9 +233,10 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
       const isSelected = selectedPropertyIds.includes(p.id);
       const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
       const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
-      return isSelected && matchesTags && matchesRentType;
+      const matchesOwner = selectedOwner === "" || p.ownerEmail === selectedOwner;
+      return isSelected && matchesTags && matchesRentType && matchesOwner;
     });
-  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes]);
+  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes, selectedOwner]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
@@ -488,6 +498,27 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
           </>
         )}
       </div>
+
+      {allOwners.length > 0 && (
+        <div>
+          <label className="field-label" htmlFor="owner-cmp-owner-filter">
+            Propriétaire
+          </label>
+          <select
+            id="owner-cmp-owner-filter"
+            value={selectedOwner}
+            onChange={(e) => setSelectedOwner(e.target.value)}
+            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+          >
+            <option value="">Tous les propriétaires</option>
+            {allOwners.map((email) => (
+              <option key={email} value={email}>
+                {email}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div>
         <span className="field-label">Modèle de rémunération</span>

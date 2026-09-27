@@ -33,7 +33,7 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
     { data: cleaningProviders, error: cleaningProvidersError },
   ] = await Promise.all([
     supabase.from("properties").select("id, reference, name, tags").order("reference", { ascending: true }),
-    supabase.from("property_owner").select("property_id, rent_type, rent_amount, charges_amount, commission_percent"),
+    supabase.from("property_owner").select("property_id, rent_type, rent_amount, charges_amount, commission_percent, email"),
     supabase.from("property_finance_settings").select("property_id, extra_vrplatform_references"),
     supabase.from("property_data").select("property_id, cleaning_provider_id, bonus_fd_percent"),
     supabase.from("cleaning_providers").select("id, name"),
@@ -62,6 +62,7 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
       commissionPercent: owner?.commission_percent ?? null,
       extraVrplatformReferences: setting?.extra_vrplatform_references ?? [],
       tags: property.tags ?? [],
+      ownerEmail: typeof owner?.email === "string" && owner.email.trim() !== "" ? owner.email.trim().toLowerCase() : null,
       cleaningProviderName: data?.cleaning_provider_id ? (providerNameById.get(data.cleaning_provider_id) ?? null) : null,
       bonusFdPercent: data?.bonus_fd_percent ?? null,
     };

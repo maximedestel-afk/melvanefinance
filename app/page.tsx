@@ -46,6 +46,7 @@ export default async function DashboardPage() {
           name: p.name,
           tags: p.tags,
           rentType: p.rentType,
+          ownerEmail: p.ownerEmail,
           cleaningProviderName: p.cleaningProviderName,
           bonusFdPercent: p.bonusFdPercent,
         }))}

@@ -26,6 +26,9 @@ export interface PropertyFinanceInfo {
    * bien (voir l'onglet Finances de M.G.B). */
   extraVrplatformReferences: string[];
   tags: string[];
+  /** Email du propriétaire (table `property_owner`), utilisé pour filtrer
+   * par propriétaire dans l'onglet Owner. */
+  ownerEmail: string | null;
   /** Nom du prestataire de ménage assigné (table `cleaning_providers` de
    * M.G.B, liée via `property_data.cleaning_provider_id`). */
   cleaningProviderName: string | null;
