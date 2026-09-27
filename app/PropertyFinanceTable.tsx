@@ -41,6 +41,7 @@ interface CleaningApiResult {
 interface FinanceRow {
   propertyId: string;
   reference: string;
+  rentType: RentType | null;
   notFoundReferences: string[];
   isFixedRent: boolean;
   fillRate: number;
@@ -55,7 +56,12 @@ interface FinanceRow {
   cleaningProfitCents: number | null;
 }
 
-function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleaning?: CleaningApiResult): FinanceRow {
+function toRow(
+  property: PropertyMonthlyResult,
+  rentType: RentType | null,
+  selectedMonths: number[],
+  cleaning?: CleaningApiResult
+): FinanceRow {
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
   const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
@@ -90,6 +96,7 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], cleani
   return {
     propertyId: property.propertyId,
     reference: property.reference,
+    rentType,
     notFoundReferences: property.notFoundReferences,
     isFixedRent: property.isFixedRent,
     fillRate,
@@ -153,6 +160,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
     [allProperties]
   );
+  const rentTypeByPropertyId = useMemo(() => new Map(allProperties.map((p) => [p.id, p.rentType])), [allProperties]);
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
@@ -250,7 +258,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const rows =
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
-      .map((r) => toRow(r, selectedMonths, cleaningByPropertyId.get(r.propertyId))) ?? null;
+      .map((r) => toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths, cleaningByPropertyId.get(r.propertyId))) ?? null;
 
   function removeRow(propertyId: string) {
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
@@ -492,6 +500,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     onSort={handleSort}
                     align="left"
                   />
+                  <th className="py-2 px-2.5 text-left text-[12px] font-medium text-[#86868b]">Modèle</th>
                   <SortHeader label="TR" sortKey="fillRate" activeKey={sortKey} direction={direction} onSort={handleSort} />
                   <SortHeader label="Rents" sortKey="rents" activeKey={sortKey} direction={direction} onSort={handleSort} />
                   <SortHeader
@@ -568,6 +577,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                       </span>
                     )}
                   </td>
+                  <td className="py-2 px-2.5 text-left text-[#1d1d1f]">
+                    {row.rentType != null ? RENT_TYPE_LABELS[row.rentType] : "—"}
+                  </td>
                   <td className="py-2 px-2.5 text-right">
                     <span
                       className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
@@ -625,6 +637,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                 <td className="py-2 pl-3 pr-2.5">
                   Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
                 </td>
+                <td className="py-2 px-2.5"></td>
                 <td className="py-2 px-2.5 text-right">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
