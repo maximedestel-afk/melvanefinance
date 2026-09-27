@@ -22,10 +22,9 @@ interface ReservationDetail {
   commissionCents: number;
   expensesCents: number;
   netRevenueCents: number;
-  /** TO du mois de check-out avant/après cette réservation (voir infobulles
-   * des colonnes) — pas propre à la réservation elle-même. */
-  occupancyRateBefore: number | null;
-  occupancyRateAfter: number | null;
+  /** Taux d'occupation du mois de check-out de la réservation (onglet
+   * Remplissage), pas propre à la réservation elle-même. */
+  occupancyRateOfMonth: number | null;
 }
 
 type SortKey =
@@ -37,8 +36,7 @@ type SortKey =
   | "commission"
   | "expenses"
   | "netRevenue"
-  | "occupancyRateBefore"
-  | "occupancyRateAfter";
+  | "occupancyRateOfMonth";
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
@@ -191,11 +189,8 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
-          case "occupancyRateBefore":
-            cmp = (a.occupancyRateBefore ?? 0) - (b.occupancyRateBefore ?? 0);
-            break;
-          case "occupancyRateAfter":
-            cmp = (a.occupancyRateAfter ?? 0) - (b.occupancyRateAfter ?? 0);
+          case "occupancyRateOfMonth":
+            cmp = (a.occupancyRateOfMonth ?? 0) - (b.occupancyRateOfMonth ?? 0);
             break;
         }
         return direction === "asc" ? cmp : -cmp;
@@ -308,20 +303,12 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                       />
                       <SortHeader label="Séjour" sortKey="checkIn" activeKey={sortKey} direction={direction} onSort={handleSort} />
                       <SortHeader
-                        label="TO avant"
-                        sortKey="occupancyRateBefore"
+                        label="TO"
+                        sortKey="occupancyRateOfMonth"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
-                        title="Taux d'occupation du mois de la réservation, sans les nuits de cette réservation"
-                      />
-                      <SortHeader
-                        label="TO après"
-                        sortKey="occupancyRateAfter"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="Taux d'occupation réel du mois de la réservation, avec cette réservation incluse"
+                        title="TO du mois de la réservation"
                       />
                       <SortHeader label="Nuits" sortKey="nights" activeKey={sortKey} direction={direction} onSort={handleSort} />
                       <SortHeader
@@ -384,10 +371,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                           {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
                         </td>
                         <td className="py-1.5 px-2 text-right">
-                          <OccupancyBadge fillRate={r.occupancyRateBefore} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right">
-                          <OccupancyBadge fillRate={r.occupancyRateAfter} />
+                          <OccupancyBadge fillRate={r.occupancyRateOfMonth} />
                         </td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{r.nights}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
@@ -411,7 +395,6 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                       <td className="py-1.5 pl-3 pr-2">Total ({sortedReservations.length})</td>
-                      <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>

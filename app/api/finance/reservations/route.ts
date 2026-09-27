@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
-import {
-  getPropertyOccupancyForMonths,
-  getPropertyReservationDetails,
-  isVrPlatformConfigured,
-  overlapNights,
-} from "@/lib/vrplatform";
+import { getPropertyOccupancyForMonths, getPropertyReservationDetails, isVrPlatformConfigured } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 
@@ -48,24 +43,13 @@ export async function GET(request: Request) {
       getPropertyOccupancyForMonths([portfolioProperty], year, months),
     ]);
 
-    // TO du mois de check-out de chaque réservation, avant et après cette
-    // réservation. "Après" = taux de remplissage réel du mois (comme
-    // l'onglet Remplissage). "Avant" = ce même taux moins la contribution
-    // propre de cette réservation (ses nuits dans ce mois / jours du mois) —
-    // pas une reconstitution historique à la date de réservation (on ne sait
-    // pas quand chaque *autre* réservation a été faite), mais la part que
-    // cette réservation ajoute au remplissage du mois.
-    const monthByNumber = new Map((occupancyResults[0]?.months ?? []).map((m) => [m.month, m]));
+    // Taux d'occupation du mois de check-out de chaque réservation (même
+    // notion que l'onglet Remplissage) — affiché à titre de contexte, pas
+    // calculé à partir de la réservation elle-même.
+    const fillRateByMonth = new Map((occupancyResults[0]?.months ?? []).map((m) => [m.month, m.fillRate]));
     const reservationsWithOccupancy = reservations.map((r) => {
       const checkoutMonth = Number(r.checkOut.slice(5, 7));
-      const monthData = monthByNumber.get(checkoutMonth);
-      if (!monthData) return { ...r, occupancyRateBefore: null, occupancyRateAfter: null };
-
-      const nightsInMonth = overlapNights(r.checkIn, r.checkOut, year, checkoutMonth);
-      const contribution = monthData.daysInMonth > 0 ? nightsInMonth / monthData.daysInMonth : 0;
-      const occupancyRateAfter = monthData.fillRate;
-      const occupancyRateBefore = Math.max(0, occupancyRateAfter - contribution);
-      return { ...r, occupancyRateBefore, occupancyRateAfter };
+      return { ...r, occupancyRateOfMonth: fillRateByMonth.get(checkoutMonth) ?? null };
     });
 
     return NextResponse.json(
