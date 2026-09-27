@@ -50,6 +50,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([now.getMonth() + 1]);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [showProperties, setShowProperties] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -154,49 +155,80 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
     : undefined;
   const portfolioOverallAverage = sortedProperties ? average(sortedProperties.map(avgFillRate)) : 0;
 
+  const periodSummary =
+    selectedMonths.length === 0
+      ? "Aucun mois"
+      : selectedMonths.length === 12
+        ? `Année complète ${year}`
+        : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="field-label" htmlFor="occupancy-year">
-            Année
-          </label>
-          <select
-            id="occupancy-year"
-            value={year}
-            onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowPeriodPicker((v) => !v)}
+            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <span className="field-label">Mois</span>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {MONTH_LABELS_SHORT.map((label, i) => {
-              const month = i + 1;
-              const active = selectedMonths.includes(month);
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => toggleMonth(month)}
-                  className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
-                    active
-                      ? "border-[#0071e3] bg-[#0071e3] text-white"
-                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
-                  }`}
+            📅 {periodSummary}
+            <span aria-hidden className={`transition-transform ${showPeriodPicker ? "rotate-180" : ""}`}>
+              ▾
+            </span>
+          </button>
+          {showPeriodPicker && (
+            <div className="absolute left-0 top-full z-10 mt-1.5 w-max rounded-[12px] border border-black/10 bg-white p-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+              <div>
+                <label className="field-label" htmlFor="occupancy-year">
+                  Année
+                </label>
+                <select
+                  id="occupancy-year"
+                  value={year}
+                  onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+                  className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
                 >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-3">
+                <span className="field-label">Mois</span>
+                <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
+                  {MONTH_LABELS_SHORT.map((label, i) => {
+                    const month = i + 1;
+                    const active = selectedMonths.includes(month);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => toggleMonth(month)}
+                        className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
+                          active
+                            ? "border-[#0071e3] bg-[#0071e3] text-white"
+                            : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPeriodPicker(false)}
+                className="mt-3 w-full rounded-[8px] bg-[#0071e3] px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-[#0071e3]/90"
+              >
+                Valider
+              </button>
+            </div>
+          )}
         </div>
 
         <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
@@ -205,24 +237,25 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
       </div>
 
       <div>
-        <div className="flex items-center justify-between">
-          <span className="field-label">Biens</span>
-          <div className="flex items-center gap-2">
-            <span className="text-[12px] text-[#6e6e73]">
-              {selectedPropertyIds.length}/{allProperties.length}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowProperties((v) => !v)}
+            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
+          >
+            🏠 Choisir les biens ({selectedPropertyIds.length}/{allProperties.length})
+            <span aria-hidden className={`transition-transform ${showProperties ? "rotate-180" : ""}`}>
+              ▾
             </span>
-            <button
-              type="button"
-              onClick={() => setShowProperties((v) => !v)}
-              className="text-[12px] font-medium text-[#0071e3] hover:underline"
-            >
-              {showProperties ? "Masquer" : "Choisir les biens"}
-            </button>
-          </div>
+          </button>
+          <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
+            {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
+            {matchingProperties.length !== 1 ? "s" : ""} (après filtres)
+          </span>
         </div>
         {showProperties && (
           <>
-            <div className="mt-1 flex justify-end gap-2">
+            <div className="mt-2 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setSelectedPropertyIds(allProperties.map((p) => p.id))}
@@ -303,11 +336,6 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
         </div>
       )}
 
-      <p className="text-[13px] text-[#6e6e73]">
-        {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
-        {matchingProperties.length !== 1 ? "s" : ""}
-      </p>
-
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedProperties && !loading && !error && (
@@ -327,14 +355,14 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
           )}
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[14px]">
+            <table className="w-full border-collapse text-[12px]">
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                  <th className="py-3.5 pl-5 pr-4 text-left">
+                  <th className="py-1.5 pl-3 pr-2 text-left">
                     <button
                       type="button"
                       onClick={() => handleSort("reference")}
-                      className={`inline-flex items-center gap-1 text-[13px] font-medium transition ${
+                      className={`inline-flex items-center gap-1 text-[11px] font-medium transition ${
                         sortKey === "reference" ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
                       }`}
                     >
@@ -343,11 +371,11 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                     </button>
                   </th>
                   {sortedProperties[0]?.months.map((m) => (
-                    <th key={m.month} className="py-3.5 px-4 text-right">
+                    <th key={m.month} className="py-1.5 px-2 text-right">
                       <button
                         type="button"
                         onClick={() => handleSort(m.month)}
-                        className={`inline-flex flex-row-reverse items-center gap-1 text-[13px] font-medium transition ${
+                        className={`inline-flex flex-row-reverse items-center gap-1 text-[11px] font-medium transition ${
                           sortKey === m.month ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
                         }`}
                       >
@@ -357,11 +385,11 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                     </th>
                   ))}
                   {sortedProperties[0]?.months.length !== 1 && (
-                    <th className="py-3.5 pl-4 pr-5 text-right">
+                    <th className="py-1.5 pl-2 pr-3 text-right">
                       <button
                         type="button"
                         onClick={() => handleSort("avgFillRate")}
-                        className={`inline-flex flex-row-reverse items-center gap-1 text-[13px] font-medium transition ${
+                        className={`inline-flex flex-row-reverse items-center gap-1 text-[11px] font-medium transition ${
                           sortKey === "avgFillRate" ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
                         }`}
                       >
@@ -373,12 +401,14 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                 </tr>
               </thead>
               <tbody>
-                {sortedProperties.map((property) => (
+                {sortedProperties.map((property, rowIndex) => (
                   <tr
                     key={property.propertyId}
-                    className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
+                    className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
+                      rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                    }`}
                   >
-                    <td className="py-3.5 pl-5 pr-4 font-medium text-[#1d1d1f]">
+                    <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
                       <button
                         type="button"
                         onClick={() => removeProperty(property.propertyId)}
@@ -398,9 +428,9 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       )}
                     </td>
                     {property.months.map((m) => (
-                      <td key={m.month} className="py-3.5 px-4 text-right">
+                      <td key={m.month} className="py-1.5 px-2 text-right">
                         <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-medium tabular-nums"
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium tabular-nums"
                           style={fillRateBadgeStyle(m.fillRate)}
                         >
                           {formatPercent(m.fillRate)}
@@ -408,9 +438,9 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       </td>
                     ))}
                     {property.months.length !== 1 && (
-                      <td className="py-3.5 pl-4 pr-5 text-right">
+                      <td className="py-1.5 pl-2 pr-3 text-right">
                         <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
                           style={fillRateBadgeStyle(avgFillRate(property))}
                         >
                           {formatPercent(avgFillRate(property))}
@@ -423,13 +453,13 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
               {portfolioAverages && (
                 <tfoot>
                   <tr className="border-t border-black/[0.08] bg-black/[0.015]">
-                    <td className="py-3.5 pl-5 pr-4 font-semibold text-[#1d1d1f]">
+                    <td className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">
                       Moyenne ({sortedProperties?.length ?? 0} bien{(sortedProperties?.length ?? 0) !== 1 ? "s" : ""})
                     </td>
                     {portfolioAverages.map((m) => (
-                      <td key={m.month} className="py-3.5 px-4 text-right">
+                      <td key={m.month} className="py-1.5 px-2 text-right">
                         <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
                           style={fillRateBadgeStyle(m.fillRate)}
                         >
                           {formatPercent(m.fillRate)}
@@ -437,9 +467,9 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       </td>
                     ))}
                     {portfolioAverages.length !== 1 && (
-                      <td className="py-3.5 pl-4 pr-5 text-right">
+                      <td className="py-1.5 pl-2 pr-3 text-right">
                         <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[13px] font-semibold tabular-nums"
+                          className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
                           style={fillRateBadgeStyle(portfolioOverallAverage)}
                         >
                           {formatPercent(portfolioOverallAverage)}
