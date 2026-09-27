@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
+import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 
 interface PropertyOption {
   id: string;
@@ -46,7 +46,19 @@ function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(`${iso}T00:00:00Z`);
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "2-digit", timeZone: "UTC" });
+}
+
+function OccupancyBadge({ fillRate }: { fillRate: number | null }) {
+  if (fillRate == null) return <span className="text-[#6e6e73]">—</span>;
+  return (
+    <span
+      className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+      style={fillRateBadgeStyle(fillRate)}
+    >
+      {formatPercent(fillRate)}
+    </span>
+  );
 }
 
 function SortHeader({
@@ -57,6 +69,7 @@ function SortHeader({
   onSort,
   align = "right",
   title,
+  narrow = false,
 }: {
   label: string;
   sortKey: SortKey;
@@ -65,16 +78,19 @@ function SortHeader({
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
   title?: string;
+  narrow?: boolean;
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`} title={title}>
+    <th className={`py-1.5 px-2 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`} title={title}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 text-[12px] font-medium transition ${
+        className={`inline-flex items-center gap-1 text-[11px] font-medium transition ${
           align === "right" ? "flex-row-reverse" : ""
-        } ${isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"}`}
+        } ${narrow ? "w-16 whitespace-normal text-left leading-tight" : ""} ${
+          isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
+        }`}
       >
         {label}
         {isActive && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
@@ -274,48 +290,18 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           ) : (
             <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[12.5px]">
+                <table className="w-full border-collapse text-[12px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                      <th className="py-2 pl-3 pr-2.5 text-left text-[12px] font-medium text-[#86868b]">Voyageur</th>
+                      <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Voyageur</th>
                       <SortHeader
-                        label="Date réservation"
+                        label="Date résa"
                         sortKey="bookedAt"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
                       />
                       <SortHeader label="Séjour" sortKey="checkIn" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                      <SortHeader label="Nuits" sortKey="nights" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                      <SortHeader
-                        label="Prix brut/nuit"
-                        sortKey="grossNightlyRate"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                      />
-                      <SortHeader
-                        label="Net Commissionable Revenue"
-                        sortKey="netCommissionableRevenue"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                      />
-                      <SortHeader
-                        label="Commission"
-                        sortKey="commission"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                      />
-                      <SortHeader label="Expenses" sortKey="expenses" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                      <SortHeader
-                        label="Net Revenue"
-                        sortKey="netRevenue"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                      />
                       <SortHeader
                         label="TO"
                         sortKey="occupancyRateOfMonth"
@@ -323,6 +309,47 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         direction={direction}
                         onSort={handleSort}
                         title="TO du mois de la réservation"
+                      />
+                      <SortHeader label="Nuits" sortKey="nights" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                      <SortHeader
+                        label="Prix brut/nuit"
+                        sortKey="grossNightlyRate"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        narrow
+                      />
+                      <SortHeader
+                        label="Net Comm. Revenue"
+                        sortKey="netCommissionableRevenue"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        narrow
+                      />
+                      <SortHeader
+                        label="Commission"
+                        sortKey="commission"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        narrow
+                      />
+                      <SortHeader
+                        label="Expenses"
+                        sortKey="expenses"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        narrow
+                      />
+                      <SortHeader
+                        label="Net Revenue"
+                        sortKey="netRevenue"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        narrow
                       />
                     </tr>
                   </thead>
@@ -332,61 +359,61 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         key={r.reservationId}
                         className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
                       >
-                        <td className="py-2 pl-3 pr-2.5 text-[#1d1d1f]">
+                        <td className="py-1.5 pl-3 pr-2 text-[#1d1d1f]">
                           <div className="font-medium">{r.guestName ?? "Voyageur inconnu"}</div>
-                          <div className="text-[11px] text-[#86868b]">
+                          <div className="text-[10.5px] text-[#86868b]">
                             {r.bookingPlatform ?? ""}
                             {r.confirmationCode ? ` · ${r.confirmationCode}` : ""}
                           </div>
                         </td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">{formatDate(r.bookedAt)}</td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{formatDate(r.bookedAt)}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
                         </td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">{r.nights}</td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                        <td className="py-1.5 px-2 text-right">
+                          <OccupancyBadge fillRate={r.occupancyRateOfMonth} />
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{r.nights}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.grossNightlyRateCents} />
                         </td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.netCommissionableRevenueCents} />
                         </td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.commissionCents} />
                         </td>
-                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.expensesCents} />
                         </td>
-                        <td className="py-2 px-2.5 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
                           <Money cents={r.netRevenueCents} bold />
-                        </td>
-                        <td className="py-2 pl-2.5 pr-3 text-right tabular-nums text-[#1d1d1f]">
-                          {r.occupancyRateOfMonth != null ? formatPercent(r.occupancyRateOfMonth) : "—"}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                      <td className="py-2 pl-3 pr-2.5">Total ({sortedReservations.length})</td>
-                      <td className="py-2 px-2.5"></td>
-                      <td className="py-2 px-2.5"></td>
-                      <td className="py-2 px-2.5 text-right tabular-nums">{totals.nights}</td>
-                      <td className="py-2 px-2.5 text-right tabular-nums">
+                      <td className="py-1.5 pl-3 pr-2">Total ({sortedReservations.length})</td>
+                      <td className="py-1.5 px-2"></td>
+                      <td className="py-1.5 px-2"></td>
+                      <td className="py-1.5 px-2"></td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">{totals.nights}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={avgGrossNightlyRateCents} bold />
                       </td>
-                      <td className="py-2 px-2.5 text-right tabular-nums">
+                      <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.netCommissionableRevenueCents} bold />
                       </td>
-                      <td className="py-2 px-2.5 text-right tabular-nums">
+                      <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.commissionCents} bold />
                       </td>
-                      <td className="py-2 px-2.5 text-right tabular-nums">
+                      <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.expensesCents} bold />
                       </td>
-                      <td className="py-2 px-2.5 text-right tabular-nums">
+                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
                         <Money cents={totals.netRevenueCents} bold />
                       </td>
-                      <td className="py-2 pl-2.5 pr-3"></td>
                     </tr>
                   </tfoot>
                 </table>
