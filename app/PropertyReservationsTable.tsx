@@ -110,6 +110,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   const [propertyId, setPropertyId] = useState<string>(properties[0]?.id ?? "");
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [reservations, setReservations] = useState<ReservationDetail[] | null>(null);
   const [reference, setReference] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -209,9 +210,16 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     : null;
   const avgGrossNightlyRateCents = totals && totals.nights > 0 ? Math.round(totals.rentsForAvgCents / totals.nights) : null;
 
+  const periodSummary =
+    selectedMonths.length === 0
+      ? "Aucun mois"
+      : selectedMonths.length === 12
+        ? `Année complète ${year}`
+        : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div>
           <label className="field-label" htmlFor="res-property">
             Bien
@@ -230,46 +238,70 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           </select>
         </div>
 
-        <div>
-          <label className="field-label" htmlFor="res-year">
-            Année
-          </label>
-          <select
-            id="res-year"
-            value={year}
-            onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowPeriodPicker((v) => !v)}
+            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <span className="field-label">Mois</span>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {MONTH_LABELS_SHORT.map((label, i) => {
-              const month = i + 1;
-              const active = selectedMonths.includes(month);
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => toggleMonth(month)}
-                  className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
-                    active
-                      ? "border-[#0071e3] bg-[#0071e3] text-white"
-                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
-                  }`}
+            📅 {periodSummary}
+            <span aria-hidden className={`transition-transform ${showPeriodPicker ? "rotate-180" : ""}`}>
+              ▾
+            </span>
+          </button>
+          {showPeriodPicker && (
+            <div className="absolute left-0 top-full z-10 mt-1.5 w-max rounded-[12px] border border-black/10 bg-white p-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+              <div>
+                <label className="field-label" htmlFor="res-year">
+                  Année
+                </label>
+                <select
+                  id="res-year"
+                  value={year}
+                  onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+                  className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
                 >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-3">
+                <span className="field-label">Mois</span>
+                <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
+                  {MONTH_LABELS_SHORT.map((label, i) => {
+                    const month = i + 1;
+                    const active = selectedMonths.includes(month);
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => toggleMonth(month)}
+                        className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
+                          active
+                            ? "border-[#0071e3] bg-[#0071e3] text-white"
+                            : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPeriodPicker(false)}
+                className="mt-3 w-full rounded-[8px] bg-[#0071e3] px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-[#0071e3]/90"
+              >
+                Valider
+              </button>
+            </div>
+          )}
         </div>
 
         <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
