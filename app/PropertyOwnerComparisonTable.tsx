@@ -48,7 +48,7 @@ interface ComparisonRow {
   fillRate: number;
   netCommissionableRevenueCents: number;
   commissionPercent: number | null;
-  commissionCents: number;
+  commissionCents: number | null;
   expensesCents: number;
   netRevenueCents: number;
   loyerCents: number | null;
@@ -63,8 +63,12 @@ interface ComparisonRow {
 }
 
 function computeFigures(rentType: RentType | null, commissionPercent: number | null, netCommissionableRevenueCents: number, fixedRentAmountCents: number | null, months: number) {
-  const commissionCents = Math.round((netCommissionableRevenueCents * (commissionPercent ?? 0)) / 100);
-  const netRevenueCents = netCommissionableRevenueCents - commissionCents;
+  // Modèle Fixe : M.G.B ne prend pas de commission (elle garde l'Excess,
+  // Net Revenue − Loyer) — un commission_percent resté en base côté M.G.B
+  // pour un bien Fixe n'est pas exploité ici, comme dans l'onglet Revenus.
+  const commissionCents =
+    rentType !== "fixe" ? Math.round((netCommissionableRevenueCents * (commissionPercent ?? 0)) / 100) : null;
+  const netRevenueCents = netCommissionableRevenueCents - (commissionCents ?? 0);
   const loyerCents =
     rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && fixedRentAmountCents != null
       ? fixedRentAmountCents * months
@@ -302,7 +306,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
             cmp = a.netCommissionableRevenueCents - b.netCommissionableRevenueCents;
             break;
           case "commission":
-            cmp = a.commissionCents - b.commissionCents;
+            cmp = (a.commissionCents ?? 0) - (b.commissionCents ?? 0);
             break;
           case "expenses":
             cmp = a.expensesCents - b.expensesCents;
@@ -328,7 +332,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
     ? {
         fillRate: sortedRows.length > 0 ? sortedRows.reduce((sum, r) => sum + r.fillRate, 0) / sortedRows.length : 0,
         netCommissionableRevenueCents: sortedRows.reduce((sum, r) => sum + r.netCommissionableRevenueCents, 0),
-        commissionCents: sortedRows.reduce((sum, r) => sum + r.commissionCents, 0),
+        commissionCents: sortedRows.reduce((sum, r) => sum + (r.commissionCents ?? 0), 0),
         expensesCents: sortedRows.reduce((sum, r) => sum + r.expensesCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         loyerCents: sortedRows.reduce((sum, r) => sum + (r.loyerCents ?? 0), 0),
@@ -613,7 +617,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                       </td>
                       <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
                         <Money cents={row.commissionCents} />
-                        {row.commissionPercent != null && (
+                        {row.commissionCents != null && row.commissionPercent != null && (
                           <span className="ml-1 text-[11px] text-[#86868b]">({row.commissionPercent}%)</span>
                         )}
                       </td>
