@@ -12,6 +12,7 @@ interface ReservationDetail {
   reservationId: string;
   checkIn: string;
   checkOut: string;
+  bookedAt: string | null;
   nights: number;
   guestName: string | null;
   confirmationCode: string | null;
@@ -23,14 +24,57 @@ interface ReservationDetail {
   netRevenueCents: number;
 }
 
+type SortKey =
+  | "bookedAt"
+  | "checkIn"
+  | "nights"
+  | "grossNightlyRate"
+  | "netCommissionableRevenue"
+  | "commission"
+  | "expenses"
+  | "netRevenue";
+
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
   return <span className={bold ? "font-semibold" : undefined}>{formatEuros(cents / 100)}</span>;
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
   const d = new Date(`${iso}T00:00:00Z`);
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeKey,
+  direction,
+  onSort,
+  align = "right",
+}: {
+  label: string;
+  sortKey: SortKey;
+  activeKey: SortKey;
+  direction: "asc" | "desc";
+  onSort: (key: SortKey) => void;
+  align?: "left" | "right";
+}) {
+  const isActive = activeKey === sortKey;
+  return (
+    <th className={`py-2 px-2.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 text-[12px] font-medium transition ${
+          align === "right" ? "flex-row-reverse" : ""
+        } ${isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"}`}
+      >
+        {label}
+        {isActive && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+      </button>
+    </th>
+  );
 }
 
 export function PropertyReservationsTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
@@ -48,11 +92,22 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   const [reference, setReference] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("checkIn");
+  const [direction, setDirection] = useState<"asc" | "desc">("asc");
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
       prev.includes(month) ? prev.filter((m) => m !== month) : [...prev, month].sort((a, b) => a - b)
     );
+  }
+
+  function handleSort(key: SortKey) {
+    if (key === sortKey) {
+      setDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setDirection(key === "checkIn" || key === "bookedAt" ? "asc" : "desc");
+    }
   }
 
   async function load() {
@@ -84,14 +139,47 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     }
   }
 
-  const totals = reservations
+  const sortedReservations = reservations
+    ? [...reservations].sort((a, b) => {
+        let cmp: number;
+        switch (sortKey) {
+          case "bookedAt":
+            cmp = (a.bookedAt ?? "").localeCompare(b.bookedAt ?? "");
+            break;
+          case "checkIn":
+            cmp = a.checkIn.localeCompare(b.checkIn);
+            break;
+          case "nights":
+            cmp = a.nights - b.nights;
+            break;
+          case "grossNightlyRate":
+            cmp = (a.grossNightlyRateCents ?? 0) - (b.grossNightlyRateCents ?? 0);
+            break;
+          case "netCommissionableRevenue":
+            cmp = a.netCommissionableRevenueCents - b.netCommissionableRevenueCents;
+            break;
+          case "commission":
+            cmp = a.commissionCents - b.commissionCents;
+            break;
+          case "expenses":
+            cmp = a.expensesCents - b.expensesCents;
+            break;
+          case "netRevenue":
+            cmp = a.netRevenueCents - b.netRevenueCents;
+            break;
+        }
+        return direction === "asc" ? cmp : -cmp;
+      })
+    : null;
+
+  const totals = sortedReservations
     ? {
-        nights: reservations.reduce((sum, r) => sum + r.nights, 0),
-        rentsForAvgCents: reservations.reduce((sum, r) => sum + (r.grossNightlyRateCents ?? 0) * r.nights, 0),
-        netCommissionableRevenueCents: reservations.reduce((sum, r) => sum + r.netCommissionableRevenueCents, 0),
-        commissionCents: reservations.reduce((sum, r) => sum + r.commissionCents, 0),
-        expensesCents: reservations.reduce((sum, r) => sum + r.expensesCents, 0),
-        netRevenueCents: reservations.reduce((sum, r) => sum + r.netRevenueCents, 0),
+        nights: sortedReservations.reduce((sum, r) => sum + r.nights, 0),
+        rentsForAvgCents: sortedReservations.reduce((sum, r) => sum + (r.grossNightlyRateCents ?? 0) * r.nights, 0),
+        netCommissionableRevenueCents: sortedReservations.reduce((sum, r) => sum + r.netCommissionableRevenueCents, 0),
+        commissionCents: sortedReservations.reduce((sum, r) => sum + r.commissionCents, 0),
+        expensesCents: sortedReservations.reduce((sum, r) => sum + r.expensesCents, 0),
+        netRevenueCents: sortedReservations.reduce((sum, r) => sum + r.netRevenueCents, 0),
       }
     : null;
   const avgGrossNightlyRateCents = totals && totals.nights > 0 ? Math.round(totals.rentsForAvgCents / totals.nights) : null;
@@ -166,13 +254,13 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
-      {reservations && totals && !loading && !error && (
+      {sortedReservations && totals && !loading && !error && (
         <div className="space-y-2">
           <p className="text-[13px] text-[#6e6e73]">
-            {reservations.length} réservation{reservations.length !== 1 ? "s" : ""} — {reference}
+            {sortedReservations.length} réservation{sortedReservations.length !== 1 ? "s" : ""} — {reference}
           </p>
 
-          {reservations.length === 0 ? (
+          {sortedReservations.length === 0 ? (
             <p className="text-[13px] text-[#6e6e73]">Aucune réservation sur cette période.</p>
           ) : (
             <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
@@ -180,32 +268,63 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                 <table className="w-full border-collapse text-[12.5px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                      <th className="py-2 pl-3 pr-2.5 text-left text-[12px] font-medium text-[#86868b]">Réservation</th>
-                      <th className="py-2 px-2.5 text-right text-[12px] font-medium text-[#86868b]">Nuits</th>
-                      <th className="py-2 px-2.5 text-right text-[12px] font-medium text-[#86868b]">Prix brut/nuit</th>
-                      <th className="py-2 px-2.5 text-right text-[12px] font-medium text-[#86868b]">
-                        Net Commissionable Revenue
-                      </th>
-                      <th className="py-2 px-2.5 text-right text-[12px] font-medium text-[#86868b]">Commission</th>
-                      <th className="py-2 px-2.5 text-right text-[12px] font-medium text-[#86868b]">Expenses</th>
-                      <th className="py-2 pl-2.5 pr-3 text-right text-[12px] font-medium text-[#86868b]">Net Revenue</th>
+                      <th className="py-2 pl-3 pr-2.5 text-left text-[12px] font-medium text-[#86868b]">Voyageur</th>
+                      <SortHeader
+                        label="Date réservation"
+                        sortKey="bookedAt"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                      />
+                      <SortHeader label="Séjour" sortKey="checkIn" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                      <SortHeader label="Nuits" sortKey="nights" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                      <SortHeader
+                        label="Prix brut/nuit"
+                        sortKey="grossNightlyRate"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                      />
+                      <SortHeader
+                        label="Net Commissionable Revenue"
+                        sortKey="netCommissionableRevenue"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                      />
+                      <SortHeader
+                        label="Commission"
+                        sortKey="commission"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                      />
+                      <SortHeader label="Expenses" sortKey="expenses" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                      <SortHeader
+                        label="Net Revenue"
+                        sortKey="netRevenue"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                      />
                     </tr>
                   </thead>
                   <tbody>
-                    {reservations.map((r) => (
+                    {sortedReservations.map((r) => (
                       <tr
                         key={r.reservationId}
                         className="border-b border-black/[0.05] transition-colors last:border-b-0 hover:bg-black/[0.015]"
                       >
                         <td className="py-2 pl-3 pr-2.5 text-[#1d1d1f]">
-                          <div className="font-medium">
-                            {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
-                          </div>
+                          <div className="font-medium">{r.guestName ?? "Voyageur inconnu"}</div>
                           <div className="text-[11px] text-[#86868b]">
-                            {r.guestName ?? "Voyageur inconnu"}
-                            {r.bookingPlatform ? ` · ${r.bookingPlatform}` : ""}
+                            {r.bookingPlatform ?? ""}
                             {r.confirmationCode ? ` · ${r.confirmationCode}` : ""}
                           </div>
+                        </td>
+                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">{formatDate(r.bookedAt)}</td>
+                        <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
+                          {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
                         </td>
                         <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">{r.nights}</td>
                         <td className="py-2 px-2.5 text-right tabular-nums text-[#1d1d1f]">
@@ -228,7 +347,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                      <td className="py-2 pl-3 pr-2.5">Total ({reservations.length})</td>
+                      <td className="py-2 pl-3 pr-2.5">Total ({sortedReservations.length})</td>
+                      <td className="py-2 px-2.5"></td>
+                      <td className="py-2 px-2.5"></td>
                       <td className="py-2 px-2.5 text-right tabular-nums">{totals.nights}</td>
                       <td className="py-2 px-2.5 text-right tabular-nums">
                         <Money cents={avgGrossNightlyRateCents} bold />

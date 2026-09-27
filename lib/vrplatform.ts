@@ -346,6 +346,7 @@ interface VrPlatformReservationDetailed {
   id: string;
   checkIn: string | null;
   checkOut: string | null;
+  bookedAt: string | null;
   nights: number;
   guestName: string | null;
   confirmationCode: string | null;
@@ -362,6 +363,9 @@ export interface ReservationDetail {
   reservationId: string;
   checkIn: string;
   checkOut: string;
+  /** Date à laquelle la réservation a été effectuée (bookedAt VRPlatform),
+   * distincte des dates de séjour. */
+  bookedAt: string | null;
   nights: number;
   guestName: string | null;
   confirmationCode: string | null;
@@ -423,6 +427,7 @@ export async function getPropertyReservationDetails(
           reservationId: reservation.id,
           checkIn: reservation.checkIn,
           checkOut: reservation.checkOut,
+          bookedAt: reservation.bookedAt,
           nights: reservation.nights,
           guestName: reservation.guestName,
           confirmationCode: reservation.confirmationCode,
