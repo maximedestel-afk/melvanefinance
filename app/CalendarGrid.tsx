@@ -20,9 +20,25 @@ const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: st
   blocked: { className: "border-black/10 bg-black/[0.05] text-[#6e6e73]", label: "Bloquée" },
 };
 
+// Une couleur par réservation distincte (occupied uniquement) — attribuées
+// dans l'ordre chronologique de rencontre, donc deux réservations qui se
+// suivent ont toujours des couleurs différentes, même adjacentes dans la
+// grille. Sert à distinguer d'un coup d'œil une réservation de 5 nuits de 5
+// réservations d'1 nuit qui se suivent.
+const RESERVATION_PALETTE = [
+  "border-[#0071e3]/30 bg-[#0071e3]/10 text-[#0071e3]",
+  "border-purple-300 bg-purple-50 text-purple-700",
+  "border-teal-300 bg-teal-50 text-teal-700",
+  "border-pink-300 bg-pink-50 text-pink-700",
+  "border-amber-300 bg-amber-50 text-amber-700",
+  "border-indigo-300 bg-indigo-50 text-indigo-700",
+  "border-cyan-300 bg-cyan-50 text-cyan-700",
+  "border-rose-300 bg-rose-50 text-rose-700",
+];
+
 const WEEKDAY_LABELS = ["L", "M", "M", "J", "V", "S", "D"];
 
-const NBSP = " ";
+const NBSP = " ";
 
 /** Grille calendrier réutilisable (libre/occupée/bloquée, prix/nuit et
  * source de la réservation affichés dans chaque case) — utilisée par la
@@ -33,9 +49,25 @@ const NBSP = " ";
  * même hauteur fixe : une case dont le contenu varie (prix ou source
  * absents un jour donné) réserve quand même la ligne correspondante avec
  * une espace insécable, pour que les chiffres des jours restent alignés
- * sur la même grille d'une ligne à l'autre. */
+ * sur la même grille d'une ligne à l'autre.
+ *
+ * Les nuits occupées d'une même réservation partagent la même couleur (voir
+ * RESERVATION_PALETTE), pour qu'une réservation de plusieurs nuits reste
+ * visuellement distincte de plusieurs réservations d'une nuit qui se
+ * suivent. */
 export function CalendarGrid({ days }: { days: CalendarDay[] }) {
   const leadingBlanks = days.length > 0 ? (new Date(`${days[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
+
+  const colorByConfirmationCode = new Map<string, string>();
+  for (const day of days) {
+    if (day.status !== "occupied" || !day.confirmationCode) continue;
+    if (!colorByConfirmationCode.has(day.confirmationCode)) {
+      colorByConfirmationCode.set(
+        day.confirmationCode,
+        RESERVATION_PALETTE[colorByConfirmationCode.size % RESERVATION_PALETTE.length]
+      );
+    }
+  }
 
   return (
     <>
@@ -46,6 +78,7 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
             {STATUS_STYLE[status].label}
           </span>
         ))}
+        <span className="text-[#86868b]">— une couleur par réservation</span>
       </div>
 
       <div className="grid grid-cols-7 gap-1.5">
@@ -58,7 +91,10 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
           <div key={`blank-${i}`} className="h-16" />
         ))}
         {days.map((day) => {
-          const style = STATUS_STYLE[day.status];
+          const className =
+            day.status === "occupied" && day.confirmationCode
+              ? (colorByConfirmationCode.get(day.confirmationCode) ?? STATUS_STYLE.occupied.className)
+              : STATUS_STYLE[day.status].className;
           const dayNumber = Number.parseInt(day.date.slice(8, 10), 10);
           const titleParts: string[] = [];
           if (day.status === "occupied") {
@@ -66,7 +102,7 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
               `${day.guestName ?? "Voyageur"}${day.source ? ` — ${day.source}` : ""}${day.confirmationCode ? ` (${day.confirmationCode})` : ""}`
             );
           } else {
-            titleParts.push(style.label);
+            titleParts.push(STATUS_STYLE[day.status].label);
             if (day.status === "blocked" && day.note) titleParts.push(day.note);
           }
           if (day.minNights != null) titleParts.push(`Min. ${day.minNights} nuit${day.minNights > 1 ? "s" : ""}`);
@@ -75,7 +111,7 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
             <div
               key={day.date}
               title={title}
-              className={`flex h-16 w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-[8px] border px-0.5 text-[13px] font-medium ${style.className}`}
+              className={`flex h-16 w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-[8px] border px-0.5 text-[13px] font-medium ${className}`}
             >
               <span>{dayNumber}</span>
               <span className="text-[9.5px] font-normal leading-none opacity-80">
