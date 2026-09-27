@@ -42,6 +42,7 @@ interface ComparisonRow {
    * détail (une ligne par mois, quand un seul bien est sélectionné). */
   month: number | null;
   propertyId: string;
+  rentType: RentType | null;
   notFoundReferences: string[];
   hasReservation: boolean;
   fillRate: number;
@@ -89,6 +90,7 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
     label: property.reference,
     month: null,
     propertyId: property.propertyId,
+    rentType,
     notFoundReferences: property.notFoundReferences,
     hasReservation,
     fillRate,
@@ -120,6 +122,7 @@ function toMonthlyRows(
         label: `${MONTH_LABELS_SHORT[m.month - 1]} ${year}`,
         month: m.month,
         propertyId: property.propertyId,
+        rentType,
         notFoundReferences: property.notFoundReferences,
         hasReservation: m.nightsBooked > 0,
         fillRate: m.fillRate,
@@ -527,6 +530,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                       onSort={handleSort}
                       align="left"
                     />
+                    <th className="py-2 px-2.5 text-left text-[12px] font-medium text-[#86868b]">Modèle</th>
                     <SortHeader label="TR" sortKey="fillRate" activeKey={sortKey} direction={direction} onSort={handleSort} />
                     <SortHeader
                       label="Net Commissionable Revenue"
@@ -593,6 +597,9 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                           </span>
                         )}
                       </td>
+                      <td className="py-2 px-2.5 text-left text-[#1d1d1f]">
+                        {row.rentType != null ? RENT_TYPE_LABELS[row.rentType] : "—"}
+                      </td>
                       <td className="py-2 px-2.5 text-right">
                         <span
                           className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
@@ -646,6 +653,7 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                         ? `Total (${sortedRows.length} mois)`
                         : `Total (${sortedRows.length} bien${sortedRows.length !== 1 ? "s" : ""})`}
                     </td>
+                    <td className="py-2 px-2.5"></td>
                     <td className="py-2 px-2.5 text-right">
                       <span
                         className="inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums"
