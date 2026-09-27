@@ -6,6 +6,7 @@ import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 import { ExpenseDetailModal } from "./ExpenseDetailModal";
 import { CalendarGrid, type CalendarDay } from "./CalendarGrid";
+import { DailyPriceChart } from "./DailyPriceChart";
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -631,8 +632,13 @@ export function PropertyAnalysisTable({
           <div>
             <p className="mb-2 text-[12px] font-medium text-[#6e6e73]">Calendrier</p>
             {enrichedCalendarDays ? (
-              <div className="max-w-[560px] rounded-[14px] border border-black/[0.06] bg-white p-3.5">
-                <CalendarGrid days={enrichedCalendarDays} />
+              <div className="flex flex-wrap items-start gap-4">
+                <div className="max-w-[560px] flex-1 rounded-[14px] border border-black/[0.06] bg-white p-3.5">
+                  <CalendarGrid days={enrichedCalendarDays} />
+                </div>
+                <div className="min-w-[320px] flex-1 rounded-[14px] border border-black/[0.06] bg-white p-3.5">
+                  <DailyPriceChart days={enrichedCalendarDays} />
+                </div>
               </div>
             ) : (
               <p className="text-[13px] text-[#6e6e73]">Calendrier indisponible.</p>
