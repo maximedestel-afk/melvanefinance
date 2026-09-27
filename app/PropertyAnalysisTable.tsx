@@ -175,6 +175,7 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
   const [propertyId, setPropertyId] = useState<string>(properties[0]?.id ?? "");
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -337,6 +338,8 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
       })
     : null;
 
+  const periodSummary = `${MONTH_LABELS_SHORT[month - 1]} ${year}`;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -358,43 +361,73 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
           </select>
         </div>
 
-        <div>
-          <label className="field-label" htmlFor="analysis-month">
-            Mois
-          </label>
-          <select
-            id="analysis-month"
-            value={month}
-            onChange={(e) => setMonth(Number.parseInt(e.target.value, 10))}
-            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowPeriodPicker((v) => !v)}
+            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
-            {MONTH_LABELS_SHORT.map((label, i) => (
-              <option key={label} value={i + 1}>
-                {label}
-              </option>
-            ))}
-          </select>
+            📅 {periodSummary}
+            <span aria-hidden className={`transition-transform ${showPeriodPicker ? "rotate-180" : ""}`}>
+              ▾
+            </span>
+          </button>
+          {showPeriodPicker && (
+            <div className="absolute left-0 top-full z-10 mt-1.5 w-max rounded-[12px] border border-black/10 bg-white p-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
+              <div>
+                <label className="field-label" htmlFor="analysis-year">
+                  Année
+                </label>
+                <select
+                  id="analysis-year"
+                  value={year}
+                  onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+                  className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-3">
+                <span className="field-label">Mois</span>
+                <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
+                  {MONTH_LABELS_SHORT.map((label, i) => {
+                    const m = i + 1;
+                    const active = month === m;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => setMonth(m)}
+                        className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
+                          active
+                            ? "border-[#0071e3] bg-[#0071e3] text-white"
+                            : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPeriodPicker(false)}
+                className="mt-3 w-full rounded-[8px] bg-[#0071e3] px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-[#0071e3]/90"
+              >
+                Valider
+              </button>
+            </div>
+          )}
         </div>
 
-        <div>
-          <label className="field-label" htmlFor="analysis-year">
-            Année
-          </label>
-          <select
-            id="analysis-year"
-            value={year}
-            onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
-          >
-            {years.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm mt-5">
+        <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
           {loading ? "Chargement…" : monthly ? "Actualiser" : "Charger"}
         </button>
       </div>

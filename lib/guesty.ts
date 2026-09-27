@@ -239,6 +239,14 @@ export interface GuestyCalendarDay {
   source: string | null;
   checkIn: string | null;
   checkOut: string | null;
+  /** Prix affiché par Guesty pour cette nuit (tarif dynamique du calendrier,
+   * pas le prix effectivement facturé pour une réservation existante). */
+  priceCents: number | null;
+  currency: string | null;
+  /** Nombre de nuits minimum pour un séjour démarrant ce jour-là. */
+  minNights: number | null;
+  /** Raison du blocage manuel, si renseignée côté PMS. */
+  note: string | null;
 }
 
 interface RawCalendarBlockRef {
@@ -256,6 +264,10 @@ interface RawCalendarDay {
   date: string;
   status: string;
   blockRefs: RawCalendarBlockRef[];
+  price?: number | null;
+  currency?: string | null;
+  minNights?: number | null;
+  note?: string | null;
 }
 
 interface RawCalendarResponse {
@@ -279,6 +291,11 @@ export async function getGuestyCalendarMonth(
   const res = await guestyFetch<RawCalendarResponse>(url);
 
   return res.data.days.map((day) => {
+    const priceCents = typeof day.price === "number" ? Math.round(day.price * 100) : null;
+    const currency = day.currency ?? null;
+    const minNights = typeof day.minNights === "number" ? day.minNights : null;
+    const note = day.note ?? null;
+
     const reservationBlock = day.blockRefs.find((b) => b.reservationId && b.reservation);
     if (reservationBlock?.reservation) {
       const r = reservationBlock.reservation;
@@ -290,6 +307,10 @@ export async function getGuestyCalendarMonth(
         source: r.source ?? null,
         checkIn: r.checkIn ?? null,
         checkOut: r.checkOut ?? null,
+        priceCents,
+        currency,
+        minNights,
+        note,
       };
     }
     return {
@@ -300,6 +321,10 @@ export async function getGuestyCalendarMonth(
       source: null,
       checkIn: null,
       checkOut: null,
+      priceCents,
+      currency,
+      minNights,
+      note,
     };
   });
 }

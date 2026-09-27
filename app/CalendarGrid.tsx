@@ -8,6 +8,10 @@ export interface CalendarDay {
   source: string | null;
   checkIn: string | null;
   checkOut: string | null;
+  priceCents: number | null;
+  currency: string | null;
+  minNights: number | null;
+  note: string | null;
 }
 
 const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: string }> = {
@@ -18,8 +22,9 @@ const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: st
 
 const WEEKDAY_LABELS = ["L", "M", "M", "J", "V", "S", "D"];
 
-/** Grille calendrier réutilisable (libre/occupée/bloquée) — utilisée par la
- * modale de l'espace propriétaire et l'onglet Analyse admin. */
+/** Grille calendrier réutilisable (libre/occupée/bloquée, prix/nuit affiché
+ * dans chaque case) — utilisée par la modale de l'espace propriétaire et
+ * l'onglet Analyse admin, sur le même modèle que le calendrier M.G.B. */
 export function CalendarGrid({ days }: { days: CalendarDay[] }) {
   const leadingBlanks = days.length > 0 ? (new Date(`${days[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
 
@@ -46,17 +51,27 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
         {days.map((day) => {
           const style = STATUS_STYLE[day.status];
           const dayNumber = Number.parseInt(day.date.slice(8, 10), 10);
-          const title =
-            day.status === "occupied"
-              ? `${day.guestName ?? "Voyageur"}${day.source ? ` — ${day.source}` : ""}${day.confirmationCode ? ` (${day.confirmationCode})` : ""}`
-              : style.label;
+          const titleParts: string[] = [];
+          if (day.status === "occupied") {
+            titleParts.push(`${day.guestName ?? "Voyageur"}${day.source ? ` — ${day.source}` : ""}${day.confirmationCode ? ` (${day.confirmationCode})` : ""}`);
+          } else {
+            titleParts.push(style.label);
+            if (day.status === "blocked" && day.note) titleParts.push(day.note);
+          }
+          if (day.minNights != null) titleParts.push(`Min. ${day.minNights} nuit${day.minNights > 1 ? "s" : ""}`);
+          const title = titleParts.join(" · ");
           return (
             <div
               key={day.date}
               title={title}
-              className={`flex aspect-square flex-col items-center justify-center rounded-[8px] border text-[13px] font-medium ${style.className}`}
+              className={`flex aspect-square flex-col items-center justify-center gap-0.5 rounded-[8px] border text-[13px] font-medium ${style.className}`}
             >
-              {dayNumber}
+              <span>{dayNumber}</span>
+              {day.priceCents != null && (
+                <span className="text-[9.5px] font-normal leading-none opacity-80">
+                  {Math.round(day.priceCents / 100)}€
+                </span>
+              )}
             </div>
           );
         })}
