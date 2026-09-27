@@ -27,6 +27,17 @@ export function DashboardClient({
   }[];
 }) {
   const [tab, setTab] = useState<Tab>("occupancy");
+  const [analysisRequest, setAnalysisRequest] = useState<{
+    propertyId: string;
+    year: number;
+    month: number;
+    token: number;
+  } | null>(null);
+
+  function openAnalysis(propertyId: string, year: number, month: number) {
+    setAnalysisRequest({ propertyId, year, month, token: Date.now() });
+    setTab("analysis");
+  }
 
   return (
     <div className="space-y-8">
@@ -129,7 +140,7 @@ export function DashboardClient({
       {tab === "owner-comparison" && (
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Owner</h2>
-          <PropertyOwnerComparisonTable properties={properties} />
+          <PropertyOwnerComparisonTable properties={properties} onOpenAnalysis={openAnalysis} />
         </section>
       )}
 
@@ -143,7 +154,7 @@ export function DashboardClient({
       {tab === "analysis" && (
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Analyse</h2>
-          <PropertyAnalysisTable properties={properties} />
+          <PropertyAnalysisTable properties={properties} request={analysisRequest} />
         </section>
       )}
     </div>

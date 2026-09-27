@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
@@ -164,7 +164,16 @@ function SortHeader({
   );
 }
 
-export function PropertyAnalysisTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
+export function PropertyAnalysisTable({
+  properties: unsortedProperties,
+  request,
+}: {
+  properties: PropertyOption[];
+  /** Navigation depuis un autre onglet (ex: clic sur le TR dans Owner) — un
+   * nouveau `token` force la sélection et le chargement même si bien/mois/
+   * année sont identiques à la demande précédente. */
+  request?: { propertyId: string; year: number; month: number; token: number } | null;
+}) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
   const properties = useMemo(
@@ -172,9 +181,9 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
     [unsortedProperties]
   );
 
-  const [propertyId, setPropertyId] = useState<string>(properties[0]?.id ?? "");
-  const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [propertyId, setPropertyId] = useState<string>(request?.propertyId ?? properties[0]?.id ?? "");
+  const [year, setYear] = useState(request?.year ?? currentYear);
+  const [month, setMonth] = useState(request?.month ?? new Date().getMonth() + 1);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -196,8 +205,11 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
     }
   }
 
-  async function load() {
-    if (!propertyId) {
+  async function load(overrides?: { propertyId: string; year: number; month: number }) {
+    const targetPropertyId = overrides?.propertyId ?? propertyId;
+    const targetYear = overrides?.year ?? year;
+    const targetMonth = overrides?.month ?? month;
+    if (!targetPropertyId) {
       setError("Choisis un bien.");
       return;
     }
@@ -208,10 +220,26 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
     setReservations(null);
     setCalendarDays(null);
     try {
-      const monthlyParams = new URLSearchParams({ year: String(year), propertyIds: propertyId, includeExpenses: "1" });
-      const cleaningParams = new URLSearchParams({ year: String(year), months: String(month), propertyIds: propertyId });
-      const reservationsParams = new URLSearchParams({ propertyId, year: String(year), months: String(month) });
-      const calendarParams = new URLSearchParams({ propertyId, year: String(year), month: String(month) });
+      const monthlyParams = new URLSearchParams({
+        year: String(targetYear),
+        propertyIds: targetPropertyId,
+        includeExpenses: "1",
+      });
+      const cleaningParams = new URLSearchParams({
+        year: String(targetYear),
+        months: String(targetMonth),
+        propertyIds: targetPropertyId,
+      });
+      const reservationsParams = new URLSearchParams({
+        propertyId: targetPropertyId,
+        year: String(targetYear),
+        months: String(targetMonth),
+      });
+      const calendarParams = new URLSearchParams({
+        propertyId: targetPropertyId,
+        year: String(targetYear),
+        month: String(targetMonth),
+      });
 
       const [monthlyRes, cleaningRes, reservationsRes, calendarRes] = await Promise.all([
         fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
@@ -246,6 +274,19 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
       setLoading(false);
     }
   }
+
+  // propertyId/year/month sont déjà initialisés depuis `request` (useState
+  // ci-dessus) — ce composant est démonté/remonté à chaque navigation depuis
+  // Owner (voir DashboardClient), donc un nouveau `request` correspond
+  // toujours à un nouveau montage. Seul le chargement des données doit être
+  // déclenché ici.
+  useEffect(() => {
+    if (!request) return;
+    // Déclenche volontairement le même chargement que le bouton "Charger", au montage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load({ propertyId: request.propertyId, year: request.year, month: request.month });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.token]);
 
   const rentType = properties.find((p) => p.id === propertyId)?.rentType ?? null;
   const monthData = monthly?.months.find((m) => m.month === month) ?? null;
@@ -444,7 +485,7 @@ export function PropertyAnalysisTable({ properties: unsortedProperties }: { prop
           )}
         </div>
 
-        <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
+        <button type="button" onClick={() => load()} disabled={loading} className="btn-secondary btn-sm">
           {loading ? "Chargement…" : monthly ? "Actualiser" : "Charger"}
         </button>
       </div>

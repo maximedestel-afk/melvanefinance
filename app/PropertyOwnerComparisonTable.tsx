@@ -192,7 +192,13 @@ function SortHeader({
   );
 }
 
-export function PropertyOwnerComparisonTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
+export function PropertyOwnerComparisonTable({
+  properties: unsortedProperties,
+  onOpenAnalysis,
+}: {
+  properties: PropertyOption[];
+  onOpenAnalysis?: (propertyId: string, year: number, month: number) => void;
+}) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
   const allProperties = useMemo(
@@ -688,12 +694,21 @@ export function PropertyOwnerComparisonTable({ properties: unsortedProperties }:
                         {row.rentType != null ? RENT_TYPE_SHORT_LABELS[row.rentType] : "—"}
                       </td>
                       <td className="py-1.5 px-2 text-right">
-                        <span
-                          className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums"
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onOpenAnalysis?.(
+                              row.propertyId,
+                              year,
+                              row.month ?? selectedMonths[selectedMonths.length - 1] ?? new Date().getMonth() + 1
+                            )
+                          }
+                          title="Voir ce bien dans l'onglet Analyse"
+                          className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums transition hover:ring-2 hover:ring-[#0071e3]/50"
                           style={fillRateBadgeStyle(row.fillRate)}
                         >
                           {formatPercent(row.fillRate)}
-                        </span>
+                        </button>
                       </td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         <Money cents={row.netCommissionableRevenueCents} />
