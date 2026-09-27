@@ -360,6 +360,29 @@ export function PropertyAnalysisTable({
     });
   }, [calendarDays, reservations]);
 
+  // TR calculé depuis le calendrier Guesty (occupé / (occupé + libre)), pour
+  // ne pas compter les nuits bloquées manuellement (travaux, usage
+  // personnel...) dans le dénominateur — contrairement au TR VRPlatform des
+  // autres onglets (nightsBooked / jours du mois), qui n'a pas connaissance
+  // des blocages Guesty.
+  const calendarStats = useMemo(() => {
+    if (!calendarDays) return null;
+    let occupiedNights = 0;
+    let freeNights = 0;
+    let blockedNights = 0;
+    let freeNightsAmountCents = 0;
+    for (const day of calendarDays) {
+      if (day.status === "occupied") occupiedNights++;
+      else if (day.status === "available") {
+        freeNights++;
+        if (day.priceCents != null) freeNightsAmountCents += day.priceCents;
+      } else if (day.status === "blocked") blockedNights++;
+    }
+    const rentableNights = occupiedNights + freeNights;
+    const fillRate = rentableNights > 0 ? occupiedNights / rentableNights : 0;
+    return { occupiedNights, freeNights, blockedNights, freeNightsAmountCents, fillRate };
+  }, [calendarDays]);
+
   const sortedReservations = reservations
     ? [...reservations].sort((a, b) => {
         let cmp: number;
@@ -511,13 +534,41 @@ export function PropertyAnalysisTable({
           <div>
             <p className="mb-2 text-[12px] font-medium text-[#6e6e73]">Owner</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8">
-              <StatTile label="TR">
-                <span
-                  className="inline-block rounded-full px-2 py-0.5 text-[13px] font-medium tabular-nums"
-                  style={fillRateBadgeStyle(monthData.fillRate)}
-                >
-                  {formatPercent(monthData.fillRate)}
-                </span>
+              <StatTile
+                label="TR"
+                title="Nuits occupées ÷ (nuits occupées + nuits libres) — les nuits bloquées manuellement (travaux, usage personnel...) ne comptent pas dans le calcul"
+              >
+                {calendarStats ? (
+                  <span
+                    className="inline-block rounded-full px-2 py-0.5 text-[13px] font-medium tabular-nums"
+                    style={fillRateBadgeStyle(calendarStats.fillRate)}
+                  >
+                    {formatPercent(calendarStats.fillRate)}
+                  </span>
+                ) : (
+                  <span
+                    className="inline-block rounded-full px-2 py-0.5 text-[13px] font-medium tabular-nums"
+                    style={fillRateBadgeStyle(monthData.fillRate)}
+                  >
+                    {formatPercent(monthData.fillRate)}
+                  </span>
+                )}
+              </StatTile>
+              <StatTile label="Nuits occupées">{calendarStats ? calendarStats.occupiedNights : "—"}</StatTile>
+              <StatTile
+                label="Nuits libres"
+                title="Nombre de nuits libres et somme de leur prix affiché sur le calendrier (manque à gagner potentiel si tarif plein)"
+              >
+                {calendarStats ? (
+                  <>
+                    {calendarStats.freeNights}
+                    <span className="ml-1.5 text-[11px] font-normal text-[#86868b]">
+                      <Money cents={calendarStats.freeNightsAmountCents} />
+                    </span>
+                  </>
+                ) : (
+                  "—"
+                )}
               </StatTile>
               <StatTile label="Net Comm. Revenue" title="Net Commissionable Revenue">
                 <Money cents={figures.netCommissionableRevenueCents} />
