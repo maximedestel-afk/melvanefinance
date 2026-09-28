@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { fillRateBadgeStyle, formatPercent } from "@/lib/format";
+import { addDaysIso, fillRateBadgeStyle, formatPercent, todayIso } from "@/lib/format";
 import type { RentType } from "@/lib/types";
 
 type SortKey =
@@ -155,7 +155,15 @@ function SortHeader({
  * ligne par bien, sur les 12 derniers mois glissants (indépendant de toute
  * période sélectionnée — voir getPortfolioBookingWindowStats). Mêmes
  * filtres bien/modèle/tags/propriétaire que l'onglet Owner. */
-export function PropertyTrendsTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
+export function PropertyTrendsTable({
+  properties: unsortedProperties,
+  onOpenAnalysisRange,
+}: {
+  properties: PropertyOption[];
+  /** Ouvre l'onglet Analyse pour ce bien sur les 30 prochains jours glissants
+   * (aujourd'hui → aujourd'hui + 29). */
+  onOpenAnalysisRange?: (propertyId: string, startDate: string, endDate: string) => void;
+}) {
   const allProperties = useMemo(
     () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
     [unsortedProperties]
@@ -569,7 +577,17 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                         >
                           ✕
                         </button>
-                        <span className="font-medium">{row.reference}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const start = todayIso();
+                            onOpenAnalysisRange?.(row.propertyId, start, addDaysIso(start, 29));
+                          }}
+                          title="Voir ce bien dans l'onglet Analyse (30 prochains jours)"
+                          className="font-medium text-[#0071e3] hover:underline"
+                        >
+                          {row.reference}
+                        </button>
                         {row.notFoundReferences.length > 0 && (
                           <span
                             title={`Référence VRPlatform introuvable : ${row.notFoundReferences.join(", ")}`}

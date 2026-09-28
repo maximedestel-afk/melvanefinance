@@ -252,9 +252,10 @@ interface VrPlatformExpenseJournalEntriesResponse {
 }
 
 /** Toutes les écritures "owners" des comptes EXPENSE_ACCOUNT_IDS pour un
- * listing sur une année — voir le commentaire sur `party` ci-dessus pour
- * pourquoi le filtre sur "owners" est indispensable. */
-async function getListingExpenseEntries(listingId: string, year: number): Promise<VrPlatformExpenseJournalEntry[]> {
+ * listing sur un filtre de date VRPlatform (`"2026"` pour une année,
+ * `"2026-09-28...2026-10-27"` pour une plage) — voir le commentaire sur
+ * `party` ci-dessus pour pourquoi le filtre sur "owners" est indispensable. */
+async function getListingExpenseEntries(listingId: string, dateFilter: string): Promise<VrPlatformExpenseJournalEntry[]> {
   const entries: VrPlatformExpenseJournalEntry[] = [];
   try {
     let page = 1;
@@ -262,7 +263,7 @@ async function getListingExpenseEntries(listingId: string, year: number): Promis
       const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
         accountIds: EXPENSE_ACCOUNT_IDS.join(","),
         listingIds: listingId,
-        date: String(year),
+        date: dateFilter,
         status: "active",
         limit: "250",
         page: String(page),
@@ -281,7 +282,7 @@ async function getListingExpenseEntries(listingId: string, year: number): Promis
 
 async function getListingExpenseCentsByMonth(listingId: string, year: number): Promise<number[]> {
   const totals = new Array(12).fill(0) as number[];
-  for (const entry of await getListingExpenseEntries(listingId, year)) {
+  for (const entry of await getListingExpenseEntries(listingId, String(year))) {
     const month = Number(entry.txnAt.slice(5, 7));
     if (month >= 1 && month <= 12) totals[month - 1] += entry.centTotal;
   }
@@ -292,9 +293,9 @@ async function getListingExpenseCentsByMonth(listingId: string, year: number): P
  * groupées par réservation plutôt que par mois — utilisé par la page
  * Réservations pour attribuer les dépenses (Transfer Fees, Adjustments...)
  * à la réservation qui les a déclenchées. */
-async function getListingExpenseCentsByReservation(listingId: string, year: number): Promise<Map<string, number>> {
+async function getListingExpenseCentsByReservation(listingId: string, dateFilter: string): Promise<Map<string, number>> {
   const totals = new Map<string, number>();
-  for (const entry of await getListingExpenseEntries(listingId, year)) {
+  for (const entry of await getListingExpenseEntries(listingId, dateFilter)) {
     if (!entry.reservationId) continue;
     totals.set(entry.reservationId, (totals.get(entry.reservationId) ?? 0) + entry.centTotal);
   }
@@ -326,7 +327,7 @@ export async function getPropertyExpenseBreakdown(
 
   const byAccount = new Map<string, number>();
   for (const listingId of listingIds) {
-    for (const entry of await getListingExpenseEntries(listingId, year)) {
+    for (const entry of await getListingExpenseEntries(listingId, String(year))) {
       const month = Number(entry.txnAt.slice(5, 7));
       if (!months.includes(month)) continue;
       const name = entry.account?.name ?? "Autre";
@@ -399,7 +400,7 @@ export async function getPropertyReservationDetails(
   const results: ReservationDetail[] = [];
 
   for (const listingId of listingIds) {
-    const expenseByReservation = await getListingExpenseCentsByReservation(listingId, year);
+    const expenseByReservation = await getListingExpenseCentsByReservation(listingId, String(year));
     let page = 1;
     for (;;) {
       const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
@@ -415,6 +416,71 @@ export async function getPropertyReservationDetails(
         if (!reservation.checkIn || !reservation.checkOut) continue;
         const checkOutDate = new Date(`${reservation.checkOut}T00:00:00Z`);
         if (checkOutDate.getUTCFullYear() !== year || !months.includes(checkOutDate.getUTCMonth() + 1)) continue;
+
+        const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+        const netCommissionableRevenueCents = rentsCents - channelFeesCents;
+        const commissionCents = Math.round((netCommissionableRevenueCents * commissionPercent) / 100);
+        const netRevenueCents = netCommissionableRevenueCents - commissionCents;
+        const expensesCents = Math.abs(expenseByReservation.get(reservation.id) ?? 0);
+        const grossNightlyRateCents = reservation.nights > 0 ? Math.round(rentsCents / reservation.nights) : null;
+
+        results.push({
+          reservationId: reservation.id,
+          checkIn: reservation.checkIn,
+          checkOut: reservation.checkOut,
+          bookedAt: reservation.bookedAt,
+          nights: reservation.nights,
+          guestName: reservation.guestName,
+          confirmationCode: reservation.confirmationCode,
+          bookingPlatform: reservation.bookingPlatform,
+          grossNightlyRateCents,
+          netCommissionableRevenueCents,
+          commissionCents,
+          expensesCents,
+          netRevenueCents,
+        });
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  }
+
+  return results.sort((a, b) => a.checkIn.localeCompare(b.checkIn));
+}
+
+/** Version "plage de dates" de getPropertyReservationDetails — filtre
+ * directement côté serveur (dateField=checkOut) sur [startDate, endDate]
+ * (inclus, YYYY-MM-DD) au lieu d'une année + une liste de mois. Utilisé par
+ * l'onglet Analyse en mode plage de dates. */
+export async function getPropertyReservationDetailsForDateRange(
+  property: PortfolioProperty,
+  startDate: string,
+  endDate: string
+): Promise<ReservationDetail[]> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const references = [property.reference, ...property.extraVrplatformReferences];
+  const { listingIds } = resolveListingIds(references, listingsByName);
+  const commissionPercent = property.commissionPercent ?? 0;
+  const rangeFilter = `${startDate}...${endDate}`;
+
+  const results: ReservationDetail[] = [];
+
+  for (const listingId of listingIds) {
+    const expenseByReservation = await getListingExpenseCentsByReservation(listingId, rangeFilter);
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+        listingId,
+        date: rangeFilter,
+        dateField: "checkOut",
+        status: "booked",
+        limit: "250",
+        page: String(page),
+        includeLines: "true",
+      });
+      for (const reservation of res.data) {
+        if (!reservation.checkIn || !reservation.checkOut) continue;
 
         const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
         const netCommissionableRevenueCents = rentsCents - channelFeesCents;
@@ -847,6 +913,186 @@ export async function getPortfolioMonthlyFinancials(
   );
 }
 
+function overlapNightsInRange(checkIn: string, checkOut: string, startDate: string, endDate: string): number {
+  const checkInMs = Date.parse(`${checkIn}T00:00:00Z`);
+  const checkOutMs = Date.parse(`${checkOut}T00:00:00Z`);
+  const rangeStartMs = Date.parse(`${startDate}T00:00:00Z`);
+  const rangeEndMs = Date.parse(`${endDate}T00:00:00Z`) + MS_PER_DAY; // endDate incluse
+  return Math.max(0, (Math.min(checkOutMs, rangeEndMs) - Math.max(checkInMs, rangeStartMs)) / MS_PER_DAY);
+}
+
+export interface RangeFinance {
+  startDate: string;
+  endDate: string;
+  rentsCents: number;
+  channelFeesCents: number;
+  cityTaxCents: number;
+  transferFeesCents: number;
+  expensesCents: number;
+  netRevenueCents: number;
+  /** Nuits occupées dans la plage (intersection — une réservation à cheval
+   * sur une borne compte ses nuits qui tombent dedans). */
+  nightsBooked: number;
+  /** Nuits des réservations dont le check-out tombe dans la plage — même
+   * base d'attribution que rentsCents (voir MonthlyFinance.checkoutNights). */
+  checkoutNights: number;
+  daysInRange: number;
+  fillRate: number;
+}
+
+export interface PropertyRangeResult {
+  propertyId: string;
+  reference: string;
+  name: string | null;
+  isFixedRent: boolean;
+  fixedRentAmountCents: number | null;
+  commissionPercent: number | null;
+  finance: RangeFinance;
+  notFoundReferences: string[];
+}
+
+/** Version "plage de dates" de getPortfolioMonthlyFinancials — un seul
+ * bucket au lieu d'un par mois calendaire, pour un intervalle [startDate,
+ * endDate] arbitraire (inclus, YYYY-MM-DD, peut chevaucher deux mois ou deux
+ * années). Utilisé par l'onglet Analyse en mode "plage de dates" (ex. les 30
+ * prochains jours, ouvert depuis l'onglet Tendances). */
+export async function getPortfolioFinancialsForDateRange(
+  properties: PortfolioProperty[],
+  startDate: string,
+  endDate: string,
+  options: { includeExpenses?: boolean } = {}
+): Promise<PropertyRangeResult[]> {
+  const [listings, accountByLineType, transferFeesAccountId] = await Promise.all([
+    listVrPlatformListings(),
+    getReservationLineAccountMap(),
+    getAccountIdByName(TRANSFER_FEES_ACCOUNT),
+  ]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const rangeFilter = `${startDate}...${endDate}`;
+  const daysInRange =
+    Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / MS_PER_DAY) + 1;
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+
+      let rentsCents = 0;
+      let channelFeesCents = 0;
+      let cityTaxCents = 0;
+      let transferFeesCents = 0;
+      let expensesCents = 0;
+      let nightsBooked = 0;
+      let checkoutNights = 0;
+
+      for (const listingId of listingIds) {
+        // Nuits occupées (intersection, comptage partiel sur les bornes).
+        let page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformReservationsResponse>("/reservations", {
+            listingId,
+            date: rangeFilter,
+            dateField: "intersection",
+            status: "booked",
+            limit: "250",
+            page: String(page),
+          });
+          for (const reservation of res.data) {
+            if (!reservation.checkIn || !reservation.checkOut) continue;
+            nightsBooked += overlapNightsInRange(reservation.checkIn, reservation.checkOut, startDate, endDate);
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+
+        // Rents/Channel Fees/City Tax/checkoutNights (check-out dans la plage).
+        page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+            listingId,
+            date: rangeFilter,
+            dateField: "checkOut",
+            status: "booked",
+            limit: "250",
+            page: String(page),
+            includeLines: "true",
+          });
+          for (const reservation of res.data) {
+            if (!reservation.checkIn || !reservation.checkOut) continue;
+            const { rentsCents: r, channelFeesCents: c, cityTaxCents: t } = classifyReservationLines(
+              reservation.lines,
+              accountByLineType
+            );
+            rentsCents += r;
+            channelFeesCents += c;
+            cityTaxCents += t;
+            const checkInMs = Date.parse(`${reservation.checkIn}T00:00:00Z`);
+            const checkOutMs = Date.parse(`${reservation.checkOut}T00:00:00Z`);
+            checkoutNights += Math.round((checkOutMs - checkInMs) / MS_PER_DAY);
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+
+        // Transfer Fees (écritures comptables, pas dans reservation.lines).
+        if (transferFeesAccountId) {
+          try {
+            let p = 1;
+            for (;;) {
+              const res = await vrPlatformFetch<VrPlatformJournalEntriesResponse>("/reports/journal-entries", {
+                accountIds: transferFeesAccountId,
+                listingIds: listingId,
+                date: rangeFilter,
+                status: "active",
+                limit: "250",
+                page: String(p),
+              });
+              for (const entry of res.data) transferFeesCents += Math.abs(entry.centTotal);
+              if (p >= res.pagination.totalPage) break;
+              p++;
+            }
+          } catch {
+            // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+          }
+        }
+
+        if (options.includeExpenses) {
+          for (const entry of await getListingExpenseEntries(listingId, rangeFilter)) {
+            expensesCents += Math.abs(entry.centTotal);
+          }
+        }
+      }
+
+      const netRevenueCents = rentsCents - channelFeesCents;
+      const fillRate = daysInRange > 0 ? nightsBooked / daysInRange : 0;
+
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        name: property.name,
+        isFixedRent: property.rentType === "fixe",
+        fixedRentAmountCents: property.rentAmount != null ? Math.round(property.rentAmount * 100) : null,
+        commissionPercent: property.commissionPercent,
+        finance: {
+          startDate,
+          endDate,
+          rentsCents,
+          channelFeesCents,
+          cityTaxCents,
+          transferFeesCents,
+          expensesCents,
+          netRevenueCents,
+          nightsBooked,
+          checkoutNights,
+          daysInRange,
+          fillRate,
+        },
+        notFoundReferences,
+      };
+    })
+  );
+}
+
 /** Nuits réservées d'un listing sur un mois donné (borne "intersection" —
  * une réservation à cheval sur le mois compte ses nuits qui tombent dedans). */
 async function sumListingNightsForMonth(listingId: string, year: number, month: number): Promise<number> {
@@ -979,6 +1225,60 @@ export async function getPropertyCheckoutsForMonths(
         listingIds.map(async (listingId) => {
           const perMonth = await Promise.all(months.map((month) => getListingCheckoutsForMonth(listingId, year, month)));
           return perMonth.flat();
+        })
+      );
+
+      const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
+
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        guestyListingId: primaryListing?.uniqueRef ?? null,
+        checkoutDates: perListingCheckouts.flat().sort(),
+        notFoundReferences,
+      };
+    })
+  );
+}
+
+/** Version "plage de dates" de getPropertyCheckoutsForMonths — filtre
+ * directement côté serveur (dateField=checkOut) sur [startDate, endDate]
+ * (inclus, YYYY-MM-DD). Utilisé par l'onglet Analyse en mode plage de
+ * dates. */
+export async function getPropertyCheckoutsForDateRange(
+  properties: PortfolioProperty[],
+  startDate: string,
+  endDate: string
+): Promise<PropertyCheckoutsResult[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const rangeFilter = `${startDate}...${endDate}`;
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+
+      const perListingCheckouts = await Promise.all(
+        listingIds.map(async (listingId) => {
+          const checkoutDates: string[] = [];
+          let page = 1;
+          for (;;) {
+            const res = await vrPlatformFetch<VrPlatformReservationsResponse>("/reservations", {
+              listingId,
+              date: rangeFilter,
+              dateField: "checkOut",
+              status: "booked",
+              limit: "250",
+              page: String(page),
+            });
+            for (const reservation of res.data) {
+              if (reservation.checkOut) checkoutDates.push(reservation.checkOut.slice(0, 10));
+            }
+            if (page >= res.pagination.totalPage) break;
+            page++;
+          }
+          return checkoutDates;
         })
       );
 

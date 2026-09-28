@@ -28,15 +28,19 @@ export function DashboardClient({
   }[];
 }) {
   const [tab, setTab] = useState<Tab>("occupancy");
-  const [analysisRequest, setAnalysisRequest] = useState<{
-    propertyId: string;
-    year: number;
-    month: number;
-    token: number;
-  } | null>(null);
+  const [analysisRequest, setAnalysisRequest] = useState<
+    | { propertyId: string; year: number; month: number; token: number }
+    | { propertyId: string; startDate: string; endDate: string; token: number }
+    | null
+  >(null);
 
   function openAnalysis(propertyId: string, year: number, month: number) {
     setAnalysisRequest({ propertyId, year, month, token: Date.now() });
+    setTab("analysis");
+  }
+
+  function openAnalysisRange(propertyId: string, startDate: string, endDate: string) {
+    setAnalysisRequest({ propertyId, startDate, endDate, token: Date.now() });
     setTab("analysis");
   }
 
@@ -171,7 +175,7 @@ export function DashboardClient({
       {tab === "trends" && (
         <section className="card space-y-3 p-5">
           <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Tendances</h2>
-          <PropertyTrendsTable properties={properties} />
+          <PropertyTrendsTable properties={properties} onOpenAnalysisRange={openAnalysisRange} />
         </section>
       )}
     </div>

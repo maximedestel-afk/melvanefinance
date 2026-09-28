@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
-import type { PropertyMonthlyResult } from "@/lib/vrplatform";
+import { addDaysIso, fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT, todayIso } from "@/lib/format";
+import type { PropertyMonthlyResult, PropertyRangeResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 import { ExpenseDetailModal } from "./ExpenseDetailModal";
 import { CalendarGrid, type CalendarDay } from "./CalendarGrid";
@@ -41,6 +41,30 @@ interface BookingWindowStats {
     from7To15Percent: number | null;
     over15Percent: number | null;
   };
+}
+
+/** Sous-ensemble commun à PropertyMonthlyResult et PropertyRangeResult,
+ * utilisé pour piloter les calculs (figures) indépendamment du mode. */
+interface PropertyMetaCommon {
+  propertyId: string;
+  reference: string;
+  name: string | null;
+  isFixedRent: boolean;
+  fixedRentAmountCents: number | null;
+  commissionPercent: number | null;
+  notFoundReferences: string[];
+}
+
+/** Sous-ensemble commun à MonthlyFinance et RangeFinance. */
+interface FinanceFiguresCommon {
+  rentsCents: number;
+  channelFeesCents: number;
+  cityTaxCents: number;
+  transferFeesCents: number;
+  expensesCents: number;
+  netRevenueCents: number;
+  checkoutNights: number;
+  fillRate: number;
 }
 
 interface ReservationDetail {
@@ -176,15 +200,20 @@ function SortHeader({
   );
 }
 
+type AnalysisRequest =
+  | { propertyId: string; year: number; month: number; token: number }
+  | { propertyId: string; startDate: string; endDate: string; token: number };
+
 export function PropertyAnalysisTable({
   properties: unsortedProperties,
   request,
 }: {
   properties: PropertyOption[];
-  /** Navigation depuis un autre onglet (ex: clic sur le TR dans Owner) — un
-   * nouveau `token` force la sélection et le chargement même si bien/mois/
-   * année sont identiques à la demande précédente. */
-  request?: { propertyId: string; year: number; month: number; token: number } | null;
+  /** Navigation depuis un autre onglet (ex: clic sur le TR dans Owner, ou sur
+   * un bien dans Tendances pour les 30 prochains jours) — un nouveau `token`
+   * force la sélection et le chargement même si les autres champs sont
+   * identiques à la demande précédente. */
+  request?: AnalysisRequest | null;
 }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
@@ -193,14 +222,24 @@ export function PropertyAnalysisTable({
     [unsortedProperties]
   );
 
+  const requestIsRange = request != null && "startDate" in request;
+
+  const [mode, setMode] = useState<"month" | "range">(requestIsRange ? "range" : "month");
   const [propertyId, setPropertyId] = useState<string>(request?.propertyId ?? properties[0]?.id ?? "");
-  const [year, setYear] = useState(request?.year ?? currentYear);
-  const [month, setMonth] = useState(request?.month ?? new Date().getMonth() + 1);
+  const [year, setYear] = useState(request != null && "year" in request ? request.year : currentYear);
+  const [month, setMonth] = useState(request != null && "month" in request ? request.month : new Date().getMonth() + 1);
+  const [rangeStart, setRangeStart] = useState<string>(
+    request != null && "startDate" in request ? request.startDate : todayIso()
+  );
+  const [rangeEnd, setRangeEnd] = useState<string>(
+    request != null && "endDate" in request ? request.endDate : addDaysIso(todayIso(), 29)
+  );
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [monthly, setMonthly] = useState<PropertyMonthlyResult | null>(null);
+  const [rangeResult, setRangeResult] = useState<PropertyRangeResult | null>(null);
   const [cleaning, setCleaning] = useState<CleaningApiResult | null>(null);
   const [reservations, setReservations] = useState<ReservationDetail[] | null>(null);
   const [calendarDays, setCalendarDays] = useState<CalendarDay[] | null>(null);
@@ -218,10 +257,13 @@ export function PropertyAnalysisTable({
     }
   }
 
-  async function load(overrides?: { propertyId: string; year: number; month: number }) {
-    const targetPropertyId = overrides?.propertyId ?? propertyId;
-    const targetYear = overrides?.year ?? year;
-    const targetMonth = overrides?.month ?? month;
+  async function load(overrideRequest?: AnalysisRequest) {
+    const targetPropertyId = overrideRequest?.propertyId ?? propertyId;
+    const targetMode: "month" | "range" = overrideRequest ? (("startDate" in overrideRequest) ? "range" : "month") : mode;
+    const targetYear = overrideRequest != null && "year" in overrideRequest ? overrideRequest.year : year;
+    const targetMonth = overrideRequest != null && "month" in overrideRequest ? overrideRequest.month : month;
+    const targetStart = overrideRequest != null && "startDate" in overrideRequest ? overrideRequest.startDate : rangeStart;
+    const targetEnd = overrideRequest != null && "endDate" in overrideRequest ? overrideRequest.endDate : rangeEnd;
     if (!targetPropertyId) {
       setError("Choisis un bien.");
       return;
@@ -229,64 +271,128 @@ export function PropertyAnalysisTable({
     setLoading(true);
     setError(null);
     setMonthly(null);
+    setRangeResult(null);
     setCleaning(null);
     setReservations(null);
     setCalendarDays(null);
     setBookingWindow(null);
     try {
-      const monthlyParams = new URLSearchParams({
-        year: String(targetYear),
-        propertyIds: targetPropertyId,
-        includeExpenses: "1",
-      });
-      const cleaningParams = new URLSearchParams({
-        year: String(targetYear),
-        months: String(targetMonth),
-        propertyIds: targetPropertyId,
-      });
-      const reservationsParams = new URLSearchParams({
-        propertyId: targetPropertyId,
-        year: String(targetYear),
-        months: String(targetMonth),
-      });
-      const calendarParams = new URLSearchParams({
-        propertyId: targetPropertyId,
-        year: String(targetYear),
-        month: String(targetMonth),
-      });
       const bookingWindowParams = new URLSearchParams({ propertyId: targetPropertyId });
 
-      const [monthlyRes, cleaningRes, reservationsRes, calendarRes, bookingWindowRes] = await Promise.all([
-        fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
-        fetch(`/api/finance/cleaning?${cleaningParams.toString()}`),
-        fetch(`/api/finance/reservations?${reservationsParams.toString()}`),
-        fetch(`/api/finance/calendar?${calendarParams.toString()}`),
-        fetch(`/api/finance/booking-window?${bookingWindowParams.toString()}`),
-      ]);
+      if (targetMode === "range") {
+        const rangeParams = new URLSearchParams({
+          startDate: targetStart,
+          endDate: targetEnd,
+          propertyIds: targetPropertyId,
+          includeExpenses: "1",
+        });
+        const cleaningParams = new URLSearchParams({
+          startDate: targetStart,
+          endDate: targetEnd,
+          propertyIds: targetPropertyId,
+        });
+        const reservationsParams = new URLSearchParams({
+          propertyId: targetPropertyId,
+          startDate: targetStart,
+          endDate: targetEnd,
+        });
+        const calendarParams = new URLSearchParams({
+          propertyId: targetPropertyId,
+          startDate: targetStart,
+          endDate: targetEnd,
+        });
 
-      const monthlyData = await monthlyRes.json();
-      if (monthlyData.error) {
-        setError(monthlyData.error);
-        return;
+        const [rangeRes, cleaningRes, reservationsRes, calendarRes, bookingWindowRes] = await Promise.all([
+          fetch(`/api/finance/range?${rangeParams.toString()}`),
+          fetch(`/api/finance/cleaning-range?${cleaningParams.toString()}`),
+          fetch(`/api/finance/reservations-range?${reservationsParams.toString()}`),
+          fetch(`/api/finance/calendar?${calendarParams.toString()}`),
+          fetch(`/api/finance/booking-window?${bookingWindowParams.toString()}`),
+        ]);
+
+        const rangeData = await rangeRes.json();
+        if (rangeData.error) {
+          setError(rangeData.error);
+          return;
+        }
+        const property: PropertyRangeResult | undefined = rangeData.properties?.[0];
+        if (!property) {
+          setError("Bien introuvable pour cette période.");
+          return;
+        }
+        setRangeResult(property);
+
+        const cleaningData = await cleaningRes.json();
+        setCleaning(cleaningData.error ? null : (cleaningData.properties?.[0] ?? null));
+
+        const reservationsData = await reservationsRes.json();
+        setReservations(
+          reservationsData.error
+            ? []
+            : (reservationsData.reservations ?? []).map(
+                (r: ReservationDetail) => ({ ...r, occupancyRateOfMonth: r.occupancyRateOfMonth ?? null })
+              )
+        );
+
+        const calendarData = await calendarRes.json();
+        setCalendarDays(calendarData.error ? null : calendarData.days);
+
+        const bookingWindowData = await bookingWindowRes.json();
+        setBookingWindow(bookingWindowData.error ? null : bookingWindowData);
+      } else {
+        const monthlyParams = new URLSearchParams({
+          year: String(targetYear),
+          propertyIds: targetPropertyId,
+          includeExpenses: "1",
+        });
+        const cleaningParams = new URLSearchParams({
+          year: String(targetYear),
+          months: String(targetMonth),
+          propertyIds: targetPropertyId,
+        });
+        const reservationsParams = new URLSearchParams({
+          propertyId: targetPropertyId,
+          year: String(targetYear),
+          months: String(targetMonth),
+        });
+        const calendarParams = new URLSearchParams({
+          propertyId: targetPropertyId,
+          year: String(targetYear),
+          month: String(targetMonth),
+        });
+
+        const [monthlyRes, cleaningRes, reservationsRes, calendarRes, bookingWindowRes] = await Promise.all([
+          fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
+          fetch(`/api/finance/cleaning?${cleaningParams.toString()}`),
+          fetch(`/api/finance/reservations?${reservationsParams.toString()}`),
+          fetch(`/api/finance/calendar?${calendarParams.toString()}`),
+          fetch(`/api/finance/booking-window?${bookingWindowParams.toString()}`),
+        ]);
+
+        const monthlyData = await monthlyRes.json();
+        if (monthlyData.error) {
+          setError(monthlyData.error);
+          return;
+        }
+        const property: PropertyMonthlyResult | undefined = monthlyData.properties?.[0];
+        if (!property) {
+          setError("Bien introuvable pour cette période.");
+          return;
+        }
+        setMonthly(property);
+
+        const cleaningData = await cleaningRes.json();
+        setCleaning(cleaningData.error ? null : (cleaningData.properties?.[0] ?? null));
+
+        const reservationsData = await reservationsRes.json();
+        setReservations(reservationsData.error ? [] : reservationsData.reservations);
+
+        const calendarData = await calendarRes.json();
+        setCalendarDays(calendarData.error ? null : calendarData.days);
+
+        const bookingWindowData = await bookingWindowRes.json();
+        setBookingWindow(bookingWindowData.error ? null : bookingWindowData);
       }
-      const property: PropertyMonthlyResult | undefined = monthlyData.properties?.[0];
-      if (!property) {
-        setError("Bien introuvable pour cette période.");
-        return;
-      }
-      setMonthly(property);
-
-      const cleaningData = await cleaningRes.json();
-      setCleaning(cleaningData.error ? null : (cleaningData.properties?.[0] ?? null));
-
-      const reservationsData = await reservationsRes.json();
-      setReservations(reservationsData.error ? [] : reservationsData.reservations);
-
-      const calendarData = await calendarRes.json();
-      setCalendarDays(calendarData.error ? null : calendarData.days);
-
-      const bookingWindowData = await bookingWindowRes.json();
-      setBookingWindow(bookingWindowData.error ? null : bookingWindowData);
     } catch {
       setError("Impossible de charger les données.");
     } finally {
@@ -294,41 +400,56 @@ export function PropertyAnalysisTable({
     }
   }
 
-  // propertyId/year/month sont déjà initialisés depuis `request` (useState
-  // ci-dessus) — ce composant est démonté/remonté à chaque navigation depuis
-  // Owner (voir DashboardClient), donc un nouveau `request` correspond
-  // toujours à un nouveau montage. Seul le chargement des données doit être
-  // déclenché ici.
+  // propertyId/year/month/rangeStart/rangeEnd sont déjà initialisés depuis
+  // `request` (useState ci-dessus) — ce composant est démonté/remonté à
+  // chaque navigation depuis Owner ou Tendances (voir DashboardClient), donc
+  // un nouveau `request` correspond toujours à un nouveau montage. Seul le
+  // chargement des données doit être déclenché ici.
   useEffect(() => {
     if (!request) return;
     // Déclenche volontairement le même chargement que le bouton "Charger", au montage.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    load({ propertyId: request.propertyId, year: request.year, month: request.month });
+    load(request);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.token]);
 
   const rentType = properties.find((p) => p.id === propertyId)?.rentType ?? null;
   const monthData = monthly?.months.find((m) => m.month === month) ?? null;
 
-  const figures = useMemo(() => {
-    if (!monthly || !monthData) return null;
+  // Vue unifiée mois/plage : en mode plage, fixedRentAmountCents est forcé à
+  // null (le loyer fixe est mensuel — non proratisable de façon évidente sur
+  // une plage arbitraire), ce qui désactive naturellement Loyer/Excess/Loyer
+  // fixe/Profit (modèle Fixe pur) pour ce mode sans logique supplémentaire.
+  const activeMeta: PropertyMetaCommon | null = useMemo(() => {
+    if (mode === "range") return rangeResult ? { ...rangeResult, fixedRentAmountCents: null } : null;
+    return monthly;
+  }, [mode, rangeResult, monthly]);
 
-    const netCommissionableRevenueCents = monthData.netRevenueCents;
+  const activeFinance: FinanceFiguresCommon | null = useMemo(() => {
+    if (mode === "range") return rangeResult?.finance ?? null;
+    return monthData;
+  }, [mode, rangeResult, monthData]);
+
+  const figures = useMemo(() => {
+    if (!activeMeta || !activeFinance) return null;
+
+    const netCommissionableRevenueCents = activeFinance.netRevenueCents;
     const commissionCents =
-      rentType !== "fixe" && monthly.commissionPercent != null
-        ? Math.round((netCommissionableRevenueCents * monthly.commissionPercent) / 100)
+      rentType !== "fixe" && activeMeta.commissionPercent != null
+        ? Math.round((netCommissionableRevenueCents * activeMeta.commissionPercent) / 100)
         : null;
     const netRevenueAfterCommissionCents = netCommissionableRevenueCents - (commissionCents ?? 0);
 
     const loyerCents =
-      rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && monthly.fixedRentAmountCents != null
-        ? monthly.fixedRentAmountCents
+      rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && activeMeta.fixedRentAmountCents != null
+        ? activeMeta.fixedRentAmountCents
         : null;
     const excessCents = loyerCents != null ? netRevenueAfterCommissionCents - loyerCents : null;
     const avgGrossNightlyRateCents =
-      monthData.checkoutNights > 0 ? Math.round(monthData.rentsCents / monthData.checkoutNights) : null;
+      activeFinance.checkoutNights > 0 ? Math.round(activeFinance.rentsCents / activeFinance.checkoutNights) : null;
 
-    const fixedRentCents = monthly.isFixedRent && monthly.fixedRentAmountCents != null ? monthly.fixedRentAmountCents : null;
+    const fixedRentCents =
+      activeMeta.isFixedRent && activeMeta.fixedRentAmountCents != null ? activeMeta.fixedRentAmountCents : null;
     const checkoutCount = cleaning?.checkoutDates.length ?? 0;
     const cleaningProductGuesty =
       cleaning?.cleaningFeeGuesty != null ? checkoutCount * cleaning.cleaningFeeGuesty : null;
@@ -341,13 +462,13 @@ export function PropertyAnalysisTable({
 
     // Profit façon Revenus : (Commission, ou Net Revenue − Loyer fixe pour le
     // modèle Fixe pur) + City Tax + Profit ménage.
-    const baseProfitCents = monthly.isFixedRent
+    const baseProfitCents = activeMeta.isFixedRent
       ? fixedRentCents != null
         ? netRevenueAfterCommissionCents - fixedRentCents
         : null
       : commissionCents;
     const profitCents =
-      baseProfitCents != null ? baseProfitCents + monthData.cityTaxCents + (cleaningProfitCents ?? 0) : null;
+      baseProfitCents != null ? baseProfitCents + activeFinance.cityTaxCents + (cleaningProfitCents ?? 0) : null;
 
     return {
       netCommissionableRevenueCents,
@@ -360,7 +481,7 @@ export function PropertyAnalysisTable({
       cleaningProfitCents,
       profitCents,
     };
-  }, [monthly, monthData, cleaning, rentType]);
+  }, [activeMeta, activeFinance, cleaning, rentType]);
 
   // Pour les nuits occupées, affiche le prix réellement facturé pour la
   // réservation (prix brut/nuit calculé depuis VRPlatform, cf. Réservations)
@@ -438,7 +559,8 @@ export function PropertyAnalysisTable({
       })
     : null;
 
-  const periodSummary = `${MONTH_LABELS_SHORT[month - 1]} ${year}`;
+  const periodSummary =
+    mode === "range" ? `${formatDate(rangeStart)} → ${formatDate(rangeEnd)}` : `${MONTH_LABELS_SHORT[month - 1]} ${year}`;
 
   return (
     <div className="space-y-4">
@@ -474,47 +596,101 @@ export function PropertyAnalysisTable({
           </button>
           {showPeriodPicker && (
             <div className="absolute left-0 top-full z-10 mt-1.5 w-max rounded-[12px] border border-black/10 bg-white p-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
-              <div>
-                <label className="field-label" htmlFor="analysis-year">
-                  Année
-                </label>
-                <select
-                  id="analysis-year"
-                  value={year}
-                  onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-                  className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+              <div className="flex gap-1 rounded-[8px] border border-black/10 bg-black/[0.03] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setMode("month")}
+                  className={`flex-1 rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition ${
+                    mode === "month" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                  }`}
                 >
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
+                  Mois
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("range")}
+                  className={`flex-1 rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition ${
+                    mode === "range" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                  }`}
+                >
+                  Plage de dates
+                </button>
               </div>
 
-              <div className="mt-3">
-                <span className="field-label">Mois</span>
-                <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
-                  {MONTH_LABELS_SHORT.map((label, i) => {
-                    const m = i + 1;
-                    const active = month === m;
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => setMonth(m)}
-                        className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
-                          active
-                            ? "border-[#0071e3] bg-[#0071e3] text-white"
-                            : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
+              {mode === "month" ? (
+                <>
+                  <div className="mt-3">
+                    <label className="field-label" htmlFor="analysis-year">
+                      Année
+                    </label>
+                    <select
+                      id="analysis-year"
+                      value={year}
+                      onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    >
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mt-3">
+                    <span className="field-label">Mois</span>
+                    <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
+                      {MONTH_LABELS_SHORT.map((label, i) => {
+                        const m = i + 1;
+                        const active = month === m;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setMonth(m)}
+                            className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
+                              active
+                                ? "border-[#0071e3] bg-[#0071e3] text-white"
+                                : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-3 flex items-end gap-2">
+                  <div>
+                    <label className="field-label" htmlFor="analysis-range-start">
+                      Du
+                    </label>
+                    <input
+                      id="analysis-range-start"
+                      type="date"
+                      value={rangeStart}
+                      max={rangeEnd}
+                      onChange={(e) => setRangeStart(e.target.value)}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="analysis-range-end">
+                      Au
+                    </label>
+                    <input
+                      id="analysis-range-end"
+                      type="date"
+                      value={rangeEnd}
+                      min={rangeStart}
+                      onChange={(e) => setRangeEnd(e.target.value)}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 type="button"
@@ -528,23 +704,23 @@ export function PropertyAnalysisTable({
         </div>
 
         <button type="button" onClick={() => load()} disabled={loading} className="btn-secondary btn-sm">
-          {loading ? "Chargement…" : monthly ? "Actualiser" : "Charger"}
+          {loading ? "Chargement…" : activeMeta ? "Actualiser" : "Charger"}
         </button>
       </div>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
-      {monthly && monthData && figures && !loading && !error && (
+      {activeMeta && activeFinance && figures && !loading && !error && (
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-[16px] font-semibold text-[#1d1d1f]">
-              {monthly.reference} — {MONTH_LABELS_SHORT[month - 1]} {year}
+              {activeMeta.reference} — {periodSummary}
             </h3>
             <span className="rounded-full bg-[#0071e3]/10 px-2.5 py-1 text-[12px] font-medium text-[#0071e3]">
               {rentType != null ? RENT_TYPE_LABELS[rentType] : "Modèle inconnu"}
             </span>
-            {monthly.notFoundReferences.length > 0 && (
-              <span title={`Référence VRPlatform introuvable : ${monthly.notFoundReferences.join(", ")}`} className="text-amber-600">
+            {activeMeta.notFoundReferences.length > 0 && (
+              <span title={`Référence VRPlatform introuvable : ${activeMeta.notFoundReferences.join(", ")}`} className="text-amber-600">
                 ⚠
               </span>
             )}
@@ -567,9 +743,9 @@ export function PropertyAnalysisTable({
                 ) : (
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-[13px] font-medium tabular-nums"
-                    style={fillRateBadgeStyle(monthData.fillRate)}
+                    style={fillRateBadgeStyle(activeFinance.fillRate)}
                   >
-                    {formatPercent(monthData.fillRate)}
+                    {formatPercent(activeFinance.fillRate)}
                   </span>
                 )}
               </StatTile>
@@ -594,24 +770,28 @@ export function PropertyAnalysisTable({
               </StatTile>
               <StatTile label="Commission">
                 <Money cents={figures.commissionCents} />
-                {figures.commissionCents != null && monthly.commissionPercent != null && (
-                  <span className="ml-1 text-[11px] font-normal text-[#86868b]">({monthly.commissionPercent}%)</span>
+                {figures.commissionCents != null && activeMeta.commissionPercent != null && (
+                  <span className="ml-1 text-[11px] font-normal text-[#86868b]">({activeMeta.commissionPercent}%)</span>
                 )}
               </StatTile>
               <StatTile
                 label="Expenses"
-                title="Operating & Maintenance Expenses + Adjustments + Processing Fees (configuration du owner statement VRPlatform) — cliquer pour le détail"
-                onClick={() => setShowExpenseDetail(true)}
+                title={
+                  mode === "month"
+                    ? "Operating & Maintenance Expenses + Adjustments + Processing Fees (configuration du owner statement VRPlatform) — cliquer pour le détail"
+                    : "Operating & Maintenance Expenses + Adjustments + Processing Fees (configuration du owner statement VRPlatform)"
+                }
+                onClick={mode === "month" ? () => setShowExpenseDetail(true) : undefined}
               >
-                <Money cents={monthData.expensesCents} />
+                <Money cents={activeFinance.expensesCents} />
               </StatTile>
               <StatTile label="Net Revenue">
                 <Money cents={figures.netRevenueAfterCommissionCents} bold />
               </StatTile>
-              <StatTile label="Loyer">
+              <StatTile label="Loyer" title={mode === "range" ? "Le loyer fixe est mensuel — non applicable en mode plage de dates." : undefined}>
                 <Money cents={figures.loyerCents} />
               </StatTile>
-              <StatTile label="Excess">
+              <StatTile label="Excess" title={mode === "range" ? "Le loyer fixe est mensuel — non applicable en mode plage de dates." : undefined}>
                 <SignedMoney cents={figures.excessCents} bold />
               </StatTile>
               <StatTile label="Prix moyen brut/nuit" title="Rents ÷ nuits, avant déduction des Channel Fees">
@@ -624,21 +804,28 @@ export function PropertyAnalysisTable({
             <p className="mb-2 text-[12px] font-medium text-[#6e6e73]">Revenus</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
               <StatTile label="Rents">
-                <Money cents={monthData.rentsCents} />
+                <Money cents={activeFinance.rentsCents} />
               </StatTile>
               <StatTile label="Channel Fees">
-                <Money cents={monthData.channelFeesCents} />
+                <Money cents={activeFinance.channelFeesCents} />
               </StatTile>
               <StatTile label="City Tax">
-                <Money cents={monthData.cityTaxCents} />
+                <Money cents={activeFinance.cityTaxCents} />
               </StatTile>
               <StatTile label="Transfer Fees">
-                <Money cents={monthData.transferFeesCents} />
+                <Money cents={activeFinance.transferFeesCents} />
               </StatTile>
               <StatTile label="Ménage" title="(Prix client − coût prestataire) × nombre de check-out">
                 <SignedMoney cents={figures.cleaningProfitCents} bold />
               </StatTile>
-              <StatTile label="Loyer fixe" title="Loyer fixe, uniquement pour le modèle Fixe pur">
+              <StatTile
+                label="Loyer fixe"
+                title={
+                  mode === "range"
+                    ? "Le loyer fixe est mensuel — non applicable en mode plage de dates."
+                    : "Loyer fixe, uniquement pour le modèle Fixe pur"
+                }
+              >
                 <Money cents={figures.fixedRentCents} />
               </StatTile>
               <StatTile label="Profit" title="(Commission, ou Net Revenue − Loyer fixe) + City Tax + Profit ménage">
@@ -714,14 +901,16 @@ export function PropertyAnalysisTable({
                         <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Voyageur</th>
                         <SortHeader label="Date résa" sortKey="bookedAt" activeKey={sortKey} direction={direction} onSort={handleSort} />
                         <SortHeader label="Séjour" sortKey="checkIn" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                        <SortHeader
-                          label="TO"
-                          sortKey="occupancyRateOfMonth"
-                          activeKey={sortKey}
-                          direction={direction}
-                          onSort={handleSort}
-                          title="TO du mois de la réservation"
-                        />
+                        {mode === "month" && (
+                          <SortHeader
+                            label="TO"
+                            sortKey="occupancyRateOfMonth"
+                            activeKey={sortKey}
+                            direction={direction}
+                            onSort={handleSort}
+                            title="TO du mois de la réservation"
+                          />
+                        )}
                         <SortHeader label="Nuits" sortKey="nights" activeKey={sortKey} direction={direction} onSort={handleSort} />
                         <SortHeader
                           label="Prix brut/nuit"
@@ -763,9 +952,11 @@ export function PropertyAnalysisTable({
                           <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                             {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
                           </td>
-                          <td className="py-1.5 px-2 text-right">
-                            <OccupancyBadge fillRate={r.occupancyRateOfMonth} />
-                          </td>
+                          {mode === "month" && (
+                            <td className="py-1.5 px-2 text-right">
+                              <OccupancyBadge fillRate={r.occupancyRateOfMonth} />
+                            </td>
+                          )}
                           <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{r.nights}</td>
                           <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                             <Money cents={r.grossNightlyRateCents} />
@@ -789,17 +980,17 @@ export function PropertyAnalysisTable({
                 </div>
               </div>
             ) : (
-              <p className="text-[13px] text-[#6e6e73]">Aucune réservation sur ce mois.</p>
+              <p className="text-[13px] text-[#6e6e73]">Aucune réservation sur cette période.</p>
             )}
           </div>
         </div>
       )}
 
-      {!monthly && !loading && !error && (
-        <p className="text-[13px] text-[#6e6e73]">Choisis un bien, un mois et une année, puis charge les données.</p>
+      {!activeMeta && !loading && !error && (
+        <p className="text-[13px] text-[#6e6e73]">Choisis un bien et une période, puis charge les données.</p>
       )}
 
-      {showExpenseDetail && monthly && (
+      {showExpenseDetail && monthly && mode === "month" && (
         <ExpenseDetailModal
           propertyId={monthly.propertyId}
           propertyLabel={monthly.reference}
