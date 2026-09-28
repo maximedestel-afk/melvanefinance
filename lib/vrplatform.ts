@@ -547,6 +547,11 @@ export interface PropertyBookingWindowResult extends BookingWindowStats {
   propertyId: string;
   reference: string;
   notFoundReferences: string[];
+  /** ID Guesty natif du listing principal (référence du bien, hors
+   * références supplémentaires) — null si non résolu côté VRPlatform. Sert
+   * à enchaîner un calcul basé sur le calendrier Guesty (ex. TR à court
+   * terme) sans refaire de résolution de listing. */
+  guestyListingId: string | null;
 }
 
 /** Version portefeuille de getPropertyBookingWindowStats — un seul appel
@@ -565,7 +570,14 @@ export async function getPortfolioBookingWindowStats(
       const references = [property.reference, ...property.extraVrplatformReferences];
       const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
       const stats = await fetchBookingWindowForListings(listingIds, dateFilter);
-      return { propertyId: property.propertyId, reference: property.reference, notFoundReferences, ...stats };
+      const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        notFoundReferences,
+        guestyListingId: primaryListing?.uniqueRef ?? null,
+        ...stats,
+      };
     })
   );
 }

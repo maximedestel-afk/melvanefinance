@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { fillRateBadgeStyle, formatPercent } from "@/lib/format";
 import type { RentType } from "@/lib/types";
 
 type SortKey =
   | "reference"
+  | "next15DaysFillRate"
+  | "next15To30DaysFillRate"
   | "sampleSize"
   | "medianLeadTimeDays"
   | "avgLengthOfStayNights"
@@ -43,6 +46,8 @@ interface TrendsRow {
   under7Percent: number | null;
   from7To15Percent: number | null;
   over15Percent: number | null;
+  next15DaysFillRate: number | null;
+  next15To30DaysFillRate: number | null;
 }
 
 function median(values: number[]): number | null {
@@ -70,6 +75,15 @@ function Nights({ value }: { value: number | null }) {
 function Pct({ value }: { value: number | null }) {
   if (value == null) return <span className="text-[#6e6e73]">—</span>;
   return <span>{Math.round(value)}%</span>;
+}
+
+function FillRateBadge({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-[#6e6e73]">—</span>;
+  return (
+    <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums" style={fillRateBadgeStyle(value)}>
+      {formatPercent(value)}
+    </span>
+  );
 }
 
 function SortHeader({
@@ -175,7 +189,10 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ propertyIds: matchingProperties.map((p) => p.id).join(",") });
+      const params = new URLSearchParams({
+        propertyIds: matchingProperties.map((p) => p.id).join(","),
+        includeShortTermFillRate: "1",
+      });
       const res = await fetch(`/api/finance/booking-window-portfolio?${params.toString()}`);
       const data = await res.json();
       if (data.error) {
@@ -192,6 +209,8 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
               medianLeadTimeDays: number | null;
               avgLengthOfStayNights: number | null;
               leadTimeBuckets: { under7Percent: number | null; from7To15Percent: number | null; over15Percent: number | null };
+              next15DaysFillRate: number | null;
+              next15To30DaysFillRate: number | null;
             }) => ({
               propertyId: p.propertyId,
               reference: p.reference,
@@ -203,6 +222,8 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
               under7Percent: p.leadTimeBuckets.under7Percent,
               from7To15Percent: p.leadTimeBuckets.from7To15Percent,
               over15Percent: p.leadTimeBuckets.over15Percent,
+              next15DaysFillRate: p.next15DaysFillRate ?? null,
+              next15To30DaysFillRate: p.next15To30DaysFillRate ?? null,
             })
           )
         );
@@ -247,6 +268,10 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
         under7Percent: average(sortedRows.map((r) => r.under7Percent).filter((v): v is number => v != null)),
         from7To15Percent: average(sortedRows.map((r) => r.from7To15Percent).filter((v): v is number => v != null)),
         over15Percent: average(sortedRows.map((r) => r.over15Percent).filter((v): v is number => v != null)),
+        next15DaysFillRate: average(sortedRows.map((r) => r.next15DaysFillRate).filter((v): v is number => v != null)),
+        next15To30DaysFillRate: average(
+          sortedRows.map((r) => r.next15To30DaysFillRate).filter((v): v is number => v != null)
+        ),
       }
     : null;
 
@@ -400,6 +425,23 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                     <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
                     <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Modèle</th>
                     <SortHeader
+                      label="TR 15j"
+                      sortKey="next15DaysFillRate"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Taux de remplissage des 15 prochains jours (nuits bloquées exclues) — indicateur court terme"
+                    />
+                    <SortHeader
+                      label="TR 15-30j"
+                      sortKey="next15To30DaysFillRate"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Taux de remplissage des 15 jours suivants (jours 16 à 30, nuits bloquées exclues)"
+                      narrow
+                    />
+                    <SortHeader
                       label="Résa (12 mois)"
                       sortKey="sampleSize"
                       activeKey={sortKey}
@@ -481,6 +523,12 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                       <td className="py-1.5 px-2 text-left text-[#1d1d1f]" title={row.rentType != null ? RENT_TYPE_LABELS[row.rentType] : undefined}>
                         {row.rentType != null ? RENT_TYPE_SHORT_LABELS[row.rentType] : "—"}
                       </td>
+                      <td className="py-1.5 px-2 text-right">
+                        <FillRateBadge value={row.next15DaysFillRate} />
+                      </td>
+                      <td className="py-1.5 px-2 text-right">
+                        <FillRateBadge value={row.next15To30DaysFillRate} />
+                      </td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{row.sampleSize}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         <Days value={row.medianLeadTimeDays} />
@@ -504,6 +552,12 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                   <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                     <td className="py-1.5 pl-3 pr-2">Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})</td>
                     <td className="py-1.5 px-2"></td>
+                    <td className="py-1.5 px-2 text-right">
+                      <FillRateBadge value={totals.next15DaysFillRate} />
+                    </td>
+                    <td className="py-1.5 px-2 text-right">
+                      <FillRateBadge value={totals.next15To30DaysFillRate} />
+                    </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">{totals.sampleSize}</td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
                       <Days value={totals.medianLeadTimeDays} />
