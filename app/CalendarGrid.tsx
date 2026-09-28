@@ -16,11 +16,11 @@ export interface CalendarDay {
 
 // "Libre" reste très sobre (fond blanc, bordure fine) pour ne pas rivaliser
 // visuellement avec les nuits occupées, qui portent un encadré épais et
-// saturé (border-2) — le contraste entre les deux rend le remplissage
+// saturé (border-4) — le contraste entre les deux rend le remplissage
 // lisible d'un coup d'œil, sans avoir à lire le prix de chaque case.
 const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: string }> = {
   available: { className: "border border-black/10 bg-white text-[#6e6e73]", label: "Libre" },
-  occupied: { className: "border-2 border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]", label: "Occupée" },
+  occupied: { className: "border-4 border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]", label: "Occupée" },
   blocked: { className: "border border-dashed border-black/15 bg-black/[0.04] text-[#6e6e73]", label: "Bloquée" },
 };
 
@@ -30,14 +30,14 @@ const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: st
 // grille. Sert à distinguer d'un coup d'œil une réservation de 5 nuits de 5
 // réservations d'1 nuit qui se suivent.
 const RESERVATION_PALETTE = [
-  "border-2 border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]",
-  "border-2 border-purple-500 bg-purple-50 text-purple-700",
-  "border-2 border-teal-500 bg-teal-50 text-teal-700",
-  "border-2 border-pink-500 bg-pink-50 text-pink-700",
-  "border-2 border-amber-500 bg-amber-50 text-amber-700",
-  "border-2 border-indigo-500 bg-indigo-50 text-indigo-700",
-  "border-2 border-cyan-500 bg-cyan-50 text-cyan-700",
-  "border-2 border-rose-500 bg-rose-50 text-rose-700",
+  "border-4 border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]",
+  "border-4 border-purple-500 bg-purple-50 text-purple-700",
+  "border-4 border-teal-500 bg-teal-50 text-teal-700",
+  "border-4 border-pink-500 bg-pink-50 text-pink-700",
+  "border-4 border-amber-500 bg-amber-50 text-amber-700",
+  "border-4 border-indigo-500 bg-indigo-50 text-indigo-700",
+  "border-4 border-cyan-500 bg-cyan-50 text-cyan-700",
+  "border-4 border-rose-500 bg-rose-50 text-rose-700",
 ];
 
 const WEEKDAY_LABELS = ["L", "M", "M", "J", "V", "S", "D"];
