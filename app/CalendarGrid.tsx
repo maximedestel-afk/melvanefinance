@@ -122,7 +122,11 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
                 {day.priceCents != null ? `${Math.round(day.priceCents / 100)}€` : NBSP}
               </span>
               <span className="w-full truncate text-center text-[8.5px] font-normal leading-none opacity-70">
-                {day.status === "occupied" && day.source ? day.source : NBSP}
+                {day.status === "occupied" && day.source
+                  ? day.source
+                  : day.status === "available"
+                    ? "🛏️ libre"
+                    : NBSP}
               </span>
             </div>
           );
