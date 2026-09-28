@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { CalendarDay } from "./CalendarGrid";
+import { assignReservationColors } from "./reservationColors";
 
 // Reprennent exactement les couleurs du calendrier (CalendarGrid) — vendue =
 // bleu "occupée", libre = vert "libre" (jetons --viz-sold/--viz-free,
@@ -35,13 +36,14 @@ function roundedTopRectPath(x: number, y: number, width: number, height: number,
 }
 
 /** Prix par nuit du mois, une barre par jour — même code couleur que le
- * calendrier (CalendarGrid) : les nuits vendues reprennent le style
- * "encadré" (contour, pas de remplissage), les nuits libres un remplissage
- * plein. Les nuits bloquées n'ont pas de barre. La largeur du SVG suit
- * exactement celle de son conteneur (mesurée via ResizeObserver, viewBox en
- * pixels réels — pas de "preserveAspectRatio" qui déformerait les traits et
- * le texte), donc tout le mois tient toujours sans scroll horizontal.
- * Complète le calendrier de l'onglet Analyse. */
+ * calendrier (CalendarGrid, via reservationColors.ts) : les nuits vendues
+ * reprennent le style "encadré" (contour, pas de remplissage) dans la même
+ * couleur que la réservation sur le calendrier, les nuits libres un
+ * remplissage plein. Les nuits bloquées n'ont pas de barre. La largeur du
+ * SVG suit exactement celle de son conteneur (mesurée via ResizeObserver,
+ * viewBox en pixels réels — pas de "preserveAspectRatio" qui déformerait les
+ * traits et le texte), donc tout le mois tient toujours sans scroll
+ * horizontal. Complète le calendrier de l'onglet Analyse. */
 export function DailyPriceChart({ days, height = 240 }: { days: CalendarDay[]; height?: number }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,9 +60,17 @@ export function DailyPriceChart({ days, height = 240 }: { days: CalendarDay[]; h
     return () => observer.disconnect();
   }, []);
 
+  const colorByConfirmationCode = assignReservationColors(days);
+
   const bars = days.map((day) => {
     const value = day.priceCents != null ? day.priceCents / 100 : 0;
-    const color = day.status === "occupied" ? SOLD_COLOR : day.status === "available" ? FREE_COLOR : null;
+    const color =
+      day.status === "occupied"
+        ? (day.confirmationCode != null ? colorByConfirmationCode.get(day.confirmationCode)?.hex : undefined) ??
+          SOLD_COLOR
+        : day.status === "available"
+          ? FREE_COLOR
+          : null;
     return { day, value, color, filled: day.status === "available" };
   });
 
@@ -91,6 +101,7 @@ export function DailyPriceChart({ days, height = 240 }: { days: CalendarDay[]; h
           <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: FREE_COLOR }} />
           Nuit libre
         </span>
+        <span className="text-[#86868b]">— une couleur par réservation, comme le calendrier</span>
       </div>
       <div ref={containerRef}>
         <svg role="img" aria-label="Prix par nuit du mois" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>

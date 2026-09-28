@@ -1,5 +1,7 @@
 "use client";
 
+import { assignReservationColors } from "./reservationColors";
+
 export interface CalendarDay {
   date: string;
   status: "available" | "occupied" | "blocked";
@@ -24,22 +26,6 @@ const STATUS_STYLE: Record<CalendarDay["status"], { className: string; label: st
   blocked: { className: "border border-dashed border-black/15 bg-black/[0.04] text-[#6e6e73]", label: "Bloquée" },
 };
 
-// Une couleur par réservation distincte (occupied uniquement) — attribuées
-// dans l'ordre chronologique de rencontre, donc deux réservations qui se
-// suivent ont toujours des couleurs différentes, même adjacentes dans la
-// grille. Sert à distinguer d'un coup d'œil une réservation de 5 nuits de 5
-// réservations d'1 nuit qui se suivent.
-const RESERVATION_PALETTE = [
-  "border-4 border-[#0071e3] bg-[#0071e3]/10 text-[#0071e3]",
-  "border-4 border-purple-500 bg-purple-50 text-purple-700",
-  "border-4 border-teal-500 bg-teal-50 text-teal-700",
-  "border-4 border-pink-500 bg-pink-50 text-pink-700",
-  "border-4 border-amber-500 bg-amber-50 text-amber-700",
-  "border-4 border-indigo-500 bg-indigo-50 text-indigo-700",
-  "border-4 border-cyan-500 bg-cyan-50 text-cyan-700",
-  "border-4 border-rose-500 bg-rose-50 text-rose-700",
-];
-
 const WEEKDAY_LABELS = ["L", "M", "M", "J", "V", "S", "D"];
 
 const NBSP = " ";
@@ -56,22 +42,13 @@ const NBSP = " ";
  * sur la même grille d'une ligne à l'autre.
  *
  * Les nuits occupées d'une même réservation partagent la même couleur (voir
- * RESERVATION_PALETTE), pour qu'une réservation de plusieurs nuits reste
- * visuellement distincte de plusieurs réservations d'une nuit qui se
- * suivent. */
+ * reservationColors.ts, partagé avec DailyPriceChart pour que le graphique
+ * affiche exactement les mêmes couleurs), pour qu'une réservation de
+ * plusieurs nuits reste visuellement distincte de plusieurs réservations
+ * d'une nuit qui se suivent. */
 export function CalendarGrid({ days }: { days: CalendarDay[] }) {
   const leadingBlanks = days.length > 0 ? (new Date(`${days[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 : 0;
-
-  const colorByConfirmationCode = new Map<string, string>();
-  for (const day of days) {
-    if (day.status !== "occupied" || !day.confirmationCode) continue;
-    if (!colorByConfirmationCode.has(day.confirmationCode)) {
-      colorByConfirmationCode.set(
-        day.confirmationCode,
-        RESERVATION_PALETTE[colorByConfirmationCode.size % RESERVATION_PALETTE.length]
-      );
-    }
-  }
+  const colorByConfirmationCode = assignReservationColors(days);
 
   return (
     <>
@@ -97,7 +74,7 @@ export function CalendarGrid({ days }: { days: CalendarDay[] }) {
         {days.map((day) => {
           const className =
             day.status === "occupied" && day.confirmationCode
-              ? (colorByConfirmationCode.get(day.confirmationCode) ?? STATUS_STYLE.occupied.className)
+              ? (colorByConfirmationCode.get(day.confirmationCode)?.className ?? STATUS_STYLE.occupied.className)
               : STATUS_STYLE[day.status].className;
           const dayNumber = Number.parseInt(day.date.slice(8, 10), 10);
           const titleParts: string[] = [];
