@@ -852,6 +852,23 @@ function resolveListingIds(
   return { listingIds, notFoundReferences };
 }
 
+/** ID Guesty du listing principal de chaque bien du portefeuille (référence
+ * exacte, pas les références supplémentaires), en un seul appel /listings
+ * partagé — plus efficace que d'appeler getGuestyListingIdForReference une
+ * fois par bien (qui refait un appel /listings complet à chaque fois). */
+export async function getPortfolioGuestyListingIds(
+  properties: PortfolioProperty[]
+): Promise<Map<string, string | null>> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  return new Map(
+    properties.map((property) => [
+      property.propertyId,
+      listingsByName.get(property.reference.trim().toLowerCase())?.uniqueRef ?? null,
+    ])
+  );
+}
+
 export interface PropertyMonthlyResult {
   propertyId: string;
   reference: string;

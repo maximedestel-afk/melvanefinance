@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { fillRateBadgeStyle, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyOccupancyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
@@ -11,6 +11,24 @@ interface BookingWindowResult {
   propertyId: string;
   sampleSize: number;
   medianLeadTimeDays: number | null;
+}
+
+interface PricingComparison {
+  avgSoldCents: number | null;
+  avgFreeCents: number | null;
+  diffPercent: number | null;
+}
+
+interface MonthPricing {
+  month: number;
+  avgSoldCents: number | null;
+  avgFreeCents: number | null;
+  diffPercent: number | null;
+}
+
+interface PropertyPricingResult {
+  propertyId: string;
+  months: MonthPricing[];
 }
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
@@ -48,6 +66,27 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
+/** "145€ / 160€ +10%" — prix moyen vendu / prix moyen encore libre / écart,
+ * même format que l'onglet Tendances. Écart positif = les nuits libres sont
+ * affichées plus cher que ce qui se vend réellement (signal de
+ * sur-tarification possible) → en rouge. */
+function PricingCell({ pricing }: { pricing: PricingComparison | null | undefined }) {
+  if (!pricing || pricing.avgSoldCents == null || pricing.avgFreeCents == null) {
+    return <span className="text-[#6e6e73]">—</span>;
+  }
+  return (
+    <span className="whitespace-nowrap">
+      {Math.round(pricing.avgSoldCents / 100)}€ / {Math.round(pricing.avgFreeCents / 100)}€
+      {pricing.diffPercent != null && (
+        <span className={`ml-1 font-semibold ${pricing.diffPercent > 0 ? "text-red-600" : "text-[#6e6e73]"}`}>
+          {pricing.diffPercent >= 0 ? "+" : ""}
+          {pricing.diffPercent}%
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function PropertyOccupancyTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -72,6 +111,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [properties, setProperties] = useState<PropertyOccupancyResult[] | null>(null);
   const [bookingWindows, setBookingWindows] = useState<BookingWindowResult[] | null>(null);
+  const [pricing, setPricing] = useState<PropertyPricingResult[] | null>(null);
   const [removedPropertyIds, setRemovedPropertyIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,9 +158,11 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
       const propertyIds = matchingProperties.map((p) => p.id).join(",");
       const params = new URLSearchParams({ year: String(year), months: selectedMonths.join(","), propertyIds });
       const bookingWindowParams = new URLSearchParams({ propertyIds });
-      const [res, bookingWindowRes] = await Promise.all([
+      const pricingParams = new URLSearchParams({ year: String(year), months: selectedMonths.join(","), propertyIds });
+      const [res, bookingWindowRes, pricingRes] = await Promise.all([
         fetch(`/api/finance/occupancy?${params.toString()}`),
         fetch(`/api/finance/booking-window-portfolio?${bookingWindowParams.toString()}`),
+        fetch(`/api/finance/pricing-by-month?${pricingParams.toString()}`),
       ]);
       const data = await res.json();
       if (data.error) {
@@ -130,11 +172,13 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
         setProperties(data.properties);
         setRemovedPropertyIds(new Set());
       }
-      // La fenêtre de réservation est une donnée de contexte : une erreur ici
-      // (VRPlatform indisponible, etc.) n'empêche pas d'afficher le reste du
-      // tableau.
+      // La fenêtre de réservation et le prix vendu/libre sont des données de
+      // contexte : une erreur ici (VRPlatform/Guesty indisponible, etc.)
+      // n'empêche pas d'afficher le reste du tableau.
       const bookingWindowData = await bookingWindowRes.json();
       setBookingWindows(bookingWindowData.error ? null : bookingWindowData.properties);
+      const pricingData = await pricingRes.json();
+      setPricing(pricingData.error ? null : pricingData.properties);
     } catch {
       setError("Impossible de charger le taux de remplissage.");
     } finally {
@@ -156,6 +200,11 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
   }
 
   const bookingWindowByPropertyId = new Map((bookingWindows ?? []).map((b) => [b.propertyId, b]));
+  const pricingByPropertyId = new Map((pricing ?? []).map((p) => [p.propertyId, p]));
+
+  function monthPricing(propertyId: string, month: number): PricingComparison | null {
+    return pricingByPropertyId.get(propertyId)?.months.find((m) => m.month === month) ?? null;
+  }
 
   const sortedProperties = properties
     ? [...properties]
@@ -187,6 +236,18 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
           .filter((v): v is number => v != null)
       )
     : null;
+  // Moyenne des écarts en % seulement, jamais des € — les prix ne sont pas
+  // comparables/agrégeables d'un bien à l'autre (biens non similaires).
+  const portfolioAverageDiffByMonth = sortedProperties
+    ? new Map(
+        sortedProperties[0]?.months.map((m) => {
+          const diffs = sortedProperties
+            .map((p) => monthPricing(p.propertyId, m.month)?.diffPercent)
+            .filter((v): v is number => v != null);
+          return [m.month, diffs.length > 0 ? average(diffs) : null];
+        })
+      )
+    : new Map<number, number | null>();
 
   const periodSummary =
     selectedMonths.length === 0
@@ -404,18 +465,26 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                     </button>
                   </th>
                   {sortedProperties[0]?.months.map((m) => (
-                    <th key={m.month} className="py-1.5 px-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleSort(m.month)}
-                        className={`inline-flex flex-row-reverse items-center gap-1 text-[11px] font-medium transition ${
-                          sortKey === m.month ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
-                        }`}
+                    <Fragment key={m.month}>
+                      <th className="py-1.5 px-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleSort(m.month)}
+                          className={`inline-flex flex-row-reverse items-center gap-1 text-[11px] font-medium transition ${
+                            sortKey === m.month ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
+                          }`}
+                        >
+                          {MONTH_LABELS_SHORT[m.month - 1]}
+                          {sortKey === m.month && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+                        </button>
+                      </th>
+                      <th
+                        className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]"
+                        title={`Prix moyen vendu / prix moyen encore libre / écart, sur ${MONTH_LABELS_SHORT[m.month - 1]} ${year}. Le prix "libre" vient du calendrier en temps réel : peu significatif pour un mois déjà terminé.`}
                       >
-                        {MONTH_LABELS_SHORT[m.month - 1]}
-                        {sortKey === m.month && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
-                      </button>
-                    </th>
+                        Prix vendu/libre
+                      </th>
+                    </Fragment>
                   ))}
                   {sortedProperties[0]?.months.length !== 1 && (
                     <th className="py-1.5 px-2 text-right">
@@ -473,14 +542,19 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       )}
                     </td>
                     {property.months.map((m) => (
-                      <td key={m.month} className="py-1.5 px-2 text-right">
-                        <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium tabular-nums"
-                          style={fillRateBadgeStyle(m.fillRate)}
-                        >
-                          {formatPercent(m.fillRate)}
-                        </span>
-                      </td>
+                      <Fragment key={m.month}>
+                        <td className="py-1.5 px-2 text-right">
+                          <span
+                            className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-medium tabular-nums"
+                            style={fillRateBadgeStyle(m.fillRate)}
+                          >
+                            {formatPercent(m.fillRate)}
+                          </span>
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <PricingCell pricing={monthPricing(property.propertyId, m.month)} />
+                        </td>
+                      </Fragment>
                     ))}
                     {property.months.length !== 1 && (
                       <td className="py-1.5 px-2 text-right">
@@ -507,16 +581,34 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                     <td className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">
                       Moyenne ({sortedProperties?.length ?? 0} bien{(sortedProperties?.length ?? 0) !== 1 ? "s" : ""})
                     </td>
-                    {portfolioAverages.map((m) => (
-                      <td key={m.month} className="py-1.5 px-2 text-right">
-                        <span
-                          className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
-                          style={fillRateBadgeStyle(m.fillRate)}
-                        >
-                          {formatPercent(m.fillRate)}
-                        </span>
-                      </td>
-                    ))}
+                    {portfolioAverages.map((m) => {
+                      const avgDiff = portfolioAverageDiffByMonth.get(m.month) ?? null;
+                      return (
+                        <Fragment key={m.month}>
+                          <td className="py-1.5 px-2 text-right">
+                            <span
+                              className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
+                              style={fillRateBadgeStyle(m.fillRate)}
+                            >
+                              {formatPercent(m.fillRate)}
+                            </span>
+                          </td>
+                          <td
+                            className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]"
+                            title="Moyenne des écarts en % (prix non agrégeables d'un bien à l'autre)"
+                          >
+                            {avgDiff != null ? (
+                              <span className={`font-semibold ${avgDiff > 0 ? "text-red-600" : "text-[#6e6e73]"}`}>
+                                {avgDiff >= 0 ? "+" : ""}
+                                {Math.round(avgDiff)}%
+                              </span>
+                            ) : (
+                              <span className="text-[#6e6e73]">—</span>
+                            )}
+                          </td>
+                        </Fragment>
+                      );
+                    })}
                     {portfolioAverages.length !== 1 && (
                       <td className="py-1.5 px-2 text-right">
                         <span
