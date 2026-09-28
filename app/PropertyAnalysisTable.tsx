@@ -19,6 +19,17 @@ const RENT_TYPE_LABELS: Record<RentType, string> = {
 // Fixe pur (isFixedRent côté serveur == rentType === "fixe").
 const RENT_TYPES_WITH_LOYER: RentType[] = ["fixe", "fixe_variable"];
 
+// Prix affiché sur le calendrier (et "Prix moyen brut/nuit") = équivalent
+// Rents, avant déduction de la commission de la plateforme (Airbnb,
+// Booking...). Pour une nuit pas encore vendue, on ne connaît ni le canal ni
+// la commission réelle, donc on utilise un taux de référence.
+const CHANNEL_FEE_RATE_REFERENCE = 0.17;
+
+// On ne peut pas viser 100% de remplissage sur les nuits encore libres — on
+// vise un objectif de remplissage raisonnable du mois (nuits bloquées
+// exclues, même base que le TR affiché plus haut).
+const TARGET_FILL_RATE = 0.8;
+
 interface PropertyOption {
   id: string;
   reference: string;
@@ -523,6 +534,38 @@ export function PropertyAnalysisTable({
     return { occupiedNights, freeNights, blockedNights, freeNightsAmountCents, fillRate };
   }, [calendarDays]);
 
+  // Prix brut moyen à obtenir sur les nuits encore libres pour combler le
+  // déficit d'Excess actuel, en ne comptant que les nuits nécessaires pour
+  // atteindre un remplissage de 80% (pas 100%, cf. TARGET_FILL_RATE) — donc
+  // "à quel prix dois-je vendre les nuits libres pour repasser en Excess
+  // positif", pas "si je vends tout à ce prix-là".
+  const breakEvenPricing = useMemo(() => {
+    if (!calendarStats || !figures || rentType == null || activeMeta == null) return null;
+    if (!RENT_TYPES_WITH_LOYER.includes(rentType) || figures.excessCents == null) return null;
+
+    const deficitCents = -figures.excessCents;
+    if (deficitCents <= 0) return { status: "already-positive" as const };
+
+    const rentableNights = calendarStats.occupiedNights + calendarStats.freeNights;
+    const targetOccupiedNights = Math.round(rentableNights * TARGET_FILL_RATE);
+    const nightsToSell = Math.min(
+      calendarStats.freeNights,
+      Math.max(0, targetOccupiedNights - calendarStats.occupiedNights)
+    );
+    if (nightsToSell <= 0) return { status: "target-unreachable" as const };
+
+    // Fixe pur : pas de commission de gestion prélevée (cf. RENT_TYPES_WITH_LOYER) —
+    // tout le Net Commissionable Revenue s'ajoute au Net Revenue. Variable et
+    // Fixe + variable : la commission de gestion du bien est déduite.
+    const managementFactor = rentType === "fixe" ? 1 : 1 - (activeMeta.commissionPercent ?? 0) / 100;
+    if (managementFactor <= 0) return null;
+
+    const requiredGrossPriceCents = Math.round(
+      deficitCents / (nightsToSell * (1 - CHANNEL_FEE_RATE_REFERENCE) * managementFactor)
+    );
+    return { status: "computed" as const, nightsToSell, deficitCents, requiredGrossPriceCents };
+  }, [calendarStats, figures, rentType, activeMeta]);
+
   const sortedReservations = reservations
     ? [...reservations].sort((a, b) => {
         let cmp: number;
@@ -793,6 +836,31 @@ export function PropertyAnalysisTable({
               </StatTile>
               <StatTile label="Excess" title={mode === "range" ? "Le loyer fixe est mensuel — non applicable en mode plage de dates." : undefined}>
                 <SignedMoney cents={figures.excessCents} bold />
+              </StatTile>
+              <StatTile
+                label="Prix pour Excess positif"
+                title={
+                  breakEvenPricing == null
+                    ? "Nécessite un calendrier chargé et un modèle avec loyer (Fixe ou Fixe + variable)."
+                    : breakEvenPricing.status === "already-positive"
+                      ? "L'Excess est déjà positif sur cette période."
+                      : breakEvenPricing.status === "target-unreachable"
+                        ? "Le remplissage cible de 80% (nuits bloquées exclues) est déjà atteint — vendre plus cher les nuits libres restantes ne suffit pas seul à combler le déficit."
+                        : `Prix brut moyen (avant commission plateforme, ${Math.round(CHANNEL_FEE_RATE_REFERENCE * 100)}% de référence) à obtenir sur les ${breakEvenPricing.nightsToSell} nuits libres nécessaires pour atteindre 80% de remplissage (nuits bloquées exclues) et combler le déficit d'Excess de ${formatEuros(breakEvenPricing.deficitCents / 100)}.${rentType === "fixe" ? "" : ` Commission de gestion (${activeMeta?.commissionPercent ?? 0}%) déduite.`}`
+                }
+              >
+                {breakEvenPricing == null ? (
+                  "—"
+                ) : breakEvenPricing.status === "already-positive" ? (
+                  <span className="text-emerald-600">Déjà positif</span>
+                ) : breakEvenPricing.status === "target-unreachable" ? (
+                  <span className="text-[#6e6e73]">Objectif atteint</span>
+                ) : (
+                  <>
+                    ~{formatEuros(breakEvenPricing.requiredGrossPriceCents / 100)}
+                    <span className="ml-1 text-[11px] font-normal text-[#86868b]">/nuit ({breakEvenPricing.nightsToSell} nuits)</span>
+                  </>
+                )}
               </StatTile>
               <StatTile label="Prix moyen brut/nuit" title="Rents ÷ nuits, avant déduction des Channel Fees">
                 <Money cents={figures.avgGrossNightlyRateCents} />
