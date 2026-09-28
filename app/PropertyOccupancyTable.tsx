@@ -5,7 +5,13 @@ import { fillRateBadgeStyle, formatPercent, MONTH_LABELS_SHORT } from "@/lib/for
 import type { PropertyOccupancyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type SortKey = "reference" | "avgFillRate" | number;
+type SortKey = "reference" | "avgFillRate" | "bookingWindow" | number;
+
+interface BookingWindowResult {
+  propertyId: string;
+  sampleSize: number;
+  medianLeadTimeDays: number | null;
+}
 
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
@@ -35,6 +41,13 @@ function average(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 export function PropertyOccupancyTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -58,6 +71,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
   const [sortKey, setSortKey] = useState<SortKey>("reference");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [properties, setProperties] = useState<PropertyOccupancyResult[] | null>(null);
+  const [bookingWindows, setBookingWindows] = useState<BookingWindowResult[] | null>(null);
   const [removedPropertyIds, setRemovedPropertyIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,12 +115,13 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        year: String(year),
-        months: selectedMonths.join(","),
-        propertyIds: matchingProperties.map((p) => p.id).join(","),
-      });
-      const res = await fetch(`/api/finance/occupancy?${params.toString()}`);
+      const propertyIds = matchingProperties.map((p) => p.id).join(",");
+      const params = new URLSearchParams({ year: String(year), months: selectedMonths.join(","), propertyIds });
+      const bookingWindowParams = new URLSearchParams({ propertyIds });
+      const [res, bookingWindowRes] = await Promise.all([
+        fetch(`/api/finance/occupancy?${params.toString()}`),
+        fetch(`/api/finance/booking-window-portfolio?${bookingWindowParams.toString()}`),
+      ]);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -115,6 +130,11 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
         setProperties(data.properties);
         setRemovedPropertyIds(new Set());
       }
+      // La fenêtre de réservation est une donnée de contexte : une erreur ici
+      // (VRPlatform indisponible, etc.) n'empêche pas d'afficher le reste du
+      // tableau.
+      const bookingWindowData = await bookingWindowRes.json();
+      setBookingWindows(bookingWindowData.error ? null : bookingWindowData.properties);
     } catch {
       setError("Impossible de charger le taux de remplissage.");
     } finally {
@@ -135,6 +155,8 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
     setRemovedPropertyIds((prev) => new Set(prev).add(propertyId));
   }
 
+  const bookingWindowByPropertyId = new Map((bookingWindows ?? []).map((b) => [b.propertyId, b]));
+
   const sortedProperties = properties
     ? [...properties]
         .filter((p) => !removedPropertyIds.has(p.propertyId))
@@ -142,7 +164,11 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
           let cmp: number;
           if (sortKey === "reference") cmp = a.reference.localeCompare(b.reference, "fr");
           else if (sortKey === "avgFillRate") cmp = avgFillRate(a) - avgFillRate(b);
-          else cmp = monthFillRate(a, sortKey) - monthFillRate(b, sortKey);
+          else if (sortKey === "bookingWindow") {
+            cmp =
+              (bookingWindowByPropertyId.get(a.propertyId)?.medianLeadTimeDays ?? 0) -
+              (bookingWindowByPropertyId.get(b.propertyId)?.medianLeadTimeDays ?? 0);
+          } else cmp = monthFillRate(a, sortKey) - monthFillRate(b, sortKey);
           return direction === "asc" ? cmp : -cmp;
         })
     : null;
@@ -154,6 +180,13 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
       }))
     : undefined;
   const portfolioOverallAverage = sortedProperties ? average(sortedProperties.map(avgFillRate)) : 0;
+  const portfolioMedianBookingWindow = sortedProperties
+    ? median(
+        sortedProperties
+          .map((p) => bookingWindowByPropertyId.get(p.propertyId)?.medianLeadTimeDays)
+          .filter((v): v is number => v != null)
+      )
+    : null;
 
   const periodSummary =
     selectedMonths.length === 0
@@ -385,7 +418,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                     </th>
                   ))}
                   {sortedProperties[0]?.months.length !== 1 && (
-                    <th className="py-1.5 pl-2 pr-3 text-right">
+                    <th className="py-1.5 px-2 text-right">
                       <button
                         type="button"
                         onClick={() => handleSort("avgFillRate")}
@@ -398,6 +431,18 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       </button>
                     </th>
                   )}
+                  <th className="py-1.5 pl-2 pr-3 text-right" title="Médiane du nombre de jours entre la réservation et le check-in, sur les réservations faites au cours des 12 derniers mois">
+                    <button
+                      type="button"
+                      onClick={() => handleSort("bookingWindow")}
+                      className={`inline-flex w-24 flex-row-reverse items-center gap-1 whitespace-normal text-left text-[11px] font-medium leading-tight transition ${
+                        sortKey === "bookingWindow" ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"
+                      }`}
+                    >
+                      Fenêtre de résa (12 mois)
+                      {sortKey === "bookingWindow" && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -438,7 +483,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       </td>
                     ))}
                     {property.months.length !== 1 && (
-                      <td className="py-1.5 pl-2 pr-3 text-right">
+                      <td className="py-1.5 px-2 text-right">
                         <span
                           className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
                           style={fillRateBadgeStyle(avgFillRate(property))}
@@ -447,6 +492,12 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                         </span>
                       </td>
                     )}
+                    <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                      {(() => {
+                        const bw = bookingWindowByPropertyId.get(property.propertyId);
+                        return bw?.medianLeadTimeDays != null ? `${Math.round(bw.medianLeadTimeDays)} j` : "—";
+                      })()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -467,7 +518,7 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                       </td>
                     ))}
                     {portfolioAverages.length !== 1 && (
-                      <td className="py-1.5 pl-2 pr-3 text-right">
+                      <td className="py-1.5 px-2 text-right">
                         <span
                           className="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold tabular-nums"
                           style={fillRateBadgeStyle(portfolioOverallAverage)}
@@ -476,6 +527,9 @@ export function PropertyOccupancyTable({ properties: unsortedProperties }: { pro
                         </span>
                       </td>
                     )}
+                    <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                      {portfolioMedianBookingWindow != null ? `${Math.round(portfolioMedianBookingWindow)} j` : "—"}
+                    </td>
                   </tr>
                 </tfoot>
               )}

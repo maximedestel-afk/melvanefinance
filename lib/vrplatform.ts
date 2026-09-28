@@ -466,26 +466,14 @@ export interface BookingWindowStats {
   avgLengthOfStayNights: number | null;
 }
 
-/** Fenêtre de réservation médiane et durée moyenne de séjour, sur les
- * réservations FAITES (bookedAt) au cours des 12 derniers mois glissants —
- * y compris celles dont le check-in est encore à venir. Bascule
- * volontairement sur dateField=bookedAt (contrairement au reste de l'app,
- * qui attribue une réservation au mois de son check-out) car la question
- * posée ici est "quand réserve-t-on", pas "quand facture-t-on". */
-export async function getPropertyBookingWindowStats(
-  property: PortfolioProperty,
-  referenceDate: Date = new Date()
-): Promise<BookingWindowStats> {
-  const listings = await listVrPlatformListings();
-  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
-  const references = [property.reference, ...property.extraVrplatformReferences];
-  const { listingIds } = resolveListingIds(references, listingsByName);
-
+function bookingWindowDateFilter(referenceDate: Date): string {
   const until = referenceDate;
   const since = new Date(until);
   since.setUTCFullYear(since.getUTCFullYear() - 1);
-  const dateFilter = `${since.toISOString().slice(0, 10)}...${until.toISOString().slice(0, 10)}`;
+  return `${since.toISOString().slice(0, 10)}...${until.toISOString().slice(0, 10)}`;
+}
 
+async function fetchBookingWindowForListings(listingIds: string[], dateFilter: string): Promise<BookingWindowStats> {
   const leadTimesDays: number[] = [];
   const nightsList: number[] = [];
 
@@ -518,6 +506,50 @@ export async function getPropertyBookingWindowStats(
     medianLeadTimeDays: median(leadTimesDays),
     avgLengthOfStayNights: nightsList.length > 0 ? nightsList.reduce((sum, n) => sum + n, 0) / nightsList.length : null,
   };
+}
+
+/** Fenêtre de réservation médiane et durée moyenne de séjour, sur les
+ * réservations FAITES (bookedAt) au cours des 12 derniers mois glissants —
+ * y compris celles dont le check-in est encore à venir. Bascule
+ * volontairement sur dateField=bookedAt (contrairement au reste de l'app,
+ * qui attribue une réservation au mois de son check-out) car la question
+ * posée ici est "quand réserve-t-on", pas "quand facture-t-on". */
+export async function getPropertyBookingWindowStats(
+  property: PortfolioProperty,
+  referenceDate: Date = new Date()
+): Promise<BookingWindowStats> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const references = [property.reference, ...property.extraVrplatformReferences];
+  const { listingIds } = resolveListingIds(references, listingsByName);
+  return fetchBookingWindowForListings(listingIds, bookingWindowDateFilter(referenceDate));
+}
+
+export interface PropertyBookingWindowResult extends BookingWindowStats {
+  propertyId: string;
+  reference: string;
+  notFoundReferences: string[];
+}
+
+/** Version portefeuille de getPropertyBookingWindowStats — un seul appel
+ * /listings partagé entre tous les biens, puis une requête par bien (en
+ * parallèle) sur ses listings résolus. Utilisé par l'onglet Remplissage. */
+export async function getPortfolioBookingWindowStats(
+  properties: PortfolioProperty[],
+  referenceDate: Date = new Date()
+): Promise<PropertyBookingWindowResult[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const dateFilter = bookingWindowDateFilter(referenceDate);
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+      const stats = await fetchBookingWindowForListings(listingIds, dateFilter);
+      return { propertyId: property.propertyId, reference: property.reference, notFoundReferences, ...stats };
+    })
+  );
 }
 
 export interface MonthlyFinance {

@@ -8,6 +8,12 @@ interface PropertyOption {
   reference: string;
 }
 
+interface BookingWindowStats {
+  sampleSize: number;
+  medianLeadTimeDays: number | null;
+  avgLengthOfStayNights: number | null;
+}
+
 interface ReservationDetail {
   reservationId: string;
   checkIn: string;
@@ -113,6 +119,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [reservations, setReservations] = useState<ReservationDetail[] | null>(null);
   const [reference, setReference] = useState<string | null>(null);
+  const [bookingWindow, setBookingWindow] = useState<BookingWindowStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("checkIn");
@@ -146,7 +153,11 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     setError(null);
     try {
       const params = new URLSearchParams({ propertyId, year: String(year), months: selectedMonths.join(",") });
-      const res = await fetch(`/api/finance/reservations?${params.toString()}`);
+      const bookingWindowParams = new URLSearchParams({ propertyIds: propertyId });
+      const [res, bookingWindowRes] = await Promise.all([
+        fetch(`/api/finance/reservations?${params.toString()}`),
+        fetch(`/api/finance/booking-window-portfolio?${bookingWindowParams.toString()}`),
+      ]);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -155,6 +166,11 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
         setReservations(data.reservations);
         setReference(data.reference);
       }
+      // Donnée de contexte (12 derniers mois glissants, indépendante de la
+      // période sélectionnée) : une erreur ici n'empêche pas d'afficher le
+      // reste du tableau.
+      const bookingWindowData = await bookingWindowRes.json();
+      setBookingWindow(bookingWindowData.error ? null : (bookingWindowData.properties?.[0] ?? null));
     } catch {
       setError("Impossible de charger les réservations.");
     } finally {
@@ -313,9 +329,22 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
 
       {sortedReservations && totals && !loading && !error && (
         <div className="space-y-2">
-          <p className="text-[13px] text-[#6e6e73]">
-            {sortedReservations.length} réservation{sortedReservations.length !== 1 ? "s" : ""} — {reference}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[13px] text-[#6e6e73]">
+              {sortedReservations.length} réservation{sortedReservations.length !== 1 ? "s" : ""} — {reference}
+            </p>
+            {bookingWindow && (
+              <span
+                className="rounded-full bg-[#0071e3]/10 px-3 py-1 text-[12px] font-medium text-[#0071e3]"
+                title="Médiane du nombre de jours entre la réservation et le check-in, et durée moyenne de séjour, sur les réservations faites au cours des 12 derniers mois glissants (indépendant de la période sélectionnée ci-dessus)."
+              >
+                Fenêtre de résa (12 mois) :{" "}
+                {bookingWindow.medianLeadTimeDays != null ? `${Math.round(bookingWindow.medianLeadTimeDays)} j` : "—"}
+                {" · Séjour moyen : "}
+                {bookingWindow.avgLengthOfStayNights != null ? `${bookingWindow.avgLengthOfStayNights.toFixed(1)} nuits` : "—"}
+              </span>
+            )}
+          </div>
 
           {sortedReservations.length === 0 ? (
             <p className="text-[13px] text-[#6e6e73]">Aucune réservation sur cette période.</p>
