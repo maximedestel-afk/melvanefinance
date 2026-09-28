@@ -447,6 +447,66 @@ export async function getPropertyReservationDetails(
   return results.sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
+export interface UpcomingReservationRate {
+  confirmationCode: string | null;
+  /** Rents / nuits — prix brut réellement facturé pour cette réservation,
+   * même calcul que ReservationDetail.grossNightlyRateCents. */
+  grossNightlyRateCents: number | null;
+}
+
+/** Prix brut/nuit réellement facturé des réservations dont le séjour croise
+ * [startDate, endDate] (YYYY-MM-DD, incluses), pour chaque bien du
+ * portefeuille — sert à retrouver le prix réellement vendu d'une nuit
+ * occupée sur le calendrier Guesty (dont le prix affiché reflète le tarif
+ * du jour, pas ce qui a été payé), voir /api/finance/booking-window-portfolio.
+ * Contrairement à getPropertyReservationDetails, filtre par intersection de
+ * séjour et pas par mois de check-out : une réservation encore à venir doit
+ * être incluse même si son check-out n'est pas encore connu comme "dans la
+ * période". */
+export async function getPortfolioUpcomingReservationRates(
+  properties: PortfolioProperty[],
+  startDate: string,
+  endDate: string
+): Promise<Map<string, UpcomingReservationRate[]>> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const dateFilter = `${startDate}...${endDate}`;
+
+  const entries = await Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds } = resolveListingIds(references, listingsByName);
+      const rates: UpcomingReservationRate[] = [];
+
+      for (const listingId of listingIds) {
+        let page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+            listingId,
+            date: dateFilter,
+            dateField: "intersection",
+            status: "booked",
+            limit: "250",
+            page: String(page),
+            includeLines: "true",
+          });
+          for (const reservation of res.data) {
+            const { rentsCents } = classifyReservationLines(reservation.lines, accountByLineType);
+            const grossNightlyRateCents = reservation.nights > 0 ? Math.round(rentsCents / reservation.nights) : null;
+            rates.push({ confirmationCode: reservation.confirmationCode, grossNightlyRateCents });
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+      }
+
+      return [property.propertyId, rates] as const;
+    })
+  );
+
+  return new Map(entries);
+}
+
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);

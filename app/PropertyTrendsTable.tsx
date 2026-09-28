@@ -8,6 +8,8 @@ type SortKey =
   | "reference"
   | "next15DaysFillRate"
   | "next15To30DaysFillRate"
+  | "next15DaysDiffPercent"
+  | "next15To30DaysDiffPercent"
   | "sampleSize"
   | "medianLeadTimeDays"
   | "avgLengthOfStayNights"
@@ -48,6 +50,12 @@ interface TrendsRow {
   over15Percent: number | null;
   next15DaysFillRate: number | null;
   next15To30DaysFillRate: number | null;
+  next15DaysSoldCents: number | null;
+  next15DaysFreeCents: number | null;
+  next15DaysDiffPercent: number | null;
+  next15To30DaysSoldCents: number | null;
+  next15To30DaysFreeCents: number | null;
+  next15To30DaysDiffPercent: number | null;
 }
 
 function median(values: number[]): number | null {
@@ -82,6 +90,24 @@ function FillRateBadge({ value }: { value: number | null }) {
   return (
     <span className="inline-block rounded-full px-2 py-0.5 text-[11px] font-medium tabular-nums" style={fillRateBadgeStyle(value)}>
       {formatPercent(value)}
+    </span>
+  );
+}
+
+/** "145€ / 160€ +10%" — prix moyen vendu / prix moyen encore libre / écart.
+ * Écart positif = les nuits libres sont affichées plus cher que ce qui se
+ * vend réellement (signal de sur-tarification possible) → en rouge. */
+function PricingCell({ soldCents, freeCents, diffPercent }: { soldCents: number | null; freeCents: number | null; diffPercent: number | null }) {
+  if (soldCents == null || freeCents == null) return <span className="text-[#6e6e73]">—</span>;
+  return (
+    <span className="whitespace-nowrap">
+      {Math.round(soldCents / 100)}€ / {Math.round(freeCents / 100)}€
+      {diffPercent != null && (
+        <span className={`ml-1 font-semibold ${diffPercent > 0 ? "text-red-600" : "text-[#6e6e73]"}`}>
+          {diffPercent >= 0 ? "+" : ""}
+          {diffPercent}%
+        </span>
+      )}
     </span>
   );
 }
@@ -192,6 +218,7 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
       const params = new URLSearchParams({
         propertyIds: matchingProperties.map((p) => p.id).join(","),
         includeShortTermFillRate: "1",
+        includePricingComparison: "1",
       });
       const res = await fetch(`/api/finance/booking-window-portfolio?${params.toString()}`);
       const data = await res.json();
@@ -211,6 +238,8 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
               leadTimeBuckets: { under7Percent: number | null; from7To15Percent: number | null; over15Percent: number | null };
               next15DaysFillRate: number | null;
               next15To30DaysFillRate: number | null;
+              next15DaysPricing: { avgSoldCents: number | null; avgFreeCents: number | null; diffPercent: number | null } | null;
+              next15To30DaysPricing: { avgSoldCents: number | null; avgFreeCents: number | null; diffPercent: number | null } | null;
             }) => ({
               propertyId: p.propertyId,
               reference: p.reference,
@@ -224,6 +253,12 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
               over15Percent: p.leadTimeBuckets.over15Percent,
               next15DaysFillRate: p.next15DaysFillRate ?? null,
               next15To30DaysFillRate: p.next15To30DaysFillRate ?? null,
+              next15DaysSoldCents: p.next15DaysPricing?.avgSoldCents ?? null,
+              next15DaysFreeCents: p.next15DaysPricing?.avgFreeCents ?? null,
+              next15DaysDiffPercent: p.next15DaysPricing?.diffPercent ?? null,
+              next15To30DaysSoldCents: p.next15To30DaysPricing?.avgSoldCents ?? null,
+              next15To30DaysFreeCents: p.next15To30DaysPricing?.avgFreeCents ?? null,
+              next15To30DaysDiffPercent: p.next15To30DaysPricing?.diffPercent ?? null,
             })
           )
         );
@@ -271,6 +306,12 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
         next15DaysFillRate: average(sortedRows.map((r) => r.next15DaysFillRate).filter((v): v is number => v != null)),
         next15To30DaysFillRate: average(
           sortedRows.map((r) => r.next15To30DaysFillRate).filter((v): v is number => v != null)
+        ),
+        // Moyenne des écarts en % seulement — les prix en euros ne sont pas
+        // comparables/agrégeables d'un bien à l'autre (biens non similaires).
+        next15DaysDiffPercent: average(sortedRows.map((r) => r.next15DaysDiffPercent).filter((v): v is number => v != null)),
+        next15To30DaysDiffPercent: average(
+          sortedRows.map((r) => r.next15To30DaysDiffPercent).filter((v): v is number => v != null)
         ),
       }
     : null;
@@ -442,6 +483,24 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                       narrow
                     />
                     <SortHeader
+                      label="Prix vendu/libre 15j"
+                      sortKey="next15DaysDiffPercent"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Prix moyen vendu / prix moyen encore libre / écart, sur les 15 prochains jours. Écart positif = les nuits libres sont affichées plus cher que ce qui se vend — signal de sur-tarification possible."
+                      narrow
+                    />
+                    <SortHeader
+                      label="Prix vendu/libre 15-30j"
+                      sortKey="next15To30DaysDiffPercent"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Même comparaison sur les 15 jours suivants (jours 16 à 30)."
+                      narrow
+                    />
+                    <SortHeader
                       label="Résa (12 mois)"
                       sortKey="sampleSize"
                       activeKey={sortKey}
@@ -529,6 +588,16 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                       <td className="py-1.5 px-2 text-right">
                         <FillRateBadge value={row.next15To30DaysFillRate} />
                       </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <PricingCell soldCents={row.next15DaysSoldCents} freeCents={row.next15DaysFreeCents} diffPercent={row.next15DaysDiffPercent} />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <PricingCell
+                          soldCents={row.next15To30DaysSoldCents}
+                          freeCents={row.next15To30DaysFreeCents}
+                          diffPercent={row.next15To30DaysDiffPercent}
+                        />
+                      </td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{row.sampleSize}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         <Days value={row.medianLeadTimeDays} />
@@ -557,6 +626,12 @@ export function PropertyTrendsTable({ properties: unsortedProperties }: { proper
                     </td>
                     <td className="py-1.5 px-2 text-right">
                       <FillRateBadge value={totals.next15To30DaysFillRate} />
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums" title="Moyenne des écarts en % (prix non agrégeables d'un bien à l'autre)">
+                      <Pct value={totals.next15DaysDiffPercent} />
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums" title="Moyenne des écarts en % (prix non agrégeables d'un bien à l'autre)">
+                      <Pct value={totals.next15To30DaysDiffPercent} />
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">{totals.sampleSize}</td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
