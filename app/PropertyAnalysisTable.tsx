@@ -32,6 +32,12 @@ interface CleaningApiResult {
   cleaningFeeGuesty: number | null;
 }
 
+interface BookingWindowStats {
+  sampleSize: number;
+  medianLeadTimeDays: number | null;
+  avgLengthOfStayNights: number | null;
+}
+
 interface ReservationDetail {
   reservationId: string;
   checkIn: string;
@@ -193,6 +199,7 @@ export function PropertyAnalysisTable({
   const [cleaning, setCleaning] = useState<CleaningApiResult | null>(null);
   const [reservations, setReservations] = useState<ReservationDetail[] | null>(null);
   const [calendarDays, setCalendarDays] = useState<CalendarDay[] | null>(null);
+  const [bookingWindow, setBookingWindow] = useState<BookingWindowStats | null>(null);
   const [showExpenseDetail, setShowExpenseDetail] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("checkIn");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
@@ -220,6 +227,7 @@ export function PropertyAnalysisTable({
     setCleaning(null);
     setReservations(null);
     setCalendarDays(null);
+    setBookingWindow(null);
     try {
       const monthlyParams = new URLSearchParams({
         year: String(targetYear),
@@ -241,12 +249,14 @@ export function PropertyAnalysisTable({
         year: String(targetYear),
         month: String(targetMonth),
       });
+      const bookingWindowParams = new URLSearchParams({ propertyId: targetPropertyId });
 
-      const [monthlyRes, cleaningRes, reservationsRes, calendarRes] = await Promise.all([
+      const [monthlyRes, cleaningRes, reservationsRes, calendarRes, bookingWindowRes] = await Promise.all([
         fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
         fetch(`/api/finance/cleaning?${cleaningParams.toString()}`),
         fetch(`/api/finance/reservations?${reservationsParams.toString()}`),
         fetch(`/api/finance/calendar?${calendarParams.toString()}`),
+        fetch(`/api/finance/booking-window?${bookingWindowParams.toString()}`),
       ]);
 
       const monthlyData = await monthlyRes.json();
@@ -269,6 +279,9 @@ export function PropertyAnalysisTable({
 
       const calendarData = await calendarRes.json();
       setCalendarDays(calendarData.error ? null : calendarData.days);
+
+      const bookingWindowData = await bookingWindowRes.json();
+      setBookingWindow(bookingWindowData.error ? null : bookingWindowData);
     } catch {
       setError("Impossible de charger les données.");
     } finally {
@@ -625,6 +638,31 @@ export function PropertyAnalysisTable({
               </StatTile>
               <StatTile label="Profit" title="(Commission, ou Net Revenue − Loyer fixe) + City Tax + Profit ménage">
                 <SignedMoney cents={figures.profitCents} bold />
+              </StatTile>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[12px] font-medium text-[#6e6e73]">Tendances (12 derniers mois)</p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+              <StatTile
+                label="Fenêtre de réservation"
+                title="Médiane du nombre de jours entre la date de réservation et le check-in, sur les réservations faites au cours des 12 derniers mois — y compris celles dont le check-in est encore à venir."
+              >
+                {bookingWindow?.medianLeadTimeDays != null
+                  ? `${Math.round(bookingWindow.medianLeadTimeDays)} j`
+                  : "—"}
+              </StatTile>
+              <StatTile
+                label="Durée moyenne de séjour"
+                title="Moyenne des nuits par réservation, sur le même échantillon (réservations faites au cours des 12 derniers mois)."
+              >
+                {bookingWindow?.avgLengthOfStayNights != null
+                  ? `${bookingWindow.avgLengthOfStayNights.toFixed(1)} nuits`
+                  : "—"}
+              </StatTile>
+              <StatTile label="Réservations (12 mois)" title="Nombre de réservations faites au cours des 12 derniers mois, base des deux indicateurs ci-contre.">
+                {bookingWindow?.sampleSize ?? "—"}
               </StatTile>
             </div>
           </div>

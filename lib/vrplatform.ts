@@ -447,6 +447,79 @@ export async function getPropertyReservationDetails(
   return results.sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+export interface BookingWindowStats {
+  /** Nombre de réservations faites (bookedAt) sur les 12 derniers mois,
+   * entrant dans le calcul — quelle que soit la date de check-in, y compris
+   * les séjours encore à venir. */
+  sampleSize: number;
+  /** Médiane du nombre de jours entre la date de réservation (bookedAt) et
+   * le check-in — la "fenêtre de réservation". */
+  medianLeadTimeDays: number | null;
+  /** Durée moyenne de séjour (nuits), sur le même échantillon. */
+  avgLengthOfStayNights: number | null;
+}
+
+/** Fenêtre de réservation médiane et durée moyenne de séjour, sur les
+ * réservations FAITES (bookedAt) au cours des 12 derniers mois glissants —
+ * y compris celles dont le check-in est encore à venir. Bascule
+ * volontairement sur dateField=bookedAt (contrairement au reste de l'app,
+ * qui attribue une réservation au mois de son check-out) car la question
+ * posée ici est "quand réserve-t-on", pas "quand facture-t-on". */
+export async function getPropertyBookingWindowStats(
+  property: PortfolioProperty,
+  referenceDate: Date = new Date()
+): Promise<BookingWindowStats> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const references = [property.reference, ...property.extraVrplatformReferences];
+  const { listingIds } = resolveListingIds(references, listingsByName);
+
+  const until = referenceDate;
+  const since = new Date(until);
+  since.setUTCFullYear(since.getUTCFullYear() - 1);
+  const dateFilter = `${since.toISOString().slice(0, 10)}...${until.toISOString().slice(0, 10)}`;
+
+  const leadTimesDays: number[] = [];
+  const nightsList: number[] = [];
+
+  for (const listingId of listingIds) {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+        listingId,
+        date: dateFilter,
+        dateField: "bookedAt",
+        status: "booked",
+        limit: "250",
+        page: String(page),
+      });
+      for (const reservation of res.data) {
+        if (!reservation.checkIn || !reservation.bookedAt) continue;
+        const bookedAtMs = new Date(`${reservation.bookedAt}T00:00:00Z`).getTime();
+        const checkInMs = new Date(`${reservation.checkIn}T00:00:00Z`).getTime();
+        const leadTimeDays = Math.round((checkInMs - bookedAtMs) / MS_PER_DAY);
+        if (Number.isFinite(leadTimeDays)) leadTimesDays.push(leadTimeDays);
+        if (reservation.nights != null) nightsList.push(reservation.nights);
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  }
+
+  return {
+    sampleSize: leadTimesDays.length,
+    medianLeadTimeDays: median(leadTimesDays),
+    avgLengthOfStayNights: nightsList.length > 0 ? nightsList.reduce((sum, n) => sum + n, 0) / nightsList.length : null,
+  };
+}
+
 export interface MonthlyFinance {
   /** 1 (janvier) à 12 (décembre). */
   month: number;
