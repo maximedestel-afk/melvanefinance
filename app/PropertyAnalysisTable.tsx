@@ -36,6 +36,11 @@ interface BookingWindowStats {
   sampleSize: number;
   medianLeadTimeDays: number | null;
   avgLengthOfStayNights: number | null;
+  leadTimeBuckets: {
+    under7Percent: number | null;
+    from7To15Percent: number | null;
+    over15Percent: number | null;
+  };
 }
 
 interface ReservationDetail {
@@ -661,8 +666,23 @@ export function PropertyAnalysisTable({
                   ? `${bookingWindow.avgLengthOfStayNights.toFixed(1)} nuits`
                   : "—"}
               </StatTile>
-              <StatTile label="Réservations (12 mois)" title="Nombre de réservations faites au cours des 12 derniers mois, base des deux indicateurs ci-contre.">
+              <StatTile label="Réservations (12 mois)" title="Nombre de réservations faites au cours des 12 derniers mois, base de tous les indicateurs de cette section.">
                 {bookingWindow?.sampleSize ?? "—"}
+              </StatTile>
+              <StatTile label="Réservées < 7 j avant" title="Part des réservations faites moins de 7 jours avant le check-in, sur les 12 derniers mois.">
+                {bookingWindow?.leadTimeBuckets.under7Percent != null
+                  ? `${Math.round(bookingWindow.leadTimeBuckets.under7Percent)}%`
+                  : "—"}
+              </StatTile>
+              <StatTile label="Réservées 7-15 j avant" title="Part des réservations faites entre 7 et 15 jours avant le check-in, sur les 12 derniers mois.">
+                {bookingWindow?.leadTimeBuckets.from7To15Percent != null
+                  ? `${Math.round(bookingWindow.leadTimeBuckets.from7To15Percent)}%`
+                  : "—"}
+              </StatTile>
+              <StatTile label="Réservées > 15 j avant" title="Part des réservations faites plus de 15 jours avant le check-in, sur les 12 derniers mois.">
+                {bookingWindow?.leadTimeBuckets.over15Percent != null
+                  ? `${Math.round(bookingWindow.leadTimeBuckets.over15Percent)}%`
+                  : "—"}
               </StatTile>
             </div>
           </div>

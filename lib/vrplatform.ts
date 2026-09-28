@@ -464,6 +464,14 @@ export interface BookingWindowStats {
   medianLeadTimeDays: number | null;
   /** Durée moyenne de séjour (nuits), sur le même échantillon. */
   avgLengthOfStayNights: number | null;
+  /** Répartition des réservations par fenêtre de réservation (% de
+   * sampleSize, null si sampleSize == 0) : moins de 7 jours, de 7 à 15 jours
+   * inclus, plus de 15 jours. */
+  leadTimeBuckets: {
+    under7Percent: number | null;
+    from7To15Percent: number | null;
+    over15Percent: number | null;
+  };
 }
 
 function bookingWindowDateFilter(referenceDate: Date): string {
@@ -501,10 +509,20 @@ async function fetchBookingWindowForListings(listingIds: string[], dateFilter: s
     }
   }
 
+  const sampleSize = leadTimesDays.length;
+  const under7 = leadTimesDays.filter((d) => d < 7).length;
+  const from7To15 = leadTimesDays.filter((d) => d >= 7 && d <= 15).length;
+  const over15 = leadTimesDays.filter((d) => d > 15).length;
+
   return {
-    sampleSize: leadTimesDays.length,
+    sampleSize,
     medianLeadTimeDays: median(leadTimesDays),
     avgLengthOfStayNights: nightsList.length > 0 ? nightsList.reduce((sum, n) => sum + n, 0) / nightsList.length : null,
+    leadTimeBuckets: {
+      under7Percent: sampleSize > 0 ? (under7 / sampleSize) * 100 : null,
+      from7To15Percent: sampleSize > 0 ? (from7To15 / sampleSize) * 100 : null,
+      over15Percent: sampleSize > 0 ? (over15 / sampleSize) * 100 : null,
+    },
   };
 }
 
