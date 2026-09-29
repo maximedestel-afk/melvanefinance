@@ -466,13 +466,14 @@ interface VrPlatformJournalEntriesWithReservationResponse {
   pagination: { page: number; totalPage: number };
 }
 
-/** Transfer Fees d'un listing sur une année, regroupés par reservationId —
- * même requête que addListingTransferFees, mais on lit aussi reservationId
- * sur chaque écriture (déjà renvoyé par l'API) pour attribuer le montant à
- * la réservation plutôt qu'au mois. */
+/** Transfer Fees d'un listing sur un filtre de date VRPlatform (année ou
+ * plage), regroupés par reservationId — même requête que
+ * addListingTransferFees, mais on lit aussi reservationId sur chaque
+ * écriture (déjà renvoyé par l'API) pour attribuer le montant à la
+ * réservation plutôt qu'au mois. */
 async function getListingTransferFeesByReservation(
   listingId: string,
-  year: number,
+  dateFilter: string,
   transferFeesAccountId: string | null
 ): Promise<Map<string, number>> {
   const byReservation = new Map<string, number>();
@@ -483,7 +484,7 @@ async function getListingTransferFeesByReservation(
       const res = await vrPlatformFetch<VrPlatformJournalEntriesWithReservationResponse>("/reports/journal-entries", {
         accountIds: transferFeesAccountId,
         listingIds: listingId,
-        date: String(year),
+        date: dateFilter,
         status: "active",
         limit: "250",
         page: String(page),
@@ -529,7 +530,7 @@ export async function getPortfolioReservationDetails(
       for (const listingId of listingIds) {
         const [expenseByReservation, transferFeesByReservation] = await Promise.all([
           getListingExpenseCentsByReservation(listingId, String(year)),
-          getListingTransferFeesByReservation(listingId, year, transferFeesAccountId),
+          getListingTransferFeesByReservation(listingId, String(year), transferFeesAccountId),
         ]);
         let page = 1;
         for (;;) {
@@ -584,6 +585,102 @@ export async function getPortfolioReservationDetails(
   );
 
   return perProperty.flat().sort((a, b) => a.checkIn.localeCompare(b.checkIn));
+}
+
+/** Version "réservations récentes" de getPortfolioReservationDetails —
+ * filtre par date de réservation (dateField=bookedAt) sur [sinceDate,
+ * untilDate] au lieu du mois de check-out, pour lister ce qui a été réservé
+ * récemment quel que soit le mois du séjour (ex. "les réservations des 5
+ * derniers jours"). Utilisé par l'onglet Réservations en mode "Derniers
+ * jours".
+ *
+ * Expenses/Transfer Fees sont souvent postés après la réservation (autour du
+ * check-out, parfois bien plus tard qu'elle) : les chercher uniquement sur
+ * [sinceDate, untilDate] les manquerait presque toujours pour des
+ * réservations tout juste faites, donc on élargit cette recherche précise à
+ * une fenêtre glissante de 12 mois se terminant à untilDate (même principe
+ * que le mode "année" qui cherche sur l'année entière plutôt que sur le(s)
+ * mois affiché(s)). */
+export async function getPortfolioReservationDetailsByBookedRange(
+  properties: PortfolioProperty[],
+  sinceDate: string,
+  untilDate: string
+): Promise<PortfolioReservationDetail[]> {
+  const [listings, accountByLineType, transferFeesAccountId] = await Promise.all([
+    listVrPlatformListings(),
+    getReservationLineAccountMap(),
+    getAccountIdByName(TRANSFER_FEES_ACCOUNT),
+  ]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const bookedFilter = `${sinceDate}...${untilDate}`;
+  const expenseLookupSinceDate = new Date(`${untilDate}T00:00:00Z`);
+  expenseLookupSinceDate.setUTCFullYear(expenseLookupSinceDate.getUTCFullYear() - 1);
+  const expenseDateFilter = `${expenseLookupSinceDate.toISOString().slice(0, 10)}...${untilDate}`;
+
+  const perProperty = await Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds } = resolveListingIds(references, listingsByName);
+      const commissionPercent = property.commissionPercent ?? 0;
+      const results: PortfolioReservationDetail[] = [];
+
+      for (const listingId of listingIds) {
+        const [expenseByReservation, transferFeesByReservation] = await Promise.all([
+          getListingExpenseCentsByReservation(listingId, expenseDateFilter),
+          getListingTransferFeesByReservation(listingId, expenseDateFilter, transferFeesAccountId),
+        ]);
+        let page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+            listingId,
+            date: bookedFilter,
+            dateField: "bookedAt",
+            status: "booked",
+            limit: "250",
+            page: String(page),
+            includeLines: "true",
+          });
+          for (const reservation of res.data) {
+            if (!reservation.checkIn || !reservation.checkOut) continue;
+
+            const { rentsCents, channelFeesCents, cityTaxCents } = classifyReservationLines(reservation.lines, accountByLineType);
+            const netCommissionableRevenueCents = rentsCents - channelFeesCents;
+            const commissionCents = Math.round((netCommissionableRevenueCents * commissionPercent) / 100);
+            const netRevenueCents = netCommissionableRevenueCents - commissionCents;
+            const expensesCents = Math.abs(expenseByReservation.get(reservation.id) ?? 0);
+            const transferFeesCents = transferFeesByReservation.get(reservation.id) ?? 0;
+            const grossNightlyRateCents = reservation.nights > 0 ? Math.round(rentsCents / reservation.nights) : null;
+
+            results.push({
+              propertyId: property.propertyId,
+              reference: property.reference,
+              reservationId: reservation.id,
+              checkIn: reservation.checkIn,
+              checkOut: reservation.checkOut,
+              bookedAt: reservation.bookedAt,
+              nights: reservation.nights,
+              guestName: reservation.guestName,
+              confirmationCode: reservation.confirmationCode,
+              bookingPlatform: reservation.bookingPlatform,
+              grossNightlyRateCents,
+              netCommissionableRevenueCents,
+              commissionCents,
+              expensesCents,
+              netRevenueCents,
+              cityTaxCents,
+              transferFeesCents,
+            });
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+      }
+      return results;
+    })
+  );
+
+  // Les plus récemment réservées en premier — c'est le sens de "les dernières".
+  return perProperty.flat().sort((a, b) => (b.bookedAt ?? "").localeCompare(a.bookedAt ?? ""));
 }
 
 /** Version "plage de dates" de getPropertyReservationDetails — filtre

@@ -174,8 +174,10 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     [allProperties]
   );
 
+  const [mode, setMode] = useState<"month" | "recent">("month");
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
+  const [recentDays, setRecentDays] = useState(7);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [showProperties, setShowProperties] = useState(false);
@@ -229,15 +231,22 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
       setError("Aucun bien ne correspond aux filtres.");
       return;
     }
-    if (selectedMonths.length === 0) {
+    if (mode === "month" && selectedMonths.length === 0) {
       setError("Sélectionne au moins un mois.");
+      return;
+    }
+    if (mode === "recent" && (!Number.isInteger(recentDays) || recentDays < 1)) {
+      setError("Nombre de jours invalide.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
       const propertyIds = matchingProperties.map((p) => p.id).join(",");
-      const params = new URLSearchParams({ propertyIds, year: String(year), months: selectedMonths.join(",") });
+      const params =
+        mode === "recent"
+          ? new URLSearchParams({ propertyIds, days: String(recentDays) })
+          : new URLSearchParams({ propertyIds, year: String(year), months: selectedMonths.join(",") });
       const bookingWindowParams = new URLSearchParams({ propertyIds });
       const [res, bookingWindowRes] = await Promise.all([
         fetch(`/api/finance/reservations-portfolio?${params.toString()}`),
@@ -333,11 +342,13 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   const avgGrossNightlyRateCents = totals && totals.nights > 0 ? Math.round(totals.rentsForAvgCents / totals.nights) : null;
 
   const periodSummary =
-    selectedMonths.length === 0
-      ? "Aucun mois"
-      : selectedMonths.length === 12
-        ? `Année complète ${year}`
-        : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
+    mode === "recent"
+      ? `${recentDays} derniers jours`
+      : selectedMonths.length === 0
+        ? "Aucun mois"
+        : selectedMonths.length === 12
+          ? `Année complète ${year}`
+          : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
 
   return (
     <div className="space-y-4">
@@ -355,47 +366,113 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           </button>
           {showPeriodPicker && (
             <div className="absolute left-0 top-full z-10 mt-1.5 w-max rounded-[12px] border border-black/10 bg-white p-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
-              <div>
-                <label className="field-label" htmlFor="res-year">
-                  Année
-                </label>
-                <select
-                  id="res-year"
-                  value={year}
-                  onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-                  className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+              <div className="flex gap-1 rounded-[8px] border border-black/10 bg-black/[0.03] p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setMode("month")}
+                  className={`flex-1 rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition ${
+                    mode === "month" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                  }`}
                 >
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
+                  Mois
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("recent");
+                    setSortKey("bookedAt");
+                    setDirection("desc");
+                  }}
+                  className={`flex-1 rounded-[6px] px-2.5 py-1 text-[12px] font-medium transition ${
+                    mode === "recent" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                  }`}
+                >
+                  Derniers jours
+                </button>
               </div>
 
-              <div className="mt-3">
-                <span className="field-label">Mois</span>
-                <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
-                  {MONTH_LABELS_SHORT.map((label, i) => {
-                    const month = i + 1;
-                    const active = selectedMonths.includes(month);
-                    return (
+              {mode === "month" ? (
+                <>
+                  <div className="mt-3">
+                    <label className="field-label" htmlFor="res-year">
+                      Année
+                    </label>
+                    <select
+                      id="res-year"
+                      value={year}
+                      onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    >
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mt-3">
+                    <span className="field-label">Mois</span>
+                    <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
+                      {MONTH_LABELS_SHORT.map((label, i) => {
+                        const month = i + 1;
+                        const active = selectedMonths.includes(month);
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => toggleMonth(month)}
+                            className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
+                              active
+                                ? "border-[#0071e3] bg-[#0071e3] text-white"
+                                : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-3">
+                  <label className="field-label" htmlFor="res-recent-days">
+                    Nombre de jours
+                  </label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      id="res-recent-days"
+                      type="number"
+                      min={1}
+                      value={recentDays}
+                      onChange={(e) => setRecentDays(Number.parseInt(e.target.value, 10) || 1)}
+                      className="w-20 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    />
+                    <span className="text-[13px] text-[#6e6e73]">jours</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {[5, 7, 15, 30].map((d) => (
                       <button
-                        key={label}
+                        key={d}
                         type="button"
-                        onClick={() => toggleMonth(month)}
+                        onClick={() => setRecentDays(d)}
                         className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
-                          active
+                          recentDays === d
                             ? "border-[#0071e3] bg-[#0071e3] text-white"
                             : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
                         }`}
                       >
-                        {label}
+                        {d}
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
+                  <p className="mt-2 max-w-[220px] text-[11px] text-[#86868b]">
+                    Réservations effectuées au cours des derniers jours, quel que soit le mois du séjour — triées par
+                    date de réservation, les plus récentes en premier.
+                  </p>
                 </div>
-              </div>
+              )}
 
               <button
                 type="button"
@@ -552,14 +629,16 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         onSort={handleSort}
                       />
                       <SortHeader label="Séjour" sortKey="checkIn" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                      <SortHeader
-                        label="TO"
-                        sortKey="occupancyRateOfMonth"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="TO du mois de la réservation"
-                      />
+                      {mode === "month" && (
+                        <SortHeader
+                          label="TO"
+                          sortKey="occupancyRateOfMonth"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          title="TO du mois de la réservation"
+                        />
+                      )}
                       <SortHeader label="Nuits" sortKey="nights" activeKey={sortKey} direction={direction} onSort={handleSort} />
                       <SortHeader
                         label="Prix brut/nuit"
@@ -650,9 +729,11 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
                         </td>
-                        <td className="py-1.5 px-2 text-right">
-                          <OccupancyBadge fillRate={r.occupancyRateOfMonth} />
-                        </td>
+                        {mode === "month" && (
+                          <td className="py-1.5 px-2 text-right">
+                            <OccupancyBadge fillRate={r.occupancyRateOfMonth} />
+                          </td>
+                        )}
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{r.nights}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.grossNightlyRateCents} />
@@ -687,7 +768,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 px-2"></td>
+                      {mode === "month" && <td className="py-1.5 px-2"></td>}
                       <td className="py-1.5 px-2 text-right tabular-nums">{totals.nights}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={avgGrossNightlyRateCents} bold />
@@ -724,7 +805,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
 
       {!reservations && !loading && !error && (
         <p className="text-[13px] text-[#6e6e73]">
-          Choisis une année, un ou plusieurs mois, filtre par bien/modèle/tag si besoin, puis charge les données.
+          Choisis une période (mois ou derniers jours), filtre par bien/modèle/tag si besoin, puis charge les données.
         </p>
       )}
     </div>

@@ -3,18 +3,32 @@ import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
 import {
   getPortfolioGuestyListingIds,
   getPortfolioReservationDetails,
+  getPortfolioReservationDetailsByBookedRange,
   getPropertyOccupancyForMonths,
   isVrPlatformConfigured,
+  type PortfolioReservationDetail,
 } from "@/lib/vrplatform";
 import { getGuestyCleaningPrices, isGuestyConfigured, mapWithGuestyConcurrency } from "@/lib/guesty";
 
 export const dynamic = "force-dynamic";
+
+function isoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
 /** Version "plusieurs biens" de /api/finance/reservations — réservations de
  * tous les biens demandés fusionnées en une seule liste (propertyId/
  * reference sur chaque réservation), pour la sélection multi-biens de
  * l'onglet Réservations (même filtre biens/modèle/tags que l'onglet
  * Revenus).
+ *
+ * Deux modes, selon les paramètres reçus :
+ * - `year` + `months` (comme avant) : réservations dont le check-out tombe
+ *   dans ces mois.
+ * - `days` : les réservations effectuées (bookedAt) au cours des `days`
+ *   derniers jours, quel que soit le mois du séjour — "les dernières
+ *   réservations". Le TO (occupancyRateOfMonth) n'a pas de sens ici (le
+ *   check-out peut tomber n'importe quand dans le futur) et reste à null.
  *
  * Ajoute cleaningProfitCents (prix ménage facturé au client − coût
  * prestataire, via Guesty) à chaque réservation — un seul appel Guesty par
@@ -32,12 +46,23 @@ export async function GET(request: Request) {
 
   const searchParams = new URL(request.url).searchParams;
   const propertyIdsParam = searchParams.get("propertyIds");
+  const daysParam = searchParams.get("days");
+  const days = daysParam != null ? Number.parseInt(daysParam, 10) : null;
+
   const year = Number.parseInt(searchParams.get("year") ?? "", 10);
   const months = (searchParams.get("months") ?? "")
     .split(",")
     .map((m) => Number.parseInt(m, 10))
     .filter((m) => Number.isInteger(m) && m >= 1 && m <= 12);
-  if (!propertyIdsParam || !Number.isInteger(year) || months.length === 0) {
+
+  if (!propertyIdsParam) {
+    return NextResponse.json({ error: "Paramètres invalides." }, { status: 400 });
+  }
+  if (days != null) {
+    if (!Number.isInteger(days) || days < 1) {
+      return NextResponse.json({ error: "Nombre de jours invalide." }, { status: 400 });
+    }
+  } else if (!Number.isInteger(year) || months.length === 0) {
     return NextResponse.json({ error: "Paramètres invalides." }, { status: 400 });
   }
 
@@ -60,16 +85,37 @@ export async function GET(request: Request) {
       extraVrplatformReferences: p.extraVrplatformReferences,
     }));
 
-    const [reservations, occupancyResults] = await Promise.all([
-      getPortfolioReservationDetails(portfolioProperties, year, months),
-      getPropertyOccupancyForMonths(portfolioProperties, year, months),
-    ]);
+    let reservations: PortfolioReservationDetail[];
+    let occupancyRateOfMonthByReservationId: Map<string, number | null>;
 
-    // Taux d'occupation du mois de check-out de chaque réservation, propre
-    // au bien de la réservation (même notion que l'onglet Remplissage).
-    const fillRateByPropertyIdAndMonth = new Map(
-      occupancyResults.map((r) => [r.propertyId, new Map(r.months.map((m) => [m.month, m.fillRate]))])
-    );
+    if (days != null) {
+      const untilDate = new Date();
+      const sinceDate = new Date(untilDate);
+      sinceDate.setUTCDate(sinceDate.getUTCDate() - (days - 1));
+      reservations = await getPortfolioReservationDetailsByBookedRange(
+        portfolioProperties,
+        isoDate(sinceDate),
+        isoDate(untilDate)
+      );
+      occupancyRateOfMonthByReservationId = new Map();
+    } else {
+      const [byBookedRangeReservations, occupancyResults] = await Promise.all([
+        getPortfolioReservationDetails(portfolioProperties, year, months),
+        getPropertyOccupancyForMonths(portfolioProperties, year, months),
+      ]);
+      reservations = byBookedRangeReservations;
+      // Taux d'occupation du mois de check-out de chaque réservation, propre
+      // au bien de la réservation (même notion que l'onglet Remplissage).
+      const fillRateByPropertyIdAndMonth = new Map(
+        occupancyResults.map((r) => [r.propertyId, new Map(r.months.map((m) => [m.month, m.fillRate]))])
+      );
+      occupancyRateOfMonthByReservationId = new Map(
+        reservations.map((r) => [
+          r.reservationId,
+          fillRateByPropertyIdAndMonth.get(r.propertyId)?.get(Number(r.checkOut.slice(5, 7))) ?? null,
+        ])
+      );
+    }
 
     // Profit ménage par check-out (constant par bien, cf. /api/finance/cleaning) —
     // un seul appel Guesty par bien, pas par réservation.
@@ -94,8 +140,7 @@ export async function GET(request: Request) {
     }
 
     const reservationsWithOccupancy = reservations.map((r) => {
-      const checkoutMonth = Number(r.checkOut.slice(5, 7));
-      const occupancyRateOfMonth = fillRateByPropertyIdAndMonth.get(r.propertyId)?.get(checkoutMonth) ?? null;
+      const occupancyRateOfMonth = occupancyRateOfMonthByReservationId.get(r.reservationId) ?? null;
       const cleaningProfitCents = cleaningProfitByPropertyId.get(r.propertyId) ?? null;
       return { ...r, occupancyRateOfMonth, cleaningProfitCents };
     });
