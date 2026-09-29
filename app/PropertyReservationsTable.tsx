@@ -64,6 +64,7 @@ type SortKey =
   | "commission"
   | "expenses"
   | "netRevenue"
+  | "cleaningProfit"
   | "profitMelvane"
   | "occupancyRateOfMonth";
 
@@ -89,6 +90,16 @@ function average(values: number[]): number | null {
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
   return <span className={bold ? "font-semibold" : undefined}>{formatEuros(cents / 100)}</span>;
+}
+
+function SignedMoney({ cents }: { cents: number | null }) {
+  if (cents == null) return <span className="text-[#6e6e73]">—</span>;
+  return (
+    <span className={cents >= 0 ? "text-emerald-600" : "text-red-600"}>
+      {cents >= 0 ? "+" : ""}
+      {formatEuros(cents / 100)}
+    </span>
+  );
 }
 
 function formatDate(iso: string | null): string {
@@ -293,6 +304,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
+          case "cleaningProfit":
+            cmp = (a.cleaningProfitCents ?? 0) - (b.cleaningProfitCents ?? 0);
+            break;
           case "profitMelvane":
             cmp = profitMelvaneCents(a) - profitMelvaneCents(b);
             break;
@@ -312,6 +326,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
         commissionCents: sortedReservations.reduce((sum, r) => sum + r.commissionCents, 0),
         expensesCents: sortedReservations.reduce((sum, r) => sum + r.expensesCents, 0),
         netRevenueCents: sortedReservations.reduce((sum, r) => sum + r.netRevenueCents, 0),
+        cleaningProfitCents: sortedReservations.reduce((sum, r) => sum + (r.cleaningProfitCents ?? 0), 0),
         profitMelvaneCents: sortedReservations.reduce((sum, r) => sum + profitMelvaneCents(r), 0),
       }
     : null;
@@ -596,6 +611,15 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         narrow
                       />
                       <SortHeader
+                        label="Ménage"
+                        sortKey="cleaningProfit"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        title="Prix ménage facturé au client − coût prestataire"
+                        narrow
+                      />
+                      <SortHeader
                         label="Profit Melvane"
                         sortKey="profitMelvane"
                         activeKey={sortKey}
@@ -648,6 +672,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
                           <Money cents={r.netRevenueCents} bold />
                         </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold">
+                          <SignedMoney cents={r.cleaningProfitCents} />
+                        </td>
                         <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
                           <Money cents={profitMelvaneCents(r)} bold />
                         </td>
@@ -679,6 +706,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                       </td>
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.netRevenueCents} bold />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">
+                        <SignedMoney cents={totals.cleaningProfitCents} />
                       </td>
                       <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
                         <Money cents={totals.profitMelvaneCents} bold />
