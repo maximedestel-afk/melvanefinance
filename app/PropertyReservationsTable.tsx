@@ -39,6 +39,16 @@ interface ReservationDetail {
   commissionCents: number;
   expensesCents: number;
   netRevenueCents: number;
+  /** City Tax de cette réservation — entre dans le Profit Melvane, pas dans
+   * le Net Revenue/Profit propriétaire. */
+  cityTaxCents: number;
+  /** Transfer Fees de cette réservation — entre aussi dans le Profit
+   * Melvane. */
+  transferFeesCents: number;
+  /** Prix ménage facturé au client − coût prestataire (constant par bien,
+   * un check-out = un ménage) — entre dans le Profit Melvane. null si
+   * Guesty n'est pas configuré ou indisponible pour ce bien. */
+  cleaningProfitCents: number | null;
   /** Taux d'occupation du mois de check-out de la réservation, sur son
    * propre bien (onglet Remplissage) — pas propre à la réservation. */
   occupancyRateOfMonth: number | null;
@@ -54,7 +64,15 @@ type SortKey =
   | "commission"
   | "expenses"
   | "netRevenue"
+  | "profitMelvane"
   | "occupancyRateOfMonth";
+
+/** Profit Melvane d'une réservation = Commission + City Tax + Transfer Fees
+ * + Profit ménage — même base que la tuile "Profit" de l'onglet Analyse/
+ * Revenus, ramenée à l'échelle d'une réservation, plus les Transfer Fees. */
+function profitMelvaneCents(r: ReservationDetail): number {
+  return r.commissionCents + r.cityTaxCents + r.transferFeesCents + (r.cleaningProfitCents ?? 0);
+}
 
 function median(values: number[]): number | null {
   if (values.length === 0) return null;
@@ -275,6 +293,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
+          case "profitMelvane":
+            cmp = profitMelvaneCents(a) - profitMelvaneCents(b);
+            break;
           case "occupancyRateOfMonth":
             cmp = (a.occupancyRateOfMonth ?? 0) - (b.occupancyRateOfMonth ?? 0);
             break;
@@ -291,6 +312,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
         commissionCents: sortedReservations.reduce((sum, r) => sum + r.commissionCents, 0),
         expensesCents: sortedReservations.reduce((sum, r) => sum + r.expensesCents, 0),
         netRevenueCents: sortedReservations.reduce((sum, r) => sum + r.netRevenueCents, 0),
+        profitMelvaneCents: sortedReservations.reduce((sum, r) => sum + profitMelvaneCents(r), 0),
       }
     : null;
   const avgGrossNightlyRateCents = totals && totals.nights > 0 ? Math.round(totals.rentsForAvgCents / totals.nights) : null;
@@ -575,11 +597,11 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                       />
                       <SortHeader
                         label="Profit Melvane"
-                        sortKey="commission"
+                        sortKey="profitMelvane"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
-                        title="Commission de gestion sur cette réservation — même formule que « Commission » (Analyse/Revenus)"
+                        title="Commission + City Tax + Transfer Fees + Profit ménage"
                         narrow
                       />
                     </tr>
@@ -627,7 +649,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                           <Money cents={r.netRevenueCents} bold />
                         </td>
                         <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                          <Money cents={r.commissionCents} bold />
+                          <Money cents={profitMelvaneCents(r)} bold />
                         </td>
                       </tr>
                     ))}
@@ -659,7 +681,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         <Money cents={totals.netRevenueCents} bold />
                       </td>
                       <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
-                        <Money cents={totals.commissionCents} bold />
+                        <Money cents={totals.profitMelvaneCents} bold />
                       </td>
                     </tr>
                   </tfoot>

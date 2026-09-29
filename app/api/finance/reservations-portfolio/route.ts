@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
-import { getPortfolioReservationDetails, getPropertyOccupancyForMonths, isVrPlatformConfigured } from "@/lib/vrplatform";
+import {
+  getPortfolioGuestyListingIds,
+  getPortfolioReservationDetails,
+  getPropertyOccupancyForMonths,
+  isVrPlatformConfigured,
+} from "@/lib/vrplatform";
+import { getGuestyCleaningPrices, isGuestyConfigured, mapWithGuestyConcurrency } from "@/lib/guesty";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +14,14 @@ export const dynamic = "force-dynamic";
  * tous les biens demandés fusionnées en une seule liste (propertyId/
  * reference sur chaque réservation), pour la sélection multi-biens de
  * l'onglet Réservations (même filtre biens/modèle/tags que l'onglet
- * Revenus). */
+ * Revenus).
+ *
+ * Ajoute cleaningProfitCents (prix ménage facturé au client − coût
+ * prestataire, via Guesty) à chaque réservation — un seul appel Guesty par
+ * bien (pas par réservation), puisque ce prix est constant par bien, pas par
+ * séjour. Une erreur Guesty (non configuré, listing introuvable...) laisse
+ * juste cleaningProfitCents à null plutôt que de faire échouer tout
+ * l'onglet, comme /api/finance/cleaning. */
 export async function GET(request: Request) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -57,10 +70,34 @@ export async function GET(request: Request) {
     const fillRateByPropertyIdAndMonth = new Map(
       occupancyResults.map((r) => [r.propertyId, new Map(r.months.map((m) => [m.month, m.fillRate]))])
     );
+
+    // Profit ménage par check-out (constant par bien, cf. /api/finance/cleaning) —
+    // un seul appel Guesty par bien, pas par réservation.
+    const cleaningProfitByPropertyId = new Map<string, number | null>();
+    if (isGuestyConfigured()) {
+      const guestyListingIdByPropertyId = await getPortfolioGuestyListingIds(portfolioProperties);
+      await mapWithGuestyConcurrency(portfolioProperties, async (property) => {
+        const guestyListingId = guestyListingIdByPropertyId.get(property.propertyId) ?? null;
+        if (!guestyListingId) return;
+        try {
+          const prices = await getGuestyCleaningPrices(guestyListingId);
+          const cleaningProfitCents =
+            prices.standard != null && prices.customField != null
+              ? Math.round((prices.standard - prices.customField) * 100)
+              : null;
+          cleaningProfitByPropertyId.set(property.propertyId, cleaningProfitCents);
+        } catch {
+          // Laisse cleaningProfitCents à null pour ce bien plutôt que de
+          // faire échouer tout l'onglet.
+        }
+      });
+    }
+
     const reservationsWithOccupancy = reservations.map((r) => {
       const checkoutMonth = Number(r.checkOut.slice(5, 7));
       const occupancyRateOfMonth = fillRateByPropertyIdAndMonth.get(r.propertyId)?.get(checkoutMonth) ?? null;
-      return { ...r, occupancyRateOfMonth };
+      const cleaningProfitCents = cleaningProfitByPropertyId.get(r.propertyId) ?? null;
+      return { ...r, occupancyRateOfMonth, cleaningProfitCents };
     });
 
     return NextResponse.json(

@@ -451,6 +451,54 @@ export async function getPropertyReservationDetails(
 export interface PortfolioReservationDetail extends ReservationDetail {
   propertyId: string;
   reference: string;
+  /** City Tax de cette réservation (ligne dédiée côté VRPlatform) — sert au
+   * calcul du Profit Melvane (Commission + City Tax + Profit ménage, même
+   * formule que l'onglet Revenus), pas à celui du Net Revenue propriétaire. */
+  cityTaxCents: number;
+  /** Transfer Fees de cette réservation (écriture comptable liée à la
+   * réservation via reservationId, cf. /reports/journal-entries — pas dans
+   * reservation.lines) — sert aussi au calcul du Profit Melvane. */
+  transferFeesCents: number;
+}
+
+interface VrPlatformJournalEntriesWithReservationResponse {
+  data: { txnAt: string; centTotal: number; reservationId: string | null }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Transfer Fees d'un listing sur une année, regroupés par reservationId —
+ * même requête que addListingTransferFees, mais on lit aussi reservationId
+ * sur chaque écriture (déjà renvoyé par l'API) pour attribuer le montant à
+ * la réservation plutôt qu'au mois. */
+async function getListingTransferFeesByReservation(
+  listingId: string,
+  year: number,
+  transferFeesAccountId: string | null
+): Promise<Map<string, number>> {
+  const byReservation = new Map<string, number>();
+  if (!transferFeesAccountId) return byReservation;
+  try {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformJournalEntriesWithReservationResponse>("/reports/journal-entries", {
+        accountIds: transferFeesAccountId,
+        listingIds: listingId,
+        date: String(year),
+        status: "active",
+        limit: "250",
+        page: String(page),
+      });
+      for (const entry of res.data) {
+        if (!entry.reservationId) continue;
+        byReservation.set(entry.reservationId, (byReservation.get(entry.reservationId) ?? 0) + Math.abs(entry.centTotal));
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+  return byReservation;
 }
 
 /** Version portefeuille de getPropertyReservationDetails — un seul appel
@@ -464,7 +512,11 @@ export async function getPortfolioReservationDetails(
   year: number,
   months: number[]
 ): Promise<PortfolioReservationDetail[]> {
-  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const [listings, accountByLineType, transferFeesAccountId] = await Promise.all([
+    listVrPlatformListings(),
+    getReservationLineAccountMap(),
+    getAccountIdByName(TRANSFER_FEES_ACCOUNT),
+  ]);
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   const perProperty = await Promise.all(
@@ -475,7 +527,10 @@ export async function getPortfolioReservationDetails(
       const results: PortfolioReservationDetail[] = [];
 
       for (const listingId of listingIds) {
-        const expenseByReservation = await getListingExpenseCentsByReservation(listingId, String(year));
+        const [expenseByReservation, transferFeesByReservation] = await Promise.all([
+          getListingExpenseCentsByReservation(listingId, String(year)),
+          getListingTransferFeesByReservation(listingId, year, transferFeesAccountId),
+        ]);
         let page = 1;
         for (;;) {
           const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
@@ -492,11 +547,12 @@ export async function getPortfolioReservationDetails(
             const checkOutDate = new Date(`${reservation.checkOut}T00:00:00Z`);
             if (checkOutDate.getUTCFullYear() !== year || !months.includes(checkOutDate.getUTCMonth() + 1)) continue;
 
-            const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+            const { rentsCents, channelFeesCents, cityTaxCents } = classifyReservationLines(reservation.lines, accountByLineType);
             const netCommissionableRevenueCents = rentsCents - channelFeesCents;
             const commissionCents = Math.round((netCommissionableRevenueCents * commissionPercent) / 100);
             const netRevenueCents = netCommissionableRevenueCents - commissionCents;
             const expensesCents = Math.abs(expenseByReservation.get(reservation.id) ?? 0);
+            const transferFeesCents = transferFeesByReservation.get(reservation.id) ?? 0;
             const grossNightlyRateCents = reservation.nights > 0 ? Math.round(rentsCents / reservation.nights) : null;
 
             results.push({
@@ -515,6 +571,8 @@ export async function getPortfolioReservationDetails(
               commissionCents,
               expensesCents,
               netRevenueCents,
+              cityTaxCents,
+              transferFeesCents,
             });
           }
           if (page >= res.pagination.totalPage) break;
