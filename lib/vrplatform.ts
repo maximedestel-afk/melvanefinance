@@ -448,6 +448,86 @@ export async function getPropertyReservationDetails(
   return results.sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
+export interface PortfolioReservationDetail extends ReservationDetail {
+  propertyId: string;
+  reference: string;
+}
+
+/** Version portefeuille de getPropertyReservationDetails — un seul appel
+ * /listings + mapping comptable partagés entre tous les biens (au lieu d'un
+ * appel par bien), résultats fusionnés en une seule liste avec propertyId/
+ * reference pour pouvoir les afficher/trier/filtrer par bien. Utilisé par
+ * l'onglet Réservations en sélection multi-biens (voir PropertyFinanceTable
+ * pour le même principe de filtre biens/modèle/tags). */
+export async function getPortfolioReservationDetails(
+  properties: PortfolioProperty[],
+  year: number,
+  months: number[]
+): Promise<PortfolioReservationDetail[]> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+
+  const perProperty = await Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds } = resolveListingIds(references, listingsByName);
+      const commissionPercent = property.commissionPercent ?? 0;
+      const results: PortfolioReservationDetail[] = [];
+
+      for (const listingId of listingIds) {
+        const expenseByReservation = await getListingExpenseCentsByReservation(listingId, String(year));
+        let page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+            listingId,
+            date: String(year),
+            dateField: "intersection",
+            status: "booked",
+            limit: "250",
+            page: String(page),
+            includeLines: "true",
+          });
+          for (const reservation of res.data) {
+            if (!reservation.checkIn || !reservation.checkOut) continue;
+            const checkOutDate = new Date(`${reservation.checkOut}T00:00:00Z`);
+            if (checkOutDate.getUTCFullYear() !== year || !months.includes(checkOutDate.getUTCMonth() + 1)) continue;
+
+            const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+            const netCommissionableRevenueCents = rentsCents - channelFeesCents;
+            const commissionCents = Math.round((netCommissionableRevenueCents * commissionPercent) / 100);
+            const netRevenueCents = netCommissionableRevenueCents - commissionCents;
+            const expensesCents = Math.abs(expenseByReservation.get(reservation.id) ?? 0);
+            const grossNightlyRateCents = reservation.nights > 0 ? Math.round(rentsCents / reservation.nights) : null;
+
+            results.push({
+              propertyId: property.propertyId,
+              reference: property.reference,
+              reservationId: reservation.id,
+              checkIn: reservation.checkIn,
+              checkOut: reservation.checkOut,
+              bookedAt: reservation.bookedAt,
+              nights: reservation.nights,
+              guestName: reservation.guestName,
+              confirmationCode: reservation.confirmationCode,
+              bookingPlatform: reservation.bookingPlatform,
+              grossNightlyRateCents,
+              netCommissionableRevenueCents,
+              commissionCents,
+              expensesCents,
+              netRevenueCents,
+            });
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+      }
+      return results;
+    })
+  );
+
+  return perProperty.flat().sort((a, b) => a.checkIn.localeCompare(b.checkIn));
+}
+
 /** Version "plage de dates" de getPropertyReservationDetails — filtre
  * directement côté serveur (dateField=checkOut) sur [startDate, endDate]
  * (inclus, YYYY-MM-DD) au lieu d'une année + une liste de mois. Utilisé par

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { RentType } from "@/lib/types";
 
@@ -15,7 +15,6 @@ interface PropertyOption {
   reference: string;
   tags: string[];
   rentType: RentType | null;
-  ownerEmail: string | null;
 }
 
 interface BookingWindowStats {
@@ -25,6 +24,8 @@ interface BookingWindowStats {
 }
 
 interface ReservationDetail {
+  propertyId: string;
+  reference: string;
   reservationId: string;
   checkIn: string;
   checkOut: string;
@@ -38,12 +39,13 @@ interface ReservationDetail {
   commissionCents: number;
   expensesCents: number;
   netRevenueCents: number;
-  /** Taux d'occupation du mois de check-out de la réservation (onglet
-   * Remplissage), pas propre à la réservation elle-même. */
+  /** Taux d'occupation du mois de check-out de la réservation, sur son
+   * propre bien (onglet Remplissage) — pas propre à la réservation. */
   occupancyRateOfMonth: number | null;
 }
 
 type SortKey =
+  | "reference"
   | "bookedAt"
   | "checkIn"
   | "nights"
@@ -53,6 +55,18 @@ type SortKey =
   | "expenses"
   | "netRevenue"
   | "occupancyRateOfMonth";
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function average(values: number[]): number | null {
+  if (values.length === 0) return null;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
@@ -115,34 +129,30 @@ function SortHeader({
   );
 }
 
+/** Mêmes filtres (biens/modèle de rémunération/tags) et même agencement que
+ * l'onglet Revenus (PropertyFinanceTable) — sélection multi-biens, dont les
+ * réservations sont fusionnées dans un seul tableau (colonne "Bien" pour
+ * les distinguer). */
 export function PropertyReservationsTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
-  const properties = useMemo(
+  const allProperties = useMemo(
     () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
     [unsortedProperties]
   );
   const allTags = useMemo(
-    () => Array.from(new Set(properties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
-    [properties]
-  );
-  const allOwners = useMemo(
-    () =>
-      Array.from(new Set(properties.map((p) => p.ownerEmail).filter((e): e is string => e != null))).sort((a, b) =>
-        a.localeCompare(b, "fr")
-      ),
-    [properties]
+    () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
+    [allProperties]
   );
 
-  const [propertyId, setPropertyId] = useState<string>(properties[0]?.id ?? "");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
-  const [selectedOwner, setSelectedOwner] = useState<string>("");
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
+  const [showProperties, setShowProperties] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
   const [reservations, setReservations] = useState<ReservationDetail[] | null>(null);
-  const [reference, setReference] = useState<string | null>(null);
   const [bookingWindow, setBookingWindow] = useState<BookingWindowStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -150,29 +160,22 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
 
   const matchingProperties = useMemo(() => {
-    return properties.filter((p) => {
+    return allProperties.filter((p) => {
+      const isSelected = selectedPropertyIds.includes(p.id);
       const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
       const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
-      const matchesOwner = selectedOwner === "" || p.ownerEmail === selectedOwner;
-      return matchesTags && matchesRentType && matchesOwner;
+      return isSelected && matchesTags && matchesRentType;
     });
-  }, [properties, selectedTags, selectedRentTypes, selectedOwner]);
-
-  // Le bien sélectionné peut sortir de la liste filtrée (changement de
-  // filtre) — dans ce cas on retombe sur le premier bien qui correspond
-  // encore, comme le fait déjà le sélecteur "Bien" au premier rendu.
-  useEffect(() => {
-    if (matchingProperties.length === 0) return;
-    if (!matchingProperties.some((p) => p.id === propertyId)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPropertyId(matchingProperties[0].id);
-    }
-  }, [matchingProperties, propertyId]);
+  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
       prev.includes(month) ? prev.filter((m) => m !== month) : [...prev, month].sort((a, b) => a - b)
     );
+  }
+
+  function toggleProperty(id: string) {
+    setSelectedPropertyIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
   function toggleTag(tag: string) {
@@ -188,17 +191,13 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
       setDirection((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setDirection(key === "checkIn" || key === "bookedAt" ? "asc" : "desc");
+      setDirection(key === "checkIn" || key === "bookedAt" || key === "reference" ? "asc" : "desc");
     }
   }
 
   async function load() {
     if (matchingProperties.length === 0) {
       setError("Aucun bien ne correspond aux filtres.");
-      return;
-    }
-    if (!propertyId) {
-      setError("Choisis un bien.");
       return;
     }
     if (selectedMonths.length === 0) {
@@ -208,10 +207,11 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ propertyId, year: String(year), months: selectedMonths.join(",") });
-      const bookingWindowParams = new URLSearchParams({ propertyIds: propertyId });
+      const propertyIds = matchingProperties.map((p) => p.id).join(",");
+      const params = new URLSearchParams({ propertyIds, year: String(year), months: selectedMonths.join(",") });
+      const bookingWindowParams = new URLSearchParams({ propertyIds });
       const [res, bookingWindowRes] = await Promise.all([
-        fetch(`/api/finance/reservations?${params.toString()}`),
+        fetch(`/api/finance/reservations-portfolio?${params.toString()}`),
         fetch(`/api/finance/booking-window-portfolio?${bookingWindowParams.toString()}`),
       ]);
       const data = await res.json();
@@ -220,13 +220,23 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
         setReservations(null);
       } else {
         setReservations(data.reservations);
-        setReference(data.reference);
       }
       // Donnée de contexte (12 derniers mois glissants, indépendante de la
       // période sélectionnée) : une erreur ici n'empêche pas d'afficher le
-      // reste du tableau.
+      // reste du tableau. Agrégée (médiane/moyenne) sur les biens
+      // sélectionnés, comme les autres onglets portefeuille.
       const bookingWindowData = await bookingWindowRes.json();
-      setBookingWindow(bookingWindowData.error ? null : (bookingWindowData.properties?.[0] ?? null));
+      if (bookingWindowData.error) {
+        setBookingWindow(null);
+      } else {
+        const stats: { sampleSize: number; medianLeadTimeDays: number | null; avgLengthOfStayNights: number | null }[] =
+          bookingWindowData.properties ?? [];
+        setBookingWindow({
+          sampleSize: stats.reduce((sum, s) => sum + s.sampleSize, 0),
+          medianLeadTimeDays: median(stats.map((s) => s.medianLeadTimeDays).filter((v): v is number => v != null)),
+          avgLengthOfStayNights: average(stats.map((s) => s.avgLengthOfStayNights).filter((v): v is number => v != null)),
+        });
+      }
     } catch {
       setError("Impossible de charger les réservations.");
     } finally {
@@ -238,6 +248,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     ? [...reservations].sort((a, b) => {
         let cmp: number;
         switch (sortKey) {
+          case "reference":
+            cmp = a.reference.localeCompare(b.reference, "fr");
+            break;
           case "bookedAt":
             cmp = (a.bookedAt ?? "").localeCompare(b.bookedAt ?? "");
             break;
@@ -292,24 +305,6 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div>
-          <label className="field-label" htmlFor="res-property">
-            Bien
-          </label>
-          <select
-            id="res-property"
-            value={propertyId}
-            onChange={(e) => setPropertyId(e.target.value)}
-            className="mt-1 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-[7px] text-[14px] font-medium text-[#0071e3] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
-          >
-            {matchingProperties.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.reference}
-              </option>
-            ))}
-          </select>
-        </div>
-
         <div className="relative">
           <button
             type="button"
@@ -381,26 +376,57 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
         </button>
       </div>
 
-      {allOwners.length > 0 && (
-        <div>
-          <label className="field-label" htmlFor="res-owner-filter">
-            Propriétaire
-          </label>
-          <select
-            id="res-owner-filter"
-            value={selectedOwner}
-            onChange={(e) => setSelectedOwner(e.target.value)}
-            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowProperties((v) => !v)}
+            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
-            <option value="">Tous les propriétaires</option>
-            {allOwners.map((email) => (
-              <option key={email} value={email}>
-                {email}
-              </option>
-            ))}
-          </select>
+            🏠 Choisir les biens ({selectedPropertyIds.length}/{allProperties.length})
+            <span aria-hidden className={`transition-transform ${showProperties ? "rotate-180" : ""}`}>
+              ▾
+            </span>
+          </button>
+          <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
+            {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
+            {matchingProperties.length !== 1 ? "s" : ""} (après filtres)
+          </span>
         </div>
-      )}
+        {showProperties && (
+          <>
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPropertyIds(allProperties.map((p) => p.id))}
+                className="text-[12px] font-medium text-[#0071e3] hover:underline"
+              >
+                Tout sélectionner
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPropertyIds([])}
+                className="text-[12px] font-medium text-[#0071e3] hover:underline"
+              >
+                Tout désélectionner
+              </button>
+            </div>
+            <div className="mt-1 grid max-h-56 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto rounded-[10px] border border-black/10 bg-white p-3 sm:grid-cols-3 md:grid-cols-4">
+              {allProperties.map((p) => (
+                <label key={p.id} className="flex items-center gap-1.5 text-[13px] text-[#1d1d1f]">
+                  <input
+                    type="checkbox"
+                    checked={selectedPropertyIds.includes(p.id)}
+                    onChange={() => toggleProperty(p.id)}
+                    className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                  />
+                  {p.reference}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       <div>
         <span className="field-label">Modèle de rémunération</span>
@@ -456,14 +482,14 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-[13px] text-[#6e6e73]">
-              {sortedReservations.length} réservation{sortedReservations.length !== 1 ? "s" : ""} — {reference}
+              {sortedReservations.length} réservation{sortedReservations.length !== 1 ? "s" : ""}
             </p>
             {bookingWindow && (
               <span
                 className="rounded-full bg-[#0071e3]/10 px-3 py-1 text-[12px] font-medium text-[#0071e3]"
-                title="Médiane du nombre de jours entre la réservation et le check-in, et durée moyenne de séjour, sur les réservations faites au cours des 12 derniers mois glissants (indépendant de la période sélectionnée ci-dessus)."
+                title="Médiane/moyenne sur les biens sélectionnés, réservations faites au cours des 12 derniers mois glissants (indépendant de la période sélectionnée ci-dessus)."
               >
-                Fenêtre de résa (12 mois) :{" "}
+                Fenêtre de résa médiane (12 mois) :{" "}
                 {bookingWindow.medianLeadTimeDays != null ? `${Math.round(bookingWindow.medianLeadTimeDays)} j` : "—"}
                 {" · Séjour moyen : "}
                 {bookingWindow.avgLengthOfStayNights != null ? `${bookingWindow.avgLengthOfStayNights.toFixed(1)} nuits` : "—"}
@@ -480,6 +506,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                       <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Voyageur</th>
+                      <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
                       <SortHeader
                         label="Date résa"
                         sortKey="bookedAt"
@@ -537,6 +564,24 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         onSort={handleSort}
                         narrow
                       />
+                      <SortHeader
+                        label="Profit propriétaire"
+                        sortKey="netRevenue"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        title="Net Commissionable Revenue − Commission — même formule que « Net Revenue » (Analyse/Revenus)"
+                        narrow
+                      />
+                      <SortHeader
+                        label="Profit Melvane"
+                        sortKey="commission"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        title="Commission de gestion sur cette réservation — même formule que « Commission » (Analyse/Revenus)"
+                        narrow
+                      />
                     </tr>
                   </thead>
                   <tbody>
@@ -554,6 +599,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                             {r.confirmationCode ? ` · ${r.confirmationCode}` : ""}
                           </div>
                         </td>
+                        <td className="py-1.5 px-2 text-left font-medium text-[#1d1d1f]">{r.reference}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{formatDate(r.bookedAt)}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
@@ -574,8 +620,14 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.expensesCents} />
                         </td>
-                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
                           <Money cents={r.netRevenueCents} bold />
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                          <Money cents={r.netRevenueCents} bold />
+                        </td>
+                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                          <Money cents={r.commissionCents} bold />
                         </td>
                       </tr>
                     ))}
@@ -583,6 +635,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                       <td className="py-1.5 pl-3 pr-2">Total ({sortedReservations.length})</td>
+                      <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
@@ -599,8 +652,14 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.expensesCents} bold />
                       </td>
-                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                      <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.netRevenueCents} bold />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums">
+                        <Money cents={totals.netRevenueCents} bold />
+                      </td>
+                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                        <Money cents={totals.commissionCents} bold />
                       </td>
                     </tr>
                   </tfoot>
@@ -612,7 +671,9 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
       )}
 
       {!reservations && !loading && !error && (
-        <p className="text-[13px] text-[#6e6e73]">Choisis un bien, une année et un ou plusieurs mois, puis charge les données.</p>
+        <p className="text-[13px] text-[#6e6e73]">
+          Choisis une année, un ou plusieurs mois, filtre par bien/modèle/tag si besoin, puis charge les données.
+        </p>
       )}
     </div>
   );
