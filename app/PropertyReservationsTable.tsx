@@ -1,11 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
+import type { RentType } from "@/lib/types";
+
+const RENT_TYPE_LABELS: Record<RentType, string> = {
+  fixe: "Fixe",
+  variable: "Variable",
+  fixe_variable: "Fixe + variable",
+};
 
 interface PropertyOption {
   id: string;
   reference: string;
+  tags: string[];
+  rentType: RentType | null;
+  ownerEmail: string | null;
 }
 
 interface BookingWindowStats {
@@ -112,8 +122,22 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
     () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
     [unsortedProperties]
   );
+  const allTags = useMemo(
+    () => Array.from(new Set(properties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
+    [properties]
+  );
+  const allOwners = useMemo(
+    () =>
+      Array.from(new Set(properties.map((p) => p.ownerEmail).filter((e): e is string => e != null))).sort((a, b) =>
+        a.localeCompare(b, "fr")
+      ),
+    [properties]
+  );
 
   const [propertyId, setPropertyId] = useState<string>(properties[0]?.id ?? "");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
+  const [selectedOwner, setSelectedOwner] = useState<string>("");
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
@@ -125,10 +149,38 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   const [sortKey, setSortKey] = useState<SortKey>("checkIn");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
 
+  const matchingProperties = useMemo(() => {
+    return properties.filter((p) => {
+      const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
+      const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
+      const matchesOwner = selectedOwner === "" || p.ownerEmail === selectedOwner;
+      return matchesTags && matchesRentType && matchesOwner;
+    });
+  }, [properties, selectedTags, selectedRentTypes, selectedOwner]);
+
+  // Le bien sélectionné peut sortir de la liste filtrée (changement de
+  // filtre) — dans ce cas on retombe sur le premier bien qui correspond
+  // encore, comme le fait déjà le sélecteur "Bien" au premier rendu.
+  useEffect(() => {
+    if (matchingProperties.length === 0) return;
+    if (!matchingProperties.some((p) => p.id === propertyId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPropertyId(matchingProperties[0].id);
+    }
+  }, [matchingProperties, propertyId]);
+
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
       prev.includes(month) ? prev.filter((m) => m !== month) : [...prev, month].sort((a, b) => a - b)
     );
+  }
+
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
+  function toggleRentType(rentType: RentType) {
+    setSelectedRentTypes((prev) => (prev.includes(rentType) ? prev.filter((t) => t !== rentType) : [...prev, rentType]));
   }
 
   function handleSort(key: SortKey) {
@@ -141,6 +193,10 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
   }
 
   async function load() {
+    if (matchingProperties.length === 0) {
+      setError("Aucun bien ne correspond aux filtres.");
+      return;
+    }
     if (!propertyId) {
       setError("Choisis un bien.");
       return;
@@ -246,7 +302,7 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
             onChange={(e) => setPropertyId(e.target.value)}
             className="mt-1 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-[7px] text-[14px] font-medium text-[#0071e3] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
           >
-            {properties.map((p) => (
+            {matchingProperties.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.reference}
               </option>
@@ -324,6 +380,75 @@ export function PropertyReservationsTable({ properties: unsortedProperties }: { 
           {loading ? "Chargement…" : reservations ? "Actualiser" : "Charger"}
         </button>
       </div>
+
+      {allOwners.length > 0 && (
+        <div>
+          <label className="field-label" htmlFor="res-owner-filter">
+            Propriétaire
+          </label>
+          <select
+            id="res-owner-filter"
+            value={selectedOwner}
+            onChange={(e) => setSelectedOwner(e.target.value)}
+            className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+          >
+            <option value="">Tous les propriétaires</option>
+            {allOwners.map((email) => (
+              <option key={email} value={email}>
+                {email}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div>
+        <span className="field-label">Modèle de rémunération</span>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {(Object.keys(RENT_TYPE_LABELS) as RentType[]).map((rentType) => {
+            const active = selectedRentTypes.includes(rentType);
+            return (
+              <button
+                key={rentType}
+                type="button"
+                onClick={() => toggleRentType(rentType)}
+                className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                  active
+                    ? "border-[#0071e3] bg-[#0071e3] text-white"
+                    : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                }`}
+              >
+                {RENT_TYPE_LABELS[rentType]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {allTags.length > 0 && (
+        <div>
+          <span className="field-label">Tags</span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {allTags.map((tag) => {
+              const active = selectedTags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => toggleTag(tag)}
+                  className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                    active
+                      ? "border-[#0071e3] bg-[#0071e3] text-white"
+                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
