@@ -123,61 +123,49 @@ export function DashboardClient({
       </div>
       </div>
 
-      {tab === "occupancy" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Remplissage</h2>
-          <PropertyOccupancyTable properties={properties} />
-        </section>
-      )}
+      {/* Chaque onglet reste monté en permanence (juste masqué en CSS) au
+          lieu d'être démonté/remonté au changement d'onglet, pour que ses
+          données déjà chargées et ses filtres restent affichés quand on y
+          revient, plutôt que de retomber sur une page vide à chaque fois. */}
+      <section className={`card space-y-3 p-5 ${tab === "occupancy" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Remplissage</h2>
+        <PropertyOccupancyTable properties={properties} />
+      </section>
 
-      {tab === "finance" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Revenus</h2>
-          <PropertyFinanceTable properties={properties} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "finance" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Revenus</h2>
+        <PropertyFinanceTable properties={properties} />
+      </section>
 
-      {tab === "cleaning" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Ménage</h2>
-          <PropertyCleaningTable properties={properties} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "cleaning" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Ménage</h2>
+        <PropertyCleaningTable properties={properties} />
+      </section>
 
-      {tab === "bonus" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Bonus Ménage</h2>
-          <PropertyBonusTable properties={properties} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "bonus" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Bonus Ménage</h2>
+        <PropertyBonusTable properties={properties} />
+      </section>
 
-      {tab === "owner-comparison" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Owner</h2>
-          <PropertyOwnerComparisonTable properties={properties} onOpenAnalysis={openAnalysis} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "owner-comparison" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Owner</h2>
+        <PropertyOwnerComparisonTable properties={properties} onOpenAnalysis={openAnalysis} />
+      </section>
 
-      {tab === "reservations" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Réservations</h2>
-          <PropertyReservationsTable properties={properties} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "reservations" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Réservations</h2>
+        <PropertyReservationsTable properties={properties} />
+      </section>
 
-      {tab === "analysis" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Analyse</h2>
-          <PropertyAnalysisTable properties={properties} request={analysisRequest} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "analysis" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Analyse</h2>
+        <PropertyAnalysisTable properties={properties} request={analysisRequest} />
+      </section>
 
-      {tab === "trends" && (
-        <section className="card space-y-3 p-5">
-          <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Tendances</h2>
-          <PropertyTrendsTable properties={properties} onOpenAnalysisRange={openAnalysisRange} />
-        </section>
-      )}
+      <section className={`card space-y-3 p-5 ${tab === "trends" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Tendances</h2>
+        <PropertyTrendsTable properties={properties} onOpenAnalysisRange={openAnalysisRange} />
+      </section>
     </div>
   );
 }

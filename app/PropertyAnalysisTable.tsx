@@ -411,15 +411,26 @@ export function PropertyAnalysisTable({
     }
   }
 
-  // propertyId/year/month/rangeStart/rangeEnd sont déjà initialisés depuis
-  // `request` (useState ci-dessus) — ce composant est démonté/remonté à
-  // chaque navigation depuis Owner ou Tendances (voir DashboardClient), donc
-  // un nouveau `request` correspond toujours à un nouveau montage. Seul le
-  // chargement des données doit être déclenché ici.
+  // Cet onglet reste monté en permanence (voir DashboardClient — les onglets
+  // ne sont plus démontés au changement d'onglet, pour garder le dernier
+  // tableau chargé au lieu de repartir d'une page vide) : un nouveau
+  // `request` (navigation depuis Owner ou Tendances) doit donc explicitement
+  // remettre à jour la sélection affichée (bien/mode/période), pas seulement
+  // déclencher le chargement.
   useEffect(() => {
     if (!request) return;
-    // Déclenche volontairement le même chargement que le bouton "Charger", au montage.
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPropertyId(request.propertyId);
+    if ("startDate" in request) {
+      setMode("range");
+      setRangeStart(request.startDate);
+      setRangeEnd(request.endDate);
+    } else {
+      setMode("month");
+      setYear(request.year);
+      setMonth(request.month);
+    }
+    // Déclenche volontairement le même chargement que le bouton "Charger".
     load(request);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.token]);
