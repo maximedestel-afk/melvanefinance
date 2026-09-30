@@ -104,11 +104,18 @@ type SortKey =
   | "commission"
   | "expenses"
   | "netRevenue"
+  | "ownerNet"
   | "occupancyRateOfMonth";
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
   return <span className={bold ? "font-semibold" : undefined}>{formatEuros(cents / 100)}</span>;
+}
+
+/** "Owner Net" par réservation = "Owner Gross" (netRevenueCents) − Expenses
+ * attribuées à cette réservation. */
+function reservationOwnerNetCents(r: { netRevenueCents: number; expensesCents: number }): number {
+  return r.netRevenueCents - r.expensesCents;
 }
 
 function SignedMoney({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
@@ -460,13 +467,16 @@ export function PropertyAnalysisTable({
       rentType !== "fixe" && activeMeta.commissionPercent != null
         ? Math.round((netCommissionableRevenueCents * activeMeta.commissionPercent) / 100)
         : null;
-    const netRevenueAfterCommissionCents = netCommissionableRevenueCents - (commissionCents ?? 0);
+    const netRevenueAfterCommissionCents = netCommissionableRevenueCents - (commissionCents ?? 0); // "Owner Gross"
+    const ownerNetCents = netRevenueAfterCommissionCents - activeFinance.expensesCents; // "Owner Net"
 
     const loyerCents =
       rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && activeMeta.fixedRentAmountCents != null
         ? activeMeta.fixedRentAmountCents
         : null;
-    const excessCents = loyerCents != null ? netRevenueAfterCommissionCents - loyerCents : null;
+    // Excess = Owner Net − Loyer (pas Owner Gross − Loyer) : l'écart au-dessus
+    // du loyer garanti doit tenir compte des Expenses déjà déduites du owner.
+    const excessCents = loyerCents != null ? ownerNetCents - loyerCents : null;
     const avgGrossNightlyRateCents =
       activeFinance.checkoutNights > 0 ? Math.round(activeFinance.rentsCents / activeFinance.checkoutNights) : null;
 
@@ -496,6 +506,7 @@ export function PropertyAnalysisTable({
       netCommissionableRevenueCents,
       commissionCents,
       netRevenueAfterCommissionCents,
+      ownerNetCents,
       loyerCents,
       excessCents,
       avgGrossNightlyRateCents,
@@ -604,6 +615,9 @@ export function PropertyAnalysisTable({
             break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
+            break;
+          case "ownerNet":
+            cmp = reservationOwnerNetCents(a) - reservationOwnerNetCents(b);
             break;
           case "occupancyRateOfMonth":
             cmp = (a.occupancyRateOfMonth ?? 0) - (b.occupancyRateOfMonth ?? 0);
@@ -839,13 +853,19 @@ export function PropertyAnalysisTable({
               >
                 <Money cents={activeFinance.expensesCents} />
               </StatTile>
-              <StatTile label="Net Revenue">
+              <StatTile label="Owner Gross" title="Net Commissionable Revenue − Commission (Expenses non déduites)">
                 <Money cents={figures.netRevenueAfterCommissionCents} bold />
+              </StatTile>
+              <StatTile label="Owner Net" title="Owner Gross − Expenses">
+                <SignedMoney cents={figures.ownerNetCents} bold />
               </StatTile>
               <StatTile label="Loyer" title={mode === "range" ? "Le loyer fixe est mensuel — non applicable en mode plage de dates." : undefined}>
                 <Money cents={figures.loyerCents} />
               </StatTile>
-              <StatTile label="Excess" title={mode === "range" ? "Le loyer fixe est mensuel — non applicable en mode plage de dates." : undefined}>
+              <StatTile
+                label="Excess"
+                title={mode === "range" ? "Le loyer fixe est mensuel — non applicable en mode plage de dates." : "Owner Net − Loyer"}
+              >
                 <SignedMoney cents={figures.excessCents} bold />
               </StatTile>
               <StatTile
@@ -1008,8 +1028,25 @@ export function PropertyAnalysisTable({
                           narrow
                         />
                         <SortHeader label="Commission" sortKey="commission" activeKey={sortKey} direction={direction} onSort={handleSort} narrow />
+                        <SortHeader
+                          label="Owner Gross"
+                          sortKey="netRevenue"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          narrow
+                          title="Net Commissionable Revenue − Commission (Expenses non déduites)"
+                        />
                         <SortHeader label="Expenses" sortKey="expenses" activeKey={sortKey} direction={direction} onSort={handleSort} narrow />
-                        <SortHeader label="Net Revenue" sortKey="netRevenue" activeKey={sortKey} direction={direction} onSort={handleSort} narrow />
+                        <SortHeader
+                          label="Owner Net"
+                          sortKey="ownerNet"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          narrow
+                          title="Owner Gross − Expenses"
+                        />
                       </tr>
                     </thead>
                     <tbody>
@@ -1047,10 +1084,13 @@ export function PropertyAnalysisTable({
                             <Money cents={r.commissionCents} />
                           </td>
                           <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <Money cents={r.netRevenueCents} bold />
+                          </td>
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                             <Money cents={r.expensesCents} />
                           </td>
-                          <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                            <Money cents={r.netRevenueCents} bold />
+                          <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                            <SignedMoney cents={reservationOwnerNetCents(r)} bold />
                           </td>
                         </tr>
                       ))}
