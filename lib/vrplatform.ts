@@ -523,11 +523,23 @@ export async function getPortfolioReservationDetails(
   const perProperty = await Promise.all(
     properties.map(async (property) => {
       const references = [property.reference, ...property.extraVrplatformReferences];
-      const { listingIds } = resolveListingIds(references, listingsByName);
+      // Un bien peut regrouper plusieurs listings VRPlatform (référence
+      // principale + références supplémentaires) — on garde la référence
+      // exacte de CHAQUE listing pour l'affichage (colonne "Bien" de la
+      // liste des réservations), tout le reste (propertyId, commission...)
+      // continue de s'appuyer sur le bien (référence principale) comme
+      // avant, cf. resolveListingIds.
+      const referenceByListingId = new Map<string, string>();
+      for (const reference of references) {
+        const listing = listingsByName.get(reference.trim().toLowerCase());
+        if (listing) referenceByListingId.set(listing.id, listing.name);
+      }
+      const listingIds = Array.from(referenceByListingId.keys());
       const commissionPercent = property.commissionPercent ?? 0;
       const results: PortfolioReservationDetail[] = [];
 
       for (const listingId of listingIds) {
+        const listingReference = referenceByListingId.get(listingId) ?? property.reference;
         const [expenseByReservation, transferFeesByReservation] = await Promise.all([
           getListingExpenseCentsByReservation(listingId, String(year)),
           getListingTransferFeesByReservation(listingId, String(year), transferFeesAccountId),
@@ -558,7 +570,7 @@ export async function getPortfolioReservationDetails(
 
             results.push({
               propertyId: property.propertyId,
-              reference: property.reference,
+              reference: listingReference,
               reservationId: reservation.id,
               checkIn: reservation.checkIn,
               checkOut: reservation.checkOut,
@@ -620,11 +632,19 @@ export async function getPortfolioReservationDetailsByBookedRange(
   const perProperty = await Promise.all(
     properties.map(async (property) => {
       const references = [property.reference, ...property.extraVrplatformReferences];
-      const { listingIds } = resolveListingIds(references, listingsByName);
+      // Voir le commentaire équivalent dans getPortfolioReservationDetails :
+      // on garde la référence exacte de chaque listing pour l'affichage.
+      const referenceByListingId = new Map<string, string>();
+      for (const reference of references) {
+        const listing = listingsByName.get(reference.trim().toLowerCase());
+        if (listing) referenceByListingId.set(listing.id, listing.name);
+      }
+      const listingIds = Array.from(referenceByListingId.keys());
       const commissionPercent = property.commissionPercent ?? 0;
       const results: PortfolioReservationDetail[] = [];
 
       for (const listingId of listingIds) {
+        const listingReference = referenceByListingId.get(listingId) ?? property.reference;
         const [expenseByReservation, transferFeesByReservation] = await Promise.all([
           getListingExpenseCentsByReservation(listingId, expenseDateFilter),
           getListingTransferFeesByReservation(listingId, expenseDateFilter, transferFeesAccountId),
@@ -653,7 +673,7 @@ export async function getPortfolioReservationDetailsByBookedRange(
 
             results.push({
               propertyId: property.propertyId,
-              reference: property.reference,
+              reference: listingReference,
               reservationId: reservation.id,
               checkIn: reservation.checkIn,
               checkOut: reservation.checkOut,
