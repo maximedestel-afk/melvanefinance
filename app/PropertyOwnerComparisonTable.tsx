@@ -11,8 +11,9 @@ type SortKey =
   | "fillRate"
   | "netCommissionableRevenue"
   | "commission"
-  | "expenses"
   | "netRevenue"
+  | "expenses"
+  | "ownerNet"
   | "loyer"
   | "excess"
   | "avgGrossNightlyRate";
@@ -69,19 +70,37 @@ interface ComparisonRow {
   avgGrossNightlyRateCents: number | null;
 }
 
-function computeFigures(rentType: RentType | null, commissionPercent: number | null, netCommissionableRevenueCents: number, fixedRentAmountCents: number | null, months: number) {
+function computeFigures(
+  rentType: RentType | null,
+  commissionPercent: number | null,
+  netCommissionableRevenueCents: number,
+  expensesCents: number,
+  fixedRentAmountCents: number | null,
+  months: number
+) {
   // Modèle Fixe : M.G.B ne prend pas de commission (elle garde l'Excess,
-  // Net Revenue − Loyer) — un commission_percent resté en base côté M.G.B
+  // Owner Net − Loyer) — un commission_percent resté en base côté M.G.B
   // pour un bien Fixe n'est pas exploité ici, comme dans l'onglet Revenus.
   const commissionCents =
     rentType !== "fixe" ? Math.round((netCommissionableRevenueCents * (commissionPercent ?? 0)) / 100) : null;
-  const netRevenueCents = netCommissionableRevenueCents - (commissionCents ?? 0);
+  const netRevenueCents = netCommissionableRevenueCents - (commissionCents ?? 0); // "Owner Gross"
+  const ownerNet = netRevenueCents - expensesCents;
   const loyerCents =
     rentType != null && RENT_TYPES_WITH_LOYER.includes(rentType) && fixedRentAmountCents != null
       ? fixedRentAmountCents * months
       : null;
-  const excessCents = loyerCents != null ? netRevenueCents - loyerCents : null;
+  // Excess = Owner Net − Loyer (pas Owner Gross − Loyer) : l'écart au-dessus
+  // du loyer garanti doit tenir compte des Expenses déjà déduites du owner.
+  const excessCents = loyerCents != null ? ownerNet - loyerCents : null;
   return { commissionCents, netRevenueCents, loyerCents, excessCents };
+}
+
+/** "Owner Net" = "Owner Gross" (netRevenueCents, Net Commissionable Revenue
+ * − Commission) − Expenses — le "Net Revenue" affiché ailleurs dans l'app
+ * n'inclut pas les Expenses, contrairement à ce que son nom suggère ; cette
+ * colonne comble l'écart en donnant le vrai reste-à-percevoir du owner. */
+function ownerNetCents(row: { netRevenueCents: number; expensesCents: number }): number {
+  return row.netRevenueCents - row.expensesCents;
 }
 
 /** Une ligne par bien, agrégée sur tous les mois sélectionnés. */
@@ -94,7 +113,14 @@ function toAggregateRow(property: PropertyMonthlyResult, rentType: RentType | nu
   const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
   const checkoutNights = selected.reduce((sum, m) => sum + m.checkoutNights, 0);
   const avgGrossNightlyRateCents = checkoutNights > 0 ? Math.round(rentsCents / checkoutNights) : null;
-  const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, selectedMonths.length);
+  const figures = computeFigures(
+    rentType,
+    property.commissionPercent,
+    netCommissionableRevenueCents,
+    expensesCents,
+    property.fixedRentAmountCents,
+    selectedMonths.length
+  );
 
   return {
     key: property.propertyId,
@@ -127,7 +153,14 @@ function toMonthlyRows(
     .filter((m) => selectedMonths.includes(m.month))
     .map((m): ComparisonRow => {
       const netCommissionableRevenueCents = m.netRevenueCents;
-      const figures = computeFigures(rentType, property.commissionPercent, netCommissionableRevenueCents, property.fixedRentAmountCents, 1);
+      const figures = computeFigures(
+        rentType,
+        property.commissionPercent,
+        netCommissionableRevenueCents,
+        m.expensesCents,
+        property.fixedRentAmountCents,
+        1
+      );
       return {
         key: `${property.propertyId}-${m.month}`,
         label: `${MONTH_LABELS_SHORT[m.month - 1]} ${year}`,
@@ -335,11 +368,14 @@ export function PropertyOwnerComparisonTable({
           case "commission":
             cmp = (a.commissionCents ?? 0) - (b.commissionCents ?? 0);
             break;
+          case "netRevenue":
+            cmp = a.netRevenueCents - b.netRevenueCents;
+            break;
           case "expenses":
             cmp = a.expensesCents - b.expensesCents;
             break;
-          case "netRevenue":
-            cmp = a.netRevenueCents - b.netRevenueCents;
+          case "ownerNet":
+            cmp = ownerNetCents(a) - ownerNetCents(b);
             break;
           case "loyer":
             cmp = (a.loyerCents ?? 0) - (b.loyerCents ?? 0);
@@ -362,6 +398,7 @@ export function PropertyOwnerComparisonTable({
         commissionCents: sortedRows.reduce((sum, r) => sum + (r.commissionCents ?? 0), 0),
         expensesCents: sortedRows.reduce((sum, r) => sum + r.expensesCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
+        ownerNetCents: sortedRows.reduce((sum, r) => sum + ownerNetCents(r), 0),
         loyerCents: sortedRows.reduce((sum, r) => sum + (r.loyerCents ?? 0), 0),
         excessCents: sortedRows.reduce((sum, r) => sum + (r.excessCents ?? 0), 0),
         avgGrossNightlyRateCents: (() => {
@@ -632,6 +669,15 @@ export function PropertyOwnerComparisonTable({
                       narrow
                     />
                     <SortHeader
+                      label="Owner Gross"
+                      sortKey="netRevenue"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Net Commissionable Revenue − Commission (Expenses non déduites)"
+                      narrow
+                    />
+                    <SortHeader
                       label="Expenses"
                       sortKey="expenses"
                       activeKey={sortKey}
@@ -641,15 +687,23 @@ export function PropertyOwnerComparisonTable({
                       narrow
                     />
                     <SortHeader
-                      label="Net Revenue"
-                      sortKey="netRevenue"
+                      label="Owner Net"
+                      sortKey="ownerNet"
                       activeKey={sortKey}
                       direction={direction}
                       onSort={handleSort}
+                      title="Owner Gross − Expenses"
                       narrow
                     />
                     <SortHeader label="Loyer" sortKey="loyer" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                    <SortHeader label="Excess" sortKey="excess" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeader
+                      label="Excess"
+                      sortKey="excess"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      title="Owner Net − Loyer"
+                    />
                     <SortHeader
                       label="Prix moyen brut/nuit"
                       sortKey="avgGrossNightlyRate"
@@ -720,6 +774,9 @@ export function PropertyOwnerComparisonTable({
                         )}
                       </td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <Money cents={row.netRevenueCents} />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         <button
                           type="button"
                           onClick={() => setExpenseDetailRow(row)}
@@ -729,8 +786,13 @@ export function PropertyOwnerComparisonTable({
                           <Money cents={row.expensesCents} />
                         </button>
                       </td>
-                      <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                        <Money cents={row.netRevenueCents} bold />
+                      <td
+                        className={`py-1.5 px-2 text-right tabular-nums font-semibold ${
+                          ownerNetCents(row) >= 0 ? "text-emerald-600" : "text-red-600"
+                        }`}
+                      >
+                        {ownerNetCents(row) >= 0 ? "+" : ""}
+                        {formatEuros(ownerNetCents(row) / 100)}
                       </td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         <Money cents={row.loyerCents} />
@@ -771,10 +833,18 @@ export function PropertyOwnerComparisonTable({
                       <Money cents={totals.commissionCents} bold />
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
-                      <Money cents={totals.expensesCents} bold />
+                      <Money cents={totals.netRevenueCents} bold />
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
-                      <Money cents={totals.netRevenueCents} bold />
+                      <Money cents={totals.expensesCents} bold />
+                    </td>
+                    <td
+                      className={`py-1.5 px-2 text-right tabular-nums ${
+                        totals.ownerNetCents >= 0 ? "text-emerald-600" : "text-red-600"
+                      }`}
+                    >
+                      {totals.ownerNetCents >= 0 ? "+" : ""}
+                      {formatEuros(totals.ownerNetCents / 100)}
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
                       <Money cents={totals.loyerCents} bold />
