@@ -69,6 +69,54 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
   });
 }
 
+export interface PropertyLeaseInfo {
+  id: string;
+  reference: string;
+  leaseStartDate: string | null;
+  leaseRentFreePeriodText: string | null;
+  rentAmountEuros: number | null;
+  chargesAmountEuros: number | null;
+}
+
+/** Biens ayant une date de début de bail renseignée (table `property_owner`
+ * de M.G.B, onglet "Bail") — utilisé par l'onglet Bail pour la franchise de
+ * loyer et le prorata de fin de mois. */
+export async function listPropertiesWithLease(): Promise<PropertyLeaseInfo[]> {
+  const supabase = await createClient();
+
+  const [
+    { data: properties, error: propertiesError },
+    { data: owners, error: ownersError },
+  ] = await Promise.all([
+    supabase.from("properties").select("id, reference").order("reference", { ascending: true }),
+    supabase
+      .from("property_owner")
+      .select("property_id, lease_start_date, lease_rent_free_period, rent_amount, charges_amount")
+      .not("lease_start_date", "is", null),
+  ]);
+  if (propertiesError) throw propertiesError;
+  if (ownersError) throw ownersError;
+
+  const ownerByProperty = new Map((owners ?? []).map((o) => [o.property_id, o]));
+  const propertyById = new Map((properties ?? []).map((p) => [p.id, p]));
+
+  return Array.from(ownerByProperty.values())
+    .map((owner): PropertyLeaseInfo | null => {
+      const property = propertyById.get(owner.property_id);
+      if (!property) return null;
+      return {
+        id: property.id,
+        reference: property.reference,
+        leaseStartDate: owner.lease_start_date,
+        leaseRentFreePeriodText: owner.lease_rent_free_period,
+        rentAmountEuros: owner.rent_amount,
+        chargesAmountEuros: owner.charges_amount,
+      };
+    })
+    .filter((p): p is PropertyLeaseInfo => p !== null)
+    .sort((a, b) => a.reference.localeCompare(b.reference, "fr"));
+}
+
 export interface OwnerPropertyInfo {
   id: string;
   reference: string;
