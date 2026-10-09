@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
@@ -266,6 +266,48 @@ export function PropertyOwnerComparisonTable({
   const [expenseDetailRow, setExpenseDetailRow] = useState<ComparisonRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [transferAutoSetupIds, setTransferAutoSetupIds] = useState<Set<string>>(new Set());
+  const [togglingTransferId, setTogglingTransferId] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/finance/transfer-auto-setup");
+        const data = await res.json();
+        if (!data.error) setTransferAutoSetupIds(new Set(data.enabledPropertyIds));
+      } catch {
+        // Ignoré — les cases restent utilisables, juste vides au chargement.
+      }
+    })();
+  }, []);
+
+  async function toggleTransferAutoSetup(propertyId: string, enabled: boolean) {
+    setTogglingTransferId(propertyId);
+    const previous = new Set(transferAutoSetupIds);
+    setTransferAutoSetupIds((prev) => {
+      const next = new Set(prev);
+      if (enabled) next.add(propertyId);
+      else next.delete(propertyId);
+      return next;
+    });
+    try {
+      const res = await fetch("/api/finance/transfer-auto-setup", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyId, enabled }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setTransferAutoSetupIds(previous);
+      }
+    } catch {
+      setError("Impossible d'enregistrer le statut du transfert auto.");
+      setTransferAutoSetupIds(previous);
+    } finally {
+      setTogglingTransferId(null);
+    }
+  }
 
   const matchingProperties = useMemo(() => {
     return allProperties.filter((p) => {
@@ -713,6 +755,7 @@ export function PropertyOwnerComparisonTable({
                       title="Rents ÷ nuits, avant déduction des Channel Fees"
                       narrow
                     />
+                    <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Transfert auto</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -804,8 +847,18 @@ export function PropertyOwnerComparisonTable({
                       >
                         {row.excessCents != null ? `${row.excessCents >= 0 ? "+" : ""}${formatEuros(row.excessCents / 100)}` : "—"}
                       </td>
-                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         <Money cents={row.avgGrossNightlyRateCents} />
+                      </td>
+                      <td className="py-1.5 pl-2 pr-3 text-right">
+                        <input
+                          type="checkbox"
+                          checked={transferAutoSetupIds.has(row.propertyId)}
+                          disabled={togglingTransferId === row.propertyId}
+                          onChange={(e) => toggleTransferAutoSetup(row.propertyId, e.target.checked)}
+                          title="Transfert auto set up"
+                          className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                        />
                       </td>
                     </tr>
                   ))}
@@ -857,9 +910,10 @@ export function PropertyOwnerComparisonTable({
                       {totals.excessCents >= 0 ? "+" : ""}
                       {formatEuros(totals.excessCents / 100)}
                     </td>
-                    <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                    <td className="py-1.5 px-2 text-right tabular-nums">
                       <Money cents={totals.avgGrossNightlyRateCents} bold />
                     </td>
+                    <td className="py-1.5 pl-2 pr-3"></td>
                   </tr>
                 </tfoot>
               </table>
