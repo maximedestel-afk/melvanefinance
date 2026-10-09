@@ -53,6 +53,20 @@ interface CleaningApiResult {
   guestyError: string | null;
 }
 
+/** Résultat de /api/finance/cleaning-prices (mode "Prix actuels") — pas de
+ * check-out ni de notion de période : juste les prix configurés côté
+ * Guesty pour chaque bien, qu'il ait eu des séjours ou non. */
+interface CurrentPriceResult {
+  propertyId: string;
+  reference: string;
+  cleaningProviderName: string | null;
+  cleaningFeeCustomField: number | null;
+  cleaningFeeGuesty: number | null;
+  guestyError: string | null;
+}
+
+type CurrentSortKey = "reference" | "customField" | "guesty";
+
 interface CleaningRow {
   propertyId: string;
   reference: string;
@@ -125,7 +139,7 @@ function EuroValue({ value, bold = false }: { value: number | null; bold?: boole
   return <span className={bold ? "font-semibold" : undefined}>{formatEuros(value)}</span>;
 }
 
-function SortHeader({
+function SortHeader<K extends string>({
   label,
   sortKey,
   activeKey,
@@ -134,10 +148,10 @@ function SortHeader({
   align = "right",
 }: {
   label: string;
-  sortKey: SortKey;
-  activeKey: SortKey;
+  sortKey: K;
+  activeKey: K;
   direction: "asc" | "desc";
-  onSort: (key: SortKey) => void;
+  onSort: (key: K) => void;
   align?: "left" | "right";
 }) {
   const isActive = activeKey === sortKey;
@@ -176,6 +190,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     [allProperties]
   );
 
+  const [mode, setMode] = useState<"period" | "current">("period");
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
@@ -191,6 +206,10 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [results, setResults] = useState<CleaningApiResult[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentResults, setCurrentResults] = useState<CurrentPriceResult[] | null>(null);
+  const [currentRemovedRowIds, setCurrentRemovedRowIds] = useState<Set<string>>(new Set());
+  const [currentSortKey, setCurrentSortKey] = useState<CurrentSortKey>("reference");
+  const [currentDirection, setCurrentDirection] = useState<"asc" | "desc">("asc");
 
   const matchingProperties = useMemo(() => {
     return allProperties.filter((p) => {
@@ -240,17 +259,30 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   }
 
   async function load() {
-    if (selectedMonths.length === 0) {
-      setError("Sélectionne au moins un mois.");
-      return;
-    }
     if (matchingProperties.length === 0) {
       setError("Aucun bien ne correspond aux filtres.");
+      return;
+    }
+    if (mode === "period" && selectedMonths.length === 0) {
+      setError("Sélectionne au moins un mois.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
+      if (mode === "current") {
+        const params = new URLSearchParams({ propertyIds: matchingProperties.map((p) => p.id).join(",") });
+        const res = await fetch(`/api/finance/cleaning-prices?${params.toString()}`);
+        const data = await res.json();
+        if (data.error) {
+          setError(data.error);
+          setCurrentResults(null);
+        } else {
+          setCurrentResults(data.properties);
+          setCurrentRemovedRowIds(new Set());
+        }
+        return;
+      }
       const params = new URLSearchParams({
         year: String(year),
         months: selectedMonths.join(","),
@@ -280,6 +312,39 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       setDirection(key === "reference" ? "asc" : "desc");
     }
   }
+
+  function handleCurrentSort(key: CurrentSortKey) {
+    if (key === currentSortKey) {
+      setCurrentDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setCurrentSortKey(key);
+      setCurrentDirection(key === "reference" ? "asc" : "desc");
+    }
+  }
+
+  function removeCurrentRow(propertyId: string) {
+    setCurrentRemovedRowIds((prev) => new Set(prev).add(propertyId));
+  }
+
+  const sortedCurrentRows = currentResults
+    ? [...currentResults]
+        .filter((r) => !currentRemovedRowIds.has(r.propertyId))
+        .sort((a, b) => {
+          let cmp: number;
+          switch (currentSortKey) {
+            case "reference":
+              cmp = a.reference.localeCompare(b.reference, "fr");
+              break;
+            case "customField":
+              cmp = (a.cleaningFeeCustomField ?? 0) - (b.cleaningFeeCustomField ?? 0);
+              break;
+            case "guesty":
+              cmp = (a.cleaningFeeGuesty ?? 0) - (b.cleaningFeeGuesty ?? 0);
+              break;
+          }
+          return currentDirection === "asc" ? cmp : -cmp;
+        })
+    : null;
 
   const rows = results?.map(toRow).filter((r) => r.checkoutCount > 0 && !removedRowIds.has(r.propertyId)) ?? null;
 
@@ -367,7 +432,33 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
 
   return (
     <div className="space-y-4">
+      <div>
+        <span className="field-label">Mode</span>
+        <div className="mt-1 flex overflow-hidden rounded-[10px] border border-black/10 w-fit">
+          <button
+            type="button"
+            onClick={() => setMode("period")}
+            className={`px-3 py-1.5 text-[13px] font-medium transition ${
+              mode === "period" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+            }`}
+          >
+            Par période
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("current")}
+            title="Prix de ménage configurés actuellement côté Guesty, sans tenir compte des check-out"
+            className={`px-3 py-1.5 text-[13px] font-medium transition ${
+              mode === "current" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+            }`}
+          >
+            Prix actuels (tous les biens)
+          </button>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
+        {mode === "period" && (
         <div className="relative">
           <button
             type="button"
@@ -433,9 +524,14 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
             </div>
           )}
         </div>
+        )}
 
         <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
-          {loading ? "Chargement…" : results ? "Actualiser" : "Charger"}
+          {loading
+            ? "Chargement…"
+            : (mode === "current" ? currentResults : results)
+              ? "Actualiser"
+              : "Charger"}
         </button>
       </div>
 
@@ -564,6 +660,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         </div>
       )}
 
+      {mode === "period" && (
       <div>
         <span className="field-label">Colonnes</span>
         <div className="mt-1 flex flex-wrap gap-1">
@@ -586,14 +683,15 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
           })}
         </div>
       </div>
+      )}
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
-      {sortedRows && sortedRows.length === 0 && !loading && !error && (
+      {mode === "period" && sortedRows && sortedRows.length === 0 && !loading && !error && (
         <p className="text-[13px] text-[#6e6e73]">Aucun bien n&apos;a eu de check-out sur cette période.</p>
       )}
 
-      {sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
+      {mode === "period" && sortedRows && sortedRows.length > 0 && totals && !loading && !error && (
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             {removedRowIds.size > 0 ? (
@@ -787,9 +885,100 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         </div>
       )}
 
-      {!results && !loading && !error && (
+      {mode === "current" && sortedCurrentRows && sortedCurrentRows.length === 0 && !loading && !error && (
+        <p className="text-[13px] text-[#6e6e73]">Aucun bien ne correspond aux filtres.</p>
+      )}
+
+      {mode === "current" && sortedCurrentRows && sortedCurrentRows.length > 0 && !loading && !error && (
+        <div className="space-y-2">
+          {currentRemovedRowIds.size > 0 && (
+            <p className="text-[13px] text-[#6e6e73]">
+              {currentRemovedRowIds.size} bien{currentRemovedRowIds.size !== 1 ? "s" : ""} masqué
+              {currentRemovedRowIds.size !== 1 ? "s" : ""} de cette liste ·{" "}
+              <button
+                type="button"
+                onClick={() => setCurrentRemovedRowIds(new Set())}
+                className="font-medium text-[#0071e3] hover:underline"
+              >
+                Réafficher
+              </button>
+            </p>
+          )}
+          <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[12px]">
+                <thead>
+                  <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                    <SortHeader
+                      label="Bien"
+                      sortKey="reference"
+                      activeKey={currentSortKey}
+                      direction={currentDirection}
+                      onSort={handleCurrentSort}
+                      align="left"
+                    />
+                    <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Prestataire</th>
+                    <SortHeader
+                      label="Prix ménage (custom field)"
+                      sortKey="customField"
+                      activeKey={currentSortKey}
+                      direction={currentDirection}
+                      onSort={handleCurrentSort}
+                    />
+                    <SortHeader
+                      label="Prix ménage (Guesty)"
+                      sortKey="guesty"
+                      activeKey={currentSortKey}
+                      direction={currentDirection}
+                      onSort={handleCurrentSort}
+                    />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedCurrentRows.map((row, rowIndex) => (
+                    <tr
+                      key={row.propertyId}
+                      className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
+                        rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                      }`}
+                    >
+                      <td className="py-1.5 pl-3 pr-2 text-[#1d1d1f]">
+                        <button
+                          type="button"
+                          onClick={() => removeCurrentRow(row.propertyId)}
+                          title="Retirer ce bien de la liste"
+                          className="mr-1.5 text-[#c7c7cc] transition hover:text-red-600"
+                        >
+                          ✕
+                        </button>
+                        <span className="font-medium">{row.reference}</span>
+                        {row.guestyError && (
+                          <span title={`Guesty : ${row.guestyError}`} className="ml-1.5 text-red-600">
+                            ⚠
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-[#1d1d1f]">{row.cleaningProviderName ?? "—"}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <EuroValue value={row.cleaningFeeCustomField} />
+                      </td>
+                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                        <EuroValue value={row.cleaningFeeGuesty} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!(mode === "current" ? currentResults : results) && !loading && !error && (
         <p className="text-[13px] text-[#6e6e73]">
-          Choisis une année, un ou plusieurs mois, filtre par bien/tag si besoin, puis charge les données.
+          {mode === "current"
+            ? "Filtre par bien/tag/prestataire si besoin, puis charge les données."
+            : "Choisis une année, un ou plusieurs mois, filtre par bien/tag si besoin, puis charge les données."}
         </p>
       )}
     </div>
