@@ -323,7 +323,7 @@ export function CsvConverterTable() {
       <div>
         <input
           type="file"
-          accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          accept=".csv,.xlsx,.xls"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFile(file);
