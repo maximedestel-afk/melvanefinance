@@ -41,12 +41,10 @@ function loadSheetJs(): Promise<SheetJsStatic> {
 }
 
 /** Colonnes attendues dans l'export "Comm Sharing" (Monday.com) de Sweep It —
- * Name/Date/Flat/Price/Prestataire/Bill to Owner sont les seules réutilisées,
- * le reste (Subitems, People, Creation log, Resa Ref, Label, Bill ID,
- * Melvane OK, Text) est ignoré : soit sans équivalent côté VRPlatform, soit
- * déjà couvert autrement (Bill ID source non réutilisé — régénéré ci-dessous
- * pour garantir l'unicité, voir buildTargetRows). */
-const SOURCE_HEADERS = ["Name", "Date", "Flat", "Price", "Prestataire", "Bill to Owner"] as const;
+ * Name/Date/Flat/Price/Label/Prestataire/Bill ID/Bill to Owner sont les
+ * seules réutilisées, le reste (Subitems, People, Creation log, Resa Ref,
+ * Melvane OK, Text) est ignoré : pas d'équivalent côté VRPlatform. */
+const SOURCE_HEADERS = ["Name", "Date", "Flat", "Price", "Label", "Prestataire", "Bill ID", "Bill to Owner"] as const;
 
 /** En-tête exact attendu par l'import "Expenses" de VRPlatform — l'ordre et
  * les libellés doivent correspondre au CSV que VRPlatform sait importer. */
@@ -167,41 +165,34 @@ const DEFAULT_STATUS = "Paid";
 const DEFAULT_BANK_ACCOUNT = "Non-Trust Account";
 const DEFAULT_CURRENCY = "EUR";
 
-/** Construit les lignes cible à partir des lignes source — voir le tableau
- * de correspondance expliqué à l'utilisateur : Issue/Payment Date ← Date,
- * Description/Line Description ← Name, Contact ← Prestataire, Listing ←
- * Flat, Bill to Owner passthrough, Applied amount ← Price. Bill ID n'est PAS
- * repris de la source (format non unique d'un export à l'autre) : il est
- * régénéré comme Listing + numéro de ligne de sortie, pour garantir
- * l'unicité dans le fichier généré. Reservation/Markup/Markup Tax restent
- * vides (aucune correspondance fiable côté source). */
+/** Construit les lignes cible à partir des lignes source : Issue/Payment
+ * Date ← Date (YYYY-MM-DD), Description/Line Description ← Name, Listing ←
+ * Flat, Bill ID ← Bill ID, Applied amount ← Price, Expense account ← Label,
+ * Contact ← Prestataire, Bill to Owner passthrough. Reservation/Markup/
+ * Markup Tax restent vides (aucune correspondance côté source). */
 function buildTargetRows(sourceRows: string[][], headerIndex: Map<string, number>): TargetRow[] {
   const get = (row: string[], header: string) => {
     const idx = headerIndex.get(header);
     return idx != null ? (row[idx] ?? "") : "";
   };
-  return sourceRows.map((row, i) => {
-    const flat = get(row, "Flat").trim();
-    const outputRowNumber = i + 2; // ligne 1 = en-tête du CSV généré
-    return {
-      issueDate: normalizeDate(get(row, "Date")),
-      paymentDate: normalizeDate(get(row, "Date")),
-      description: get(row, "Name").trim(),
-      status: DEFAULT_STATUS,
-      bankCcAccount: DEFAULT_BANK_ACCOUNT,
-      contact: get(row, "Prestataire").trim(),
-      billId: `${flat}${outputRowNumber}`,
-      currency: DEFAULT_CURRENCY,
-      listing: flat,
-      reservation: "",
-      lineDescription: get(row, "Name").trim(),
-      expenseAccount: "",
-      billToOwner: get(row, "Bill to Owner").trim() || "FALSE",
-      appliedAmount: get(row, "Price").trim(),
-      markup: "",
-      markupTax: "",
-    };
-  });
+  return sourceRows.map((row) => ({
+    issueDate: normalizeDate(get(row, "Date")),
+    paymentDate: normalizeDate(get(row, "Date")),
+    description: get(row, "Name").trim(),
+    status: DEFAULT_STATUS,
+    bankCcAccount: DEFAULT_BANK_ACCOUNT,
+    contact: get(row, "Prestataire").trim(),
+    billId: get(row, "Bill ID").trim(),
+    currency: DEFAULT_CURRENCY,
+    listing: get(row, "Flat").trim(),
+    reservation: "",
+    lineDescription: get(row, "Name").trim(),
+    expenseAccount: get(row, "Label").trim(),
+    billToOwner: get(row, "Bill to Owner").trim() || "FALSE",
+    appliedAmount: get(row, "Price").trim(),
+    markup: "",
+    markupTax: "",
+  }));
 }
 
 export function CsvConverterTable() {
@@ -401,18 +392,14 @@ export function CsvConverterTable() {
                       {TARGET_COLUMNS.map((col) =>
                         col === "expenseAccount" ? (
                           <td key={col} className="py-1 px-1">
-                            <select
+                            <input
+                              type="text"
+                              list="expense-account-options"
                               value={row.expenseAccount}
                               onChange={(e) => updateCell(rowIndex, col, e.target.value)}
+                              title="Pré-rempli depuis la colonne Label du fichier source — ajuste si besoin (suggestions = comptes VRPlatform réels)."
                               className="w-40 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
-                            >
-                              <option value="">—</option>
-                              {expenseAccounts.map((name) => (
-                                <option key={name} value={name}>
-                                  {name}
-                                </option>
-                              ))}
-                            </select>
+                            />
                           </td>
                         ) : (
                           <td key={col} className="py-1 px-1">
@@ -431,6 +418,11 @@ export function CsvConverterTable() {
               </table>
             </div>
           </div>
+          <datalist id="expense-account-options">
+            {expenseAccounts.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
         </>
       )}
 
