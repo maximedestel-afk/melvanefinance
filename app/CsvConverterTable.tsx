@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /** SheetJS (xlsx) chargé depuis son propre CDN plutôt qu'en dépendance npm :
  * le paquet npm "xlsx" accuse 2 vulnérabilités connues (prototype pollution,
@@ -98,7 +98,10 @@ function parseCsv(text: string): string[][] {
   let field = "";
   let inQuotes = false;
   let i = 0;
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  // Retire un éventuel BOM UTF-8 en tête de fichier (fréquent sur les CSV
+  // exportés depuis Excel) — sinon il reste collé au premier en-tête
+  // ("﻿Name" ≠ "Name") et casse le mapping de toute la première colonne.
+  const normalized = text.replace(/^﻿/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   while (i < normalized.length) {
     const char = normalized[i];
     if (inQuotes) {
@@ -203,6 +206,7 @@ export function CsvConverterTable() {
   const [expenseAccounts, setExpenseAccounts] = useState<string[]>([]);
   const [bulkExpenseAccount, setBulkExpenseAccount] = useState("");
   const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -282,6 +286,15 @@ export function CsvConverterTable() {
     setRows((prev) => (prev ? prev.map((r) => ({ ...r, expenseAccount: bulkExpenseAccount })) : prev));
   }
 
+  function clearFile() {
+    setRows(null);
+    setFileName(null);
+    setParseError(null);
+    setMissingHeaders([]);
+    setBulkExpenseAccount("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   const csvContent = useMemo(() => {
     if (!rows) return "";
     const lines = [
@@ -311,8 +324,9 @@ export function CsvConverterTable() {
         VRPlatform. Vérifie et corrige l&apos;aperçu (notamment Expense account) avant de télécharger.
       </p>
 
-      <div>
+      <div className="flex items-center gap-3">
         <input
+          ref={fileInputRef}
           type="file"
           accept=".csv,.xlsx,.xls"
           onChange={(e) => {
@@ -321,6 +335,11 @@ export function CsvConverterTable() {
           }}
           className="block text-[13px] text-[#1d1d1f] file:mr-3 file:rounded-[8px] file:border-0 file:bg-[#0071e3] file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-white hover:file:bg-[#0071e3]/90"
         />
+        {(fileName || rows) && (
+          <button type="button" onClick={clearFile} className="btn-secondary btn-sm">
+            Effacer le fichier
+          </button>
+        )}
       </div>
 
       {loadingLibrary && <p className="text-[13px] text-[#6e6e73]">Chargement de la librairie Excel…</p>}
