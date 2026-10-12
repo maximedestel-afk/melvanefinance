@@ -32,6 +32,33 @@ async function vrPlatformFetch<T>(path: string, query: Record<string, string>): 
   return response.json() as Promise<T>;
 }
 
+interface VrPlatformExpenseAccountsResponse {
+  data: { name: string; status: string }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Noms des comptes de dépense (classification "expense", type "ledger")
+ * actifs de l'équipe — utilisé pour peupler le choix de compte dans le
+ * convertisseur CSV (onglet Convertisseur), plutôt que de faire deviner un
+ * nom de compte exact à l'utilisateur. */
+export async function listExpenseAccountNames(): Promise<string[]> {
+  const names: string[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformExpenseAccountsResponse>("/accounts", {
+      classification: "expense",
+      type: "ledger",
+      status: "active",
+      limit: "250",
+      page: String(page),
+    });
+    for (const account of res.data) names.push(account.name);
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return names.sort((a, b) => a.localeCompare(b, "fr"));
+}
+
 interface VrPlatformListingsResponse {
   data: { id: string; name: string | null; title: string | null; uniqueRef: string | null }[];
   pagination: { page: number; totalPage: number };

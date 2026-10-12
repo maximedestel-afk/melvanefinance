@@ -10,6 +10,7 @@ import { PropertyReservationsTable } from "./PropertyReservationsTable";
 import { PropertyAnalysisTable } from "./PropertyAnalysisTable";
 import { PropertyTrendsTable } from "./PropertyTrendsTable";
 import { PropertyBailTable } from "./PropertyBailTable";
+import { CsvConverterTable } from "./CsvConverterTable";
 import type { RentType } from "@/lib/types";
 
 type Tab =
@@ -21,7 +22,8 @@ type Tab =
   | "reservations"
   | "analysis"
   | "trends"
-  | "bail";
+  | "bail"
+  | "csv-converter";
 
 export function DashboardClient({
   properties,
@@ -139,6 +141,15 @@ export function DashboardClient({
         >
           Bail
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("csv-converter")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "csv-converter" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Convertisseur CSV
+        </button>
       </div>
       </div>
 
@@ -189,6 +200,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "bail" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Bail</h2>
         <PropertyBailTable />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "csv-converter" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Convertisseur CSV</h2>
+        <CsvConverterTable />
       </section>
     </div>
   );
