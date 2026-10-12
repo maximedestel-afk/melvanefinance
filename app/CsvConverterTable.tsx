@@ -173,6 +173,26 @@ const DEFAULT_CURRENCY = "EUR";
  * Flat, Bill ID ← Bill ID, Applied amount ← Price, Expense account ← Label,
  * Contact ← Prestataire, Bill to Owner passthrough. Reservation/Markup/
  * Markup Tax restent vides (aucune correspondance côté source). */
+
+/** Une vue Monday.com exportée en Excel inclut souvent 1-2 lignes de titre
+ * avant la vraie ligne d'en-têtes (ex: "Oct 26" puis "Comm Sharing") — on ne
+ * peut donc pas supposer que la ligne 1 est l'en-tête. Cherche, parmi les 10
+ * premières lignes, celle qui contient le plus de colonnes attendues. */
+function findHeaderRowIndex(parsed: string[][]): number {
+  let bestIndex = 0;
+  let bestScore = -1;
+  const scanLimit = Math.min(parsed.length, 10);
+  for (let i = 0; i < scanLimit; i++) {
+    const cells = new Set(parsed[i].map((c) => c.trim()));
+    const score = SOURCE_HEADERS.filter((h) => cells.has(h)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
 function buildTargetRows(sourceRows: string[][], headerIndex: Map<string, number>): TargetRow[] {
   const get = (row: string[], header: string) => {
     const idx = headerIndex.get(header);
@@ -227,11 +247,17 @@ export function CsvConverterTable() {
       setRows(null);
       return;
     }
-    const header = parsed[0].map((h) => h.trim());
+    const headerRowIndex = findHeaderRowIndex(parsed);
+    const header = parsed[headerRowIndex].map((h) => h.trim());
     const headerIndex = new Map(header.map((h, i) => [h, i]));
     const missing = SOURCE_HEADERS.filter((h) => !headerIndex.has(h));
     setMissingHeaders(missing);
-    const dataRows = parsed.slice(1);
+    const nameIdx = headerIndex.get("Name");
+    // Écarte les lignes sans "Name" (ex: ligne de total/récap en fin de
+    // tableau Monday.com) — toute ligne réelle a un Name renseigné.
+    const dataRows = parsed
+      .slice(headerRowIndex + 1)
+      .filter((row) => nameIdx == null || (row[nameIdx] ?? "").trim() !== "");
     setRows(buildTargetRows(dataRows, headerIndex));
   }
 
