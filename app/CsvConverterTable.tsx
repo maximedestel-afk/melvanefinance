@@ -2,6 +2,44 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+/** SheetJS (xlsx) chargé depuis son propre CDN plutôt qu'en dépendance npm :
+ * le paquet npm "xlsx" accuse 2 vulnérabilités connues (prototype pollution,
+ * ReDoS) sans version corrigée publiée sur le registre npm — SheetJS
+ * recommande lui-même cdn.sheetjs.com comme seule source à jour. Version
+ * figée (pas de tag "latest") pour ne pas charger du code non revu. */
+const SHEETJS_SCRIPT_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+
+interface SheetJsStatic {
+  read(data: ArrayBuffer, opts: { type: "array" }): { SheetNames: string[]; Sheets: Record<string, unknown> };
+  utils: { sheet_to_json(sheet: unknown, opts: { header: 1; defval: string; raw: false; dateNF: string }): string[][] };
+}
+
+let sheetJsLoadPromise: Promise<SheetJsStatic> | null = null;
+
+/** Charge SheetJS une seule fois (mise en cache de la promesse) et renvoie
+ * l'objet global XLSX une fois le script prêt. */
+function loadSheetJs(): Promise<SheetJsStatic> {
+  if (sheetJsLoadPromise) return sheetJsLoadPromise;
+  sheetJsLoadPromise = new Promise((resolve, reject) => {
+    const existing = (window as unknown as { XLSX?: SheetJsStatic }).XLSX;
+    if (existing) {
+      resolve(existing);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = SHEETJS_SCRIPT_URL;
+    script.async = true;
+    script.onload = () => {
+      const xlsx = (window as unknown as { XLSX?: SheetJsStatic }).XLSX;
+      if (xlsx) resolve(xlsx);
+      else reject(new Error("XLSX non disponible après chargement du script."));
+    };
+    script.onerror = () => reject(new Error("Impossible de charger la librairie Excel (cdn.sheetjs.com injoignable)."));
+    document.head.appendChild(script);
+  });
+  return sheetJsLoadPromise;
+}
+
 /** Colonnes attendues dans l'export "Comm Sharing" (Monday.com) de Sweep It —
  * Name/Date/Flat/Price/Prestataire/Bill to Owner sont les seules réutilisées,
  * le reste (Subitems, People, Creation log, Resa Ref, Label, Bill ID,
@@ -173,6 +211,7 @@ export function CsvConverterTable() {
   const [missingHeaders, setMissingHeaders] = useState<string[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<string[]>([]);
   const [bulkExpenseAccount, setBulkExpenseAccount] = useState("");
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -187,25 +226,49 @@ export function CsvConverterTable() {
     })();
   }, []);
 
+  function applyParsedRows(parsed: string[][]) {
+    if (parsed.length < 1) {
+      setParseError("Fichier vide ou illisible.");
+      setRows(null);
+      return;
+    }
+    const header = parsed[0].map((h) => h.trim());
+    const headerIndex = new Map(header.map((h, i) => [h, i]));
+    const missing = SOURCE_HEADERS.filter((h) => !headerIndex.has(h));
+    setMissingHeaders(missing);
+    const dataRows = parsed.slice(1);
+    setRows(buildTargetRows(dataRows, headerIndex));
+  }
+
   async function handleFile(file: File) {
     setParseError(null);
     setFileName(file.name);
+    const isExcel = /\.xlsx?$/i.test(file.name);
     try {
-      const text = await file.text();
-      const parsed = parseCsv(text);
-      if (parsed.length < 1) {
-        setParseError("Fichier vide ou illisible.");
-        setRows(null);
-        return;
+      if (isExcel) {
+        setLoadingLibrary(true);
+        let xlsx: SheetJsStatic;
+        try {
+          xlsx = await loadSheetJs();
+        } finally {
+          setLoadingLibrary(false);
+        }
+        const buffer = await file.arrayBuffer();
+        const workbook = xlsx.read(buffer, { type: "array" });
+        const firstSheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[firstSheetName];
+        const parsed = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false, dateNF: "yyyy-mm-dd" });
+        applyParsedRows(parsed.map((row) => row.map((cell) => String(cell ?? ""))));
+      } else {
+        const text = await file.text();
+        applyParsedRows(parseCsv(text));
       }
-      const header = parsed[0].map((h) => h.trim());
-      const headerIndex = new Map(header.map((h, i) => [h, i]));
-      const missing = SOURCE_HEADERS.filter((h) => !headerIndex.has(h));
-      setMissingHeaders(missing);
-      const dataRows = parsed.slice(1);
-      setRows(buildTargetRows(dataRows, headerIndex));
-    } catch {
-      setParseError("Impossible de lire ce fichier — vérifie qu'il s'agit bien d'un CSV.");
+    } catch (err) {
+      setParseError(
+        err instanceof Error && isExcel
+          ? err.message
+          : "Impossible de lire ce fichier — vérifie qu'il s'agit bien d'un CSV ou d'un fichier Excel (.xlsx)."
+      );
       setRows(null);
     }
   }
@@ -252,15 +315,15 @@ export function CsvConverterTable() {
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-[#6e6e73]">
-        Convertit un export CSV &laquo;&nbsp;Comm Sharing&nbsp;&raquo; (Monday.com, colonnes Name/Date/Flat/Price/Prestataire/Bill
-        to Owner) vers le format d&apos;import &laquo;&nbsp;Expenses&nbsp;&raquo; de VRPlatform. Vérifie et corrige
-        l&apos;aperçu (notamment Expense account) avant de télécharger.
+        Convertit un export &laquo;&nbsp;Comm Sharing&nbsp;&raquo; (Monday.com, CSV ou Excel .xlsx/.xls, colonnes
+        Name/Date/Flat/Price/Prestataire/Bill to Owner) vers le format d&apos;import &laquo;&nbsp;Expenses&nbsp;&raquo; de
+        VRPlatform. Vérifie et corrige l&apos;aperçu (notamment Expense account) avant de télécharger.
       </p>
 
       <div>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,text/csv,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFile(file);
@@ -269,6 +332,7 @@ export function CsvConverterTable() {
         />
       </div>
 
+      {loadingLibrary && <p className="text-[13px] text-[#6e6e73]">Chargement de la librairie Excel…</p>}
       {parseError && <p className="text-[13px] text-red-600">{parseError}</p>}
       {missingHeaders.length > 0 && (
         <p className="text-[13px] text-amber-600">
@@ -371,7 +435,9 @@ export function CsvConverterTable() {
       )}
 
       {!rows && !parseError && (
-        <p className="text-[13px] text-[#6e6e73]">Choisis un fichier CSV exporté depuis le board &laquo;&nbsp;Comm Sharing&nbsp;&raquo;.</p>
+        <p className="text-[13px] text-[#6e6e73]">
+          Choisis un fichier CSV ou Excel exporté depuis le board &laquo;&nbsp;Comm Sharing&nbsp;&raquo;.
+        </p>
       )}
     </div>
   );
