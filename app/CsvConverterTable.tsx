@@ -11,7 +11,10 @@ const SHEETJS_SCRIPT_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xls
 
 interface SheetJsStatic {
   read(data: ArrayBuffer, opts: { type: "array" }): { SheetNames: string[]; Sheets: Record<string, unknown> };
-  utils: { sheet_to_json(sheet: unknown, opts: { header: 1; defval: string; raw: false; dateNF: string }): string[][] };
+  utils: {
+    sheet_to_json(sheet: unknown, opts: { header: 1; defval: string; raw: false; dateNF: string }): string[][];
+    sheet_to_json(sheet: unknown, opts: { header: 1; defval: string; raw: true }): (string | number)[][];
+  };
 }
 
 let sheetJsLoadPromise: Promise<SheetJsStatic> | null = null;
@@ -204,6 +207,27 @@ function findHeaderRowIndex(parsed: string[][]): number {
   return bestIndex;
 }
 
+/** Excel peut formater un montant négatif sans afficher le signe moins
+ * (mise en forme comptable du type "0;0", négatif indiqué seulement par du
+ * rouge ou des parenthèses perdues en texte brut) — le texte formaté lu via
+ * `raw:false` reproduit alors ce masquage. On relit la colonne "Price" dans
+ * la grille de valeurs brutes (non formatées) pour récupérer le vrai signe. */
+function mergeRawPriceColumn(textRows: string[][], rawRows: (string | number)[][]): string[][] {
+  if (textRows.length === 0) return textRows;
+  const headerRowIndex = findHeaderRowIndex(textRows);
+  const header = textRows[headerRowIndex].map((h) => h.trim());
+  const priceCol = header.indexOf("Price");
+  if (priceCol === -1) return textRows;
+  return textRows.map((row, i) => {
+    if (i <= headerRowIndex) return row;
+    const rawValue = rawRows[i]?.[priceCol];
+    if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) return row;
+    const next = [...row];
+    next[priceCol] = String(rawValue);
+    return next;
+  });
+}
+
 function buildTargetRows(sourceRows: string[][], headerIndex: Map<string, number>): TargetRow[] {
   const get = (row: string[], header: string) => {
     const idx = headerIndex.get(header);
@@ -292,8 +316,10 @@ export function CsvConverterTable() {
         const workbook = xlsx.read(buffer, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[firstSheetName];
-        const parsed = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false, dateNF: "yyyy-mm-dd" });
-        applyParsedRows(parsed.map((row) => row.map((cell) => String(cell ?? ""))));
+        const parsedText = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false, dateNF: "yyyy-mm-dd" });
+        const parsedRaw = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+        const textRows = parsedText.map((row) => row.map((cell) => String(cell ?? "")));
+        applyParsedRows(mergeRawPriceColumn(textRows, parsedRaw));
       } else {
         const text = await file.text();
         applyParsedRows(parseCsv(text));
