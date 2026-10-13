@@ -360,6 +360,10 @@ export function CsvConverterTable() {
     setRows((prev) => (prev ? prev.map((r) => ({ ...r, appliedAmount: negateAmountString(r.appliedAmount) })) : prev));
   }
 
+  function invertAllMarkupSigns() {
+    setRows((prev) => (prev ? prev.map((r) => ({ ...r, markup: negateAmountString(r.markup) })) : prev));
+  }
+
   function clearAllListings() {
     setRows((prev) => (prev ? prev.map((r) => ({ ...r, listing: "" })) : prev));
   }
@@ -491,6 +495,15 @@ export function CsvConverterTable() {
               className="btn-secondary btn-sm"
             >
               Inverser le signe (toutes les lignes)
+            </button>
+
+            <button
+              type="button"
+              onClick={invertAllMarkupSigns}
+              title="Multiplie le markup de toutes les lignes par -1"
+              className="btn-secondary btn-sm"
+            >
+              Inverser le signe du markup (toutes les lignes)
             </button>
 
             <button
