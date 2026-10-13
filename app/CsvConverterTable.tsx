@@ -237,6 +237,8 @@ export function CsvConverterTable() {
   const [expenseAccounts, setExpenseAccounts] = useState<string[]>([]);
   const [bulkExpenseAccount, setBulkExpenseAccount] = useState("");
   const [bulkBankAccount, setBulkBankAccount] = useState<string>(DEFAULT_BANK_ACCOUNT);
+  const [bulkDate, setBulkDate] = useState("");
+  const [bulkBillId, setBulkBillId] = useState("");
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -336,6 +338,16 @@ export function CsvConverterTable() {
     setRows((prev) => (prev ? prev.map((r) => ({ ...r, listing: "" })) : prev));
   }
 
+  function applyBulkDate() {
+    if (!bulkDate) return;
+    setRows((prev) => (prev ? prev.map((r) => ({ ...r, issueDate: bulkDate, paymentDate: bulkDate })) : prev));
+  }
+
+  function applyBulkBillId() {
+    if (!bulkBillId) return;
+    setRows((prev) => (prev ? prev.map((r) => ({ ...r, billId: bulkBillId })) : prev));
+  }
+
   function clearFile() {
     setRows(null);
     setFileName(null);
@@ -343,6 +355,8 @@ export function CsvConverterTable() {
     setMissingHeaders([]);
     setBulkExpenseAccount("");
     setBulkBankAccount(DEFAULT_BANK_ACCOUNT);
+    setBulkDate("");
+    setBulkBillId("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -460,6 +474,34 @@ export function CsvConverterTable() {
               className="btn-secondary btn-sm"
             >
               Effacer le Listing (toutes les lignes)
+            </button>
+
+            <label className="field-label ml-4" htmlFor="bulk-date">
+              Date (Issue + Payment) pour toutes les lignes
+            </label>
+            <input
+              id="bulk-date"
+              type="date"
+              value={bulkDate}
+              onChange={(e) => setBulkDate(e.target.value)}
+              className="rounded-[8px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+            />
+            <button type="button" onClick={applyBulkDate} className="btn-secondary btn-sm">
+              Appliquer
+            </button>
+
+            <label className="field-label ml-4" htmlFor="bulk-bill-id">
+              Bill ID pour toutes les lignes
+            </label>
+            <input
+              id="bulk-bill-id"
+              type="text"
+              value={bulkBillId}
+              onChange={(e) => setBulkBillId(e.target.value)}
+              className="w-32 rounded-[8px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+            />
+            <button type="button" onClick={applyBulkBillId} className="btn-secondary btn-sm">
+              Appliquer
             </button>
 
             <span className="ml-auto text-[13px] text-[#6e6e73]">{rows.length} ligne{rows.length !== 1 ? "s" : ""}</span>
