@@ -332,6 +332,10 @@ export function CsvConverterTable() {
     setRows((prev) => (prev ? prev.map((r) => ({ ...r, appliedAmount: negateAmountString(r.appliedAmount) })) : prev));
   }
 
+  function clearAllListings() {
+    setRows((prev) => (prev ? prev.map((r) => ({ ...r, listing: "" })) : prev));
+  }
+
   function clearFile() {
     setRows(null);
     setFileName(null);
@@ -447,6 +451,15 @@ export function CsvConverterTable() {
               className="btn-secondary btn-sm"
             >
               Inverser le signe (toutes les lignes)
+            </button>
+
+            <button
+              type="button"
+              onClick={clearAllListings}
+              title="Vide la colonne Listing sur toutes les lignes"
+              className="btn-secondary btn-sm"
+            >
+              Effacer le Listing (toutes les lignes)
             </button>
 
             <span className="ml-auto text-[13px] text-[#6e6e73]">{rows.length} ligne{rows.length !== 1 ? "s" : ""}</span>
