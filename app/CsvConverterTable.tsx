@@ -167,6 +167,17 @@ function normalizeDate(raw: string): string {
 const DEFAULT_STATUS = "Paid";
 const DEFAULT_BANK_ACCOUNT = "Non-Trust Account";
 const DEFAULT_CURRENCY = "EUR";
+const BANK_ACCOUNT_OPTIONS = ["Non-Trust Account", "WISE"] as const;
+
+/** Inverse le signe d'un montant texte ("50" ↔ "-50") — laisse la valeur
+ * telle quelle si elle n'est pas un nombre valide. */
+function negateAmountString(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "") return trimmed;
+  const n = Number.parseFloat(trimmed.replace(",", "."));
+  if (!Number.isFinite(n)) return value;
+  return String(-n);
+}
 
 /** Construit les lignes cible à partir des lignes source : Issue/Payment
  * Date ← Date (YYYY-MM-DD), Description/Line Description ← Name, Listing ←
@@ -225,6 +236,7 @@ export function CsvConverterTable() {
   const [missingHeaders, setMissingHeaders] = useState<string[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<string[]>([]);
   const [bulkExpenseAccount, setBulkExpenseAccount] = useState("");
+  const [bulkBankAccount, setBulkBankAccount] = useState<string>(DEFAULT_BANK_ACCOUNT);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -312,12 +324,21 @@ export function CsvConverterTable() {
     setRows((prev) => (prev ? prev.map((r) => ({ ...r, expenseAccount: bulkExpenseAccount })) : prev));
   }
 
+  function applyBulkBankAccount() {
+    setRows((prev) => (prev ? prev.map((r) => ({ ...r, bankCcAccount: bulkBankAccount })) : prev));
+  }
+
+  function invertAllAmountSigns() {
+    setRows((prev) => (prev ? prev.map((r) => ({ ...r, appliedAmount: negateAmountString(r.appliedAmount) })) : prev));
+  }
+
   function clearFile() {
     setRows(null);
     setFileName(null);
     setParseError(null);
     setMissingHeaders([]);
     setBulkExpenseAccount("");
+    setBulkBankAccount(DEFAULT_BANK_ACCOUNT);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -399,6 +420,35 @@ export function CsvConverterTable() {
             <button type="button" onClick={applyBulkExpenseAccount} className="btn-secondary btn-sm">
               Appliquer
             </button>
+
+            <label className="field-label ml-4" htmlFor="bulk-bank-account">
+              Compte bancaire pour toutes les lignes
+            </label>
+            <select
+              id="bulk-bank-account"
+              value={bulkBankAccount}
+              onChange={(e) => setBulkBankAccount(e.target.value)}
+              className="rounded-[8px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+            >
+              {BANK_ACCOUNT_OPTIONS.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <button type="button" onClick={applyBulkBankAccount} className="btn-secondary btn-sm">
+              Appliquer
+            </button>
+
+            <button
+              type="button"
+              onClick={invertAllAmountSigns}
+              title="Multiplie le montant de toutes les lignes par -1"
+              className="btn-secondary btn-sm"
+            >
+              Inverser le signe (toutes les lignes)
+            </button>
+
             <span className="ml-auto text-[13px] text-[#6e6e73]">{rows.length} ligne{rows.length !== 1 ? "s" : ""}</span>
             <button type="button" onClick={downloadCsv} className="btn-secondary btn-sm">
               Télécharger le CSV
@@ -445,6 +495,20 @@ export function CsvConverterTable() {
                               title="Pré-rempli depuis la colonne Label du fichier source — ajuste si besoin (suggestions = comptes VRPlatform réels)."
                               className="w-40 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
                             />
+                          </td>
+                        ) : col === "bankCcAccount" ? (
+                          <td key={col} className="py-1 px-1">
+                            <select
+                              value={row.bankCcAccount}
+                              onChange={(e) => updateCell(rowIndex, col, e.target.value)}
+                              className="w-32 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                            >
+                              {BANK_ACCOUNT_OPTIONS.map((name) => (
+                                <option key={name} value={name}>
+                                  {name}
+                                </option>
+                              ))}
+                            </select>
                           </td>
                         ) : (
                           <td key={col} className="py-1 px-1">
