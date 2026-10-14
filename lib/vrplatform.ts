@@ -64,7 +64,7 @@ interface VrPlatformListingsResponse {
   pagination: { page: number; totalPage: number };
 }
 
-interface VrPlatformListingOption {
+export interface VrPlatformListingOption {
   id: string;
   name: string;
   /** ID Guesty natif du listing (VRPlatform passe par Guesty comme PMS
@@ -75,7 +75,7 @@ interface VrPlatformListingOption {
 /** Tous les listings actifs de l'équipe, chargés une seule fois par requête
  * et réutilisés pour résoudre les références de tous les biens du
  * portefeuille — évite un aller-retour /listings par bien. */
-async function listVrPlatformListings(): Promise<VrPlatformListingOption[]> {
+export async function listVrPlatformListings(): Promise<VrPlatformListingOption[]> {
   const options: VrPlatformListingOption[] = [];
   let page = 1;
   for (;;) {

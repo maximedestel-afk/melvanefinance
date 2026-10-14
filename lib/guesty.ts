@@ -379,3 +379,28 @@ export async function getAllGuestyReservations(): Promise<GuestyReservationSumma
   }
   return all;
 }
+
+/** Variante brute de getAllGuestyReservations qui renvoie les objets Guesty
+ * complets (dont `money`), sans les réduire à GuestyReservationSummary — pour
+ * inspecter les champs financiers réels exposés par l'API avant de les
+ * mapper. `fields` est explicitement demandé pour forcer l'inclusion de
+ * `money` (plusieurs endpoints Guesty omettent les sous-objets lourds par
+ * défaut si on ne les demande pas). TEMPORAIRE — diagnostic, voir
+ * app/api/admin/guesty-moret-fields-check/route.ts. */
+export async function getAllGuestyReservationsRaw(): Promise<Record<string, unknown>[]> {
+  const limit = 100;
+  let skip = 0;
+  let total = Infinity;
+  const all: Record<string, unknown>[] = [];
+  while (skip < total) {
+    const url = new URL(`${API_BASE_URL}/reservations`);
+    url.searchParams.set("limit", String(limit));
+    url.searchParams.set("skip", String(skip));
+    url.searchParams.set("fields", "listingId status checkIn checkOut confirmationCode guest source money");
+    const page = await guestyFetch<GuestyReservationsPage>(url);
+    total = page.count;
+    all.push(...page.results);
+    skip += limit;
+  }
+  return all;
+}
