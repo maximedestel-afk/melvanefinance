@@ -402,7 +402,15 @@ export interface GuestyMonthlyFinanceCents {
  *   - Commission      = money.commission (commission de gestion Melvane)
  * N'inclut ni city tax, ni frais de transfert, ni ménage — hors périmètre.
  * Attribution par mois de check-out (même base que MonthlyFinance.rentsCents
- * côté VRPlatform), sur les réservations confirmées uniquement. */
+ * côté VRPlatform), sur les réservations valides uniquement — pas seulement
+ * "confirmed" : Guesty fait passer une réservation à "checked_in" puis
+ * "checked_out" une fois le séjour effectué (confirmé dans ce compte même,
+ * cf. integration.limitations.availableStatuses:
+ * ["checked_in","checked_out","canceled"]) — ne garder que "confirmed"
+ * excluait silencieusement tous les séjours déjà passés, ~moitié du
+ * chiffre réel. */
+const GUESTY_REVENUE_STATUSES = new Set(["confirmed", "checked_in", "checked_out"]);
+
 export async function getGuestyMonthlyFinancialsByListing(
   guestyListingIds: string[],
   year: number
@@ -425,7 +433,7 @@ export async function getGuestyMonthlyFinancialsByListing(
 
   const reservations = await getAllGuestyReservationsRaw();
   for (const r of reservations) {
-    if (r.status !== "confirmed") continue;
+    if (typeof r.status !== "string" || !GUESTY_REVENUE_STATUSES.has(r.status)) continue;
     const listingId = typeof r.listingId === "string" ? r.listingId : null;
     if (!listingId) continue;
     const months = result.get(listingId);
