@@ -6,11 +6,10 @@ import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { GuestyMonthlyFinanceCents } from "@/lib/guesty";
 import type { RentType } from "@/lib/types";
 
-// Les listings VRPlatform de Moret sont tous inactifs (switch de PMS) : pour
-// ce bien, et seulement pour celui-ci, Rents/Channel fees/Net Revenue/
-// Commission viennent de Guesty plutôt que de VRPlatform (voir
-// /api/finance/moret-guesty-monthly). Identifié par référence ou nom.
-const MORET_NAME_PATTERN = /moret|8mor/i;
+interface MoretListingFinance {
+  name: string;
+  months: GuestyMonthlyFinanceCents[];
+}
 
 type SortKey =
   | "reference"
@@ -74,9 +73,15 @@ function toRow(
   rentType: RentType | null,
   selectedMonths: number[],
   cleaning?: CleaningApiResult,
-  moretMonths?: GuestyMonthlyFinanceCents[] | null
+  moretByReference?: Map<string, GuestyMonthlyFinanceCents[]> | null
 ): FinanceRow {
-  const isMoret = MORET_NAME_PATTERN.test(property.reference) || (property.name != null && MORET_NAME_PATTERN.test(property.name));
+  // Chaque appartement Moret est son propre bien côté Supabase, avec une
+  // référence identique au nom de son listing VRPlatform/Guesty (ex: "MORET
+  // A1 CV 101") — on ne doit donc appliquer les montants Guesty qu'au bien
+  // dont la référence correspond exactement, jamais en bloc à tous les
+  // biens dont le nom contient "Moret" (sinon chaque ligne affiche le total
+  // de tout le portefeuille Moret au lieu du sien).
+  const moretMonths = moretByReference?.get(property.reference.trim().toLowerCase()) ?? null;
 
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
@@ -96,7 +101,7 @@ function toRow(
   // habituel (basé sur VRPlatform) est vide pour ce bien — Rents/Channel
   // fees/Net Revenue/Commission viennent de Guesty à la place. Pas de city
   // tax, pas de frais de transfert, pas de ménage dans ce calcul.
-  if (isMoret && moretMonths) {
+  if (moretMonths) {
     const selectedMoret = moretMonths.filter((m) => selectedMonths.includes(m.month));
     rentsCents = selectedMoret.reduce((sum, m) => sum + m.netAccommodationFareCents, 0);
     channelFeesCents = selectedMoret.reduce((sum, m) => sum + m.channelFeesCents, 0);
@@ -211,7 +216,11 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [results, setResults] = useState<PropertyMonthlyResult[] | null>(null);
   const [cleaningResults, setCleaningResults] = useState<CleaningApiResult[] | null>(null);
-  const [moretMonths, setMoretMonths] = useState<GuestyMonthlyFinanceCents[] | null>(null);
+  const [moretListings, setMoretListings] = useState<MoretListingFinance[] | null>(null);
+  const moretByReference = useMemo(
+    () => (moretListings ? new Map(moretListings.map((l) => [l.name.trim().toLowerCase(), l.months])) : null),
+    [moretListings]
+  );
   const [removedRowIds, setRemovedRowIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +287,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         // Idem pour les montants Guesty de Moret — optionnel, le reste du
         // tableau reste utilisable si cet appel échoue.
         const moretData = await moretRes.json();
-        setMoretMonths(moretData.error ? null : moretData.months);
+        setMoretListings(moretData.error ? null : moretData.listings);
         setRemovedRowIds(new Set());
       }
     } catch {
@@ -305,7 +314,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
       .map((r) =>
-        toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths, cleaningByPropertyId.get(r.propertyId), moretMonths)
+        toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths, cleaningByPropertyId.get(r.propertyId), moretByReference)
       ) ?? null;
 
   function removeRow(propertyId: string) {

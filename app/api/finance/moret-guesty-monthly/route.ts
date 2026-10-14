@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
-import { getGuestyMonthlyFinancials } from "@/lib/guesty";
+import { getGuestyMonthlyFinancialsByListing } from "@/lib/guesty";
 import { listAllVrPlatformListingsAnyStatus } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 // bien, et seulement pour celui-ci, l'onglet Revenus va chercher Rents/
 // Channel fees/Net Revenue/Commission directement dans Guesty. Identifié par
 // le nom du listing VRPlatform ("MORET A1 CV 101", "8MOR SB AC 001"...), pas
-// par un tag Supabase.
+// par un tag Supabase. Chaque appartement Moret est son propre bien côté
+// Supabase (référence = nom du listing), donc la réponse reste par listing —
+// jamais agrégée entre appartements.
 const MORET_NAME_PATTERN = /moret|8mor/i;
 
 export async function GET(request: Request) {
@@ -27,12 +29,16 @@ export async function GET(request: Request) {
 
   try {
     const allListings = await listAllVrPlatformListingsAnyStatus();
-    const moretListingIds = allListings
-      .filter((l) => MORET_NAME_PATTERN.test(l.name))
-      .map((l) => l.uniqueRef)
-      .filter((id): id is string => !!id);
-    const months = await getGuestyMonthlyFinancials(moretListingIds, year);
-    return NextResponse.json({ year, months }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const moretListings = allListings.filter((l) => MORET_NAME_PATTERN.test(l.name) && l.uniqueRef);
+    const guestyListingIds = moretListings.map((l) => l.uniqueRef as string);
+    const monthsByListingId = await getGuestyMonthlyFinancialsByListing(guestyListingIds, year);
+
+    const listings = moretListings.map((l) => ({
+      name: l.name,
+      months: monthsByListingId.get(l.uniqueRef as string) ?? [],
+    }));
+
+    return NextResponse.json({ year, listings }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Erreur Guesty inconnue." },
