@@ -413,7 +413,8 @@ const GUESTY_REVENUE_STATUSES = new Set(["confirmed", "checked_in", "checked_out
 
 export async function getGuestyMonthlyFinancialsByListing(
   guestyListingIds: string[],
-  year: number
+  year: number,
+  months?: number[]
 ): Promise<Map<string, GuestyMonthlyFinanceCents[]>> {
   const result = new Map<string, GuestyMonthlyFinanceCents[]>();
   const listingIdSet = new Set(guestyListingIds);
@@ -431,7 +432,20 @@ export async function getGuestyMonthlyFinancialsByListing(
   }
   if (listingIdSet.size === 0) return result;
 
-  const reservations = await getAllGuestyReservationsRaw({ from: `${year}-01-01`, to: `${year}-12-31` });
+  // Ne couvrir que les mois réellement affichés : sur tout le compte (pas
+  // seulement Moret), chercher l'année complète paginait des centaines de
+  // réservations et dépassait le timeout de la fonction serverless — la
+  // plupart des consultations ne portent que sur 1-2 mois.
+  const requestedMonths = months && months.length > 0 ? months : Array.from({ length: 12 }, (_, i) => i + 1);
+  const minMonth = Math.min(...requestedMonths);
+  const maxMonth = Math.max(...requestedMonths);
+  const lastDayOfMaxMonth = new Date(Date.UTC(year, maxMonth, 0)).getUTCDate();
+  const checkOutRange = {
+    from: `${year}-${String(minMonth).padStart(2, "0")}-01`,
+    to: `${year}-${String(maxMonth).padStart(2, "0")}-${String(lastDayOfMaxMonth).padStart(2, "0")}`,
+  };
+
+  const reservations = await getAllGuestyReservationsRaw(checkOutRange);
   for (const r of reservations) {
     if (typeof r.status !== "string" || !GUESTY_REVENUE_STATUSES.has(r.status)) continue;
     const listingId = typeof r.listingId === "string" ? r.listingId : null;

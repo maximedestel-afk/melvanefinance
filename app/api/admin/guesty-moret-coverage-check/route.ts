@@ -4,6 +4,7 @@ import { getAllGuestyReservationsRaw } from "@/lib/guesty";
 import { listAllVrPlatformListingsAnyStatus } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // TEMPORAIRE — diagnostic pour vérifier, après correction du filtre de date
 // (getAllGuestyReservationsRaw borne désormais sur checkOut via le

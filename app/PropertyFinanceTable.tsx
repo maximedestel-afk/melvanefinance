@@ -284,7 +284,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
       const propertyIds = matchingProperties.map((p) => p.id).join(",");
       const monthlyParams = new URLSearchParams({ year: String(year), propertyIds });
       const cleaningParams = new URLSearchParams({ year: String(year), months: selectedMonths.join(","), propertyIds });
-      const moretParams = new URLSearchParams({ year: String(year) });
+      const moretParams = new URLSearchParams({ year: String(year), months: selectedMonths.join(",") });
       const [monthlyRes, cleaningRes, moretRes] = await Promise.all([
         fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
         fetch(`/api/finance/cleaning?${cleaningParams.toString()}`),

@@ -4,6 +4,11 @@ import { getGuestyMonthlyFinancialsByListing } from "@/lib/guesty";
 import { listAllVrPlatformListingsAnyStatus } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
+// Récupérer les réservations Guesty de tout le compte (pas seulement
+// Moret — l'API ignore listingId= côté serveur) peut prendre du temps sur
+// une large fenêtre ; on la limite déjà aux mois demandés, mais on garde
+// de la marge sur la durée de la fonction au cas où.
+export const maxDuration = 60;
 
 // Les listings VRPlatform de Moret sont tous "inactive" (switch de PMS) donc
 // invisibles au calcul financier habituel (basé sur VRPlatform) — pour ce
@@ -26,12 +31,19 @@ export async function GET(request: Request) {
   if (!Number.isInteger(year)) {
     return NextResponse.json({ error: "Année invalide." }, { status: 400 });
   }
+  const monthsParam = searchParams.get("months");
+  const requestedMonths = monthsParam
+    ? monthsParam
+        .split(",")
+        .map((m) => Number.parseInt(m, 10))
+        .filter((m) => Number.isInteger(m) && m >= 1 && m <= 12)
+    : undefined;
 
   try {
     const allListings = await listAllVrPlatformListingsAnyStatus();
     const moretListings = allListings.filter((l) => MORET_NAME_PATTERN.test(l.name) && l.uniqueRef);
     const guestyListingIds = moretListings.map((l) => l.uniqueRef as string);
-    const monthsByListingId = await getGuestyMonthlyFinancialsByListing(guestyListingIds, year);
+    const monthsByListingId = await getGuestyMonthlyFinancialsByListing(guestyListingIds, year, requestedMonths);
 
     const listings = moretListings.map((l) => ({
       name: l.name,

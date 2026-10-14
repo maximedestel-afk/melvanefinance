@@ -4,6 +4,7 @@ import { getAllGuestyReservationsRaw } from "@/lib/guesty";
 import { listAllVrPlatformListingsAnyStatus } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // TEMPORAIRE — diagnostic pour comparer, réservation par réservation, les
 // différents champs financiers Guesty candidats (commission, commissionIncTax,
