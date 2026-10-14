@@ -97,6 +97,34 @@ export async function listVrPlatformListings(): Promise<VrPlatformListingOption[
   return options;
 }
 
+/** Variante diagnostic de listVrPlatformListings sans filtre de statut (donc
+ * tous statuts, pas seulement "active") — pour retrouver des listings qui
+ * n'apparaissent pas dans la liste active habituelle. TEMPORAIRE, voir
+ * app/api/admin/guesty-moret-fields-check/route.ts. */
+export async function listAllVrPlatformListingsAnyStatus(): Promise<
+  (VrPlatformListingOption & { status: string | null })[]
+> {
+  const options: (VrPlatformListingOption & { status: string | null })[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<{
+      data: { id: string; name: string | null; title: string | null; uniqueRef: string | null; status: string | null }[];
+      pagination: { page: number; totalPage: number };
+    }>("/listings", { limit: "250", page: String(page) });
+    for (const listing of res.data) {
+      options.push({
+        id: listing.id,
+        name: listing.title || listing.name || listing.id,
+        uniqueRef: listing.uniqueRef,
+        status: listing.status,
+      });
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return options;
+}
+
 interface VrPlatformReservationLine {
   type: string | null;
   amount: number | null;
