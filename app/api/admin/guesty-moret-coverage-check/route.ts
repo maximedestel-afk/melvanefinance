@@ -5,14 +5,12 @@ import { listAllVrPlatformListingsAnyStatus } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 
-// TEMPORAIRE — diagnostic pour vérifier que la pagination Guesty (qui doit
-// parcourir TOUT le compte, pas juste Moret, car l'API ignore listingId= et
-// filters= côté serveur — voir getAllGuestyReservationsRaw) ne perd pas de
-// réservations. L'utilisateur a fourni l'export CSV réel de Guesty pour
-// Moret/Octobre 2026 (198 réservations, confirmationCode par ligne) — ce
-// dump liste les confirmationCode que NOTRE pagination retrouve pour
-// comparaison directe avec ce fichier, afin de confirmer ou d'infirmer une
-// perte de données en pagination plutôt qu'un problème de mapping de champ.
+// TEMPORAIRE — diagnostic pour vérifier, après correction du filtre de date
+// (getAllGuestyReservationsRaw borne désormais sur checkOut via le
+// paramètre `filters`, le seul que Guesty applique réellement — un appel
+// sans filtre ne renvoie que les réservations à venir, confirmé via l'export
+// CSV réel fourni par l'utilisateur), que la couverture est maintenant
+// complète. Compare les confirmationCode retrouvés avec un export Guesty.
 const MORET_NAME_PATTERN = /moret|8mor/i;
 
 export async function GET(request: Request) {
@@ -33,7 +31,12 @@ export async function GET(request: Request) {
   const moretListings = allListings.filter((l) => MORET_NAME_PATTERN.test(l.name) && l.uniqueRef);
   const moretListingIds = new Set(moretListings.map((l) => l.uniqueRef as string));
 
-  const allReservations = await getAllGuestyReservationsRaw();
+  const monthStr = String(month).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const allReservations = await getAllGuestyReservationsRaw({
+    from: `${year}-${monthStr}-01`,
+    to: `${year}-${monthStr}-${String(lastDay).padStart(2, "0")}`,
+  });
 
   const matches = allReservations.filter((r) => {
     const listingId = typeof r.listingId === "string" ? r.listingId : null;

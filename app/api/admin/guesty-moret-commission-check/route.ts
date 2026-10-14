@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: `Listing "${listingName}" introuvable ou sans ID Guesty.` }, { status: 404 });
   }
 
-  const allReservations = await getAllGuestyReservationsRaw();
+  const allReservations = await getAllGuestyReservationsRaw({ from: `${year}-01-01`, to: `${year}-12-31` });
   const matches = allReservations.filter((r) => r.listingId === listing.uniqueRef);
 
   const rows = matches.map((r) => {

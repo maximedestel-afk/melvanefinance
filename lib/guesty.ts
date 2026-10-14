@@ -431,7 +431,7 @@ export async function getGuestyMonthlyFinancialsByListing(
   }
   if (listingIdSet.size === 0) return result;
 
-  const reservations = await getAllGuestyReservationsRaw();
+  const reservations = await getAllGuestyReservationsRaw({ from: `${year}-01-01`, to: `${year}-12-31` });
   for (const r of reservations) {
     if (typeof r.status !== "string" || !GUESTY_REVENUE_STATUSES.has(r.status)) continue;
     const listingId = typeof r.listingId === "string" ? r.listingId : null;
@@ -464,9 +464,21 @@ export async function getGuestyMonthlyFinancialsByListing(
  * inspecter les champs financiers réels exposés par l'API avant de les
  * mapper. `fields` est explicitement demandé pour forcer l'inclusion de
  * `money` (plusieurs endpoints Guesty omettent les sous-objets lourds par
- * défaut si on ne les demande pas). TEMPORAIRE — diagnostic, voir
- * app/api/admin/guesty-moret-fields-check/route.ts. */
-export async function getAllGuestyReservationsRaw(): Promise<Record<string, unknown>[]> {
+ * défaut si on ne les demande pas).
+ *
+ * `checkOutRange` borne la requête sur le champ `checkOut` via le paramètre
+ * `filters` (tableau JSON `[{field, operator, value}]`) — c'est le SEUL
+ * format de filtre que Guesty applique réellement côté serveur ; un simple
+ * query param (`checkInDateFrom=`, `fromDate=`, etc.) est silencieusement
+ * ignoré, confirmé empiriquement (voir
+ * app/api/admin/guesty-date-param-check). Plus important : SANS aucun
+ * filtre, l'API ne renvoie que les réservations à venir à partir
+ * d'aujourd'hui — toute réservation passée est absente des résultats, même
+ * en paginant tout le compte. Toujours fournir `checkOutRange` pour une
+ * période couvrant du passé (sinon les réservations déjà terminées
+ * manquent silencieusement, confirmé sur un export Guesty réel : ~la moitié
+ * du chiffre d'affaires d'un mois en cours disparaissait). */
+export async function getAllGuestyReservationsRaw(checkOutRange?: { from: string; to: string }): Promise<Record<string, unknown>[]> {
   const limit = 100;
   let skip = 0;
   let total = Infinity;
@@ -476,6 +488,15 @@ export async function getAllGuestyReservationsRaw(): Promise<Record<string, unkn
     url.searchParams.set("limit", String(limit));
     url.searchParams.set("skip", String(skip));
     url.searchParams.set("fields", "listingId status checkIn checkOut confirmationCode guest source money");
+    if (checkOutRange) {
+      url.searchParams.set(
+        "filters",
+        JSON.stringify([
+          { field: "checkOut", operator: "$gte", value: checkOutRange.from },
+          { field: "checkOut", operator: "$lte", value: checkOutRange.to },
+        ])
+      );
+    }
     const page = await guestyFetch<GuestyReservationsPage>(url);
     total = page.count;
     all.push(...page.results);
