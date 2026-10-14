@@ -380,6 +380,66 @@ export async function getAllGuestyReservations(): Promise<GuestyReservationSumma
   return all;
 }
 
+export interface GuestyMonthlyFinanceCents {
+  month: number;
+  netAccommodationFareCents: number;
+  channelFeesCents: number;
+  netRevenueCents: number;
+  commissionCents: number;
+}
+
+/** Rents/Channel fees/Net Revenue/Commission mensuels calculés directement
+ * depuis les réservations Guesty, pour les biens dont la facturation ne
+ * passe pas par VRPlatform (ex: Moret, dont les listings VRPlatform sont
+ * inactifs). Mapping confirmé sur de vraies réservations Guesty (voir
+ * app/api/admin/guesty-moret-fields-check) :
+ *   - Rents           = money.fareAccommodationAdjusted ("Net Accommodation Fare")
+ *   - Channel fees    = money.hostServiceFeeIncTax ("Channel Commission Incl Tax")
+ *   - Net Revenue     = Rents − Channel fees (= money.netIncome, vérifié identique)
+ *   - Commission      = money.commission (commission de gestion Melvane)
+ * N'inclut ni city tax, ni frais de transfert, ni ménage — hors périmètre.
+ * Attribution par mois de check-out (même base que MonthlyFinance.rentsCents
+ * côté VRPlatform), sur les réservations confirmées uniquement. */
+export async function getGuestyMonthlyFinancials(
+  guestyListingIds: string[],
+  year: number
+): Promise<GuestyMonthlyFinanceCents[]> {
+  const months: GuestyMonthlyFinanceCents[] = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    netAccommodationFareCents: 0,
+    channelFeesCents: 0,
+    netRevenueCents: 0,
+    commissionCents: 0,
+  }));
+  const listingIdSet = new Set(guestyListingIds);
+  if (listingIdSet.size === 0) return months;
+
+  const reservations = await getAllGuestyReservationsRaw();
+  for (const r of reservations) {
+    if (r.status !== "confirmed") continue;
+    const listingId = typeof r.listingId === "string" ? r.listingId : null;
+    if (!listingId || !listingIdSet.has(listingId)) continue;
+    const checkOut = typeof r.checkOut === "string" ? r.checkOut : null;
+    if (!checkOut) continue;
+    const checkOutDate = new Date(checkOut);
+    if (Number.isNaN(checkOutDate.getTime()) || checkOutDate.getUTCFullYear() !== year) continue;
+    const monthIndex = checkOutDate.getUTCMonth();
+
+    const money = r.money as Record<string, unknown> | undefined;
+    const netAccommodationFare = typeof money?.fareAccommodationAdjusted === "number" ? money.fareAccommodationAdjusted : 0;
+    const channelFees = typeof money?.hostServiceFeeIncTax === "number" ? money.hostServiceFeeIncTax : 0;
+    const commission = typeof money?.commission === "number" ? money.commission : 0;
+
+    months[monthIndex].netAccommodationFareCents += Math.round(netAccommodationFare * 100);
+    months[monthIndex].channelFeesCents += Math.round(channelFees * 100);
+    months[monthIndex].commissionCents += Math.round(commission * 100);
+  }
+  for (const m of months) {
+    m.netRevenueCents = m.netAccommodationFareCents - m.channelFeesCents;
+  }
+  return months;
+}
+
 /** Variante brute de getAllGuestyReservations qui renvoie les objets Guesty
  * complets (dont `money`), sans les réduire à GuestyReservationSummary — pour
  * inspecter les champs financiers réels exposés par l'API avant de les

@@ -3,7 +3,14 @@
 import { useMemo, useState } from "react";
 import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
+import type { GuestyMonthlyFinanceCents } from "@/lib/guesty";
 import type { RentType } from "@/lib/types";
+
+// Les listings VRPlatform de Moret sont tous inactifs (switch de PMS) : pour
+// ce bien, et seulement pour celui-ci, Rents/Channel fees/Net Revenue/
+// Commission viennent de Guesty plutôt que de VRPlatform (voir
+// /api/finance/moret-guesty-monthly). Identifié par référence ou nom.
+const MORET_NAME_PATTERN = /moret|8mor/i;
 
 type SortKey =
   | "reference"
@@ -66,19 +73,40 @@ function toRow(
   property: PropertyMonthlyResult,
   rentType: RentType | null,
   selectedMonths: number[],
-  cleaning?: CleaningApiResult
+  cleaning?: CleaningApiResult,
+  moretMonths?: GuestyMonthlyFinanceCents[] | null
 ): FinanceRow {
+  const isMoret = MORET_NAME_PATTERN.test(property.reference) || (property.name != null && MORET_NAME_PATTERN.test(property.name));
+
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
   const fillRate = selected.length > 0 ? selected.reduce((sum, m) => sum + m.fillRate, 0) / selected.length : 0;
-  const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
-  const channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
-  const cityTaxCents = selected.reduce((sum, m) => sum + m.cityTaxCents, 0);
-  const transferFeesCents = selected.reduce((sum, m) => sum + m.transferFeesCents, 0);
-  const netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
-  const commissionCents =
+
+  let rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
+  let channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
+  let cityTaxCents = selected.reduce((sum, m) => sum + m.cityTaxCents, 0);
+  let transferFeesCents = selected.reduce((sum, m) => sum + m.transferFeesCents, 0);
+  let netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
+  let commissionCents: number | null =
     !property.isFixedRent && property.commissionPercent != null
       ? Math.round((netRevenueCents * property.commissionPercent) / 100)
       : null;
+  let cleaningExcludedForMoret = false;
+
+  // Moret : les listings VRPlatform sont tous inactifs, donc le calcul
+  // habituel (basé sur VRPlatform) est vide pour ce bien — Rents/Channel
+  // fees/Net Revenue/Commission viennent de Guesty à la place. Pas de city
+  // tax, pas de frais de transfert, pas de ménage dans ce calcul.
+  if (isMoret && moretMonths) {
+    const selectedMoret = moretMonths.filter((m) => selectedMonths.includes(m.month));
+    rentsCents = selectedMoret.reduce((sum, m) => sum + m.netAccommodationFareCents, 0);
+    channelFeesCents = selectedMoret.reduce((sum, m) => sum + m.channelFeesCents, 0);
+    netRevenueCents = selectedMoret.reduce((sum, m) => sum + m.netRevenueCents, 0);
+    commissionCents = selectedMoret.reduce((sum, m) => sum + m.commissionCents, 0);
+    cityTaxCents = 0;
+    transferFeesCents = 0;
+    cleaningExcludedForMoret = true;
+  }
+
   const fixedRentCents =
     property.isFixedRent && property.fixedRentAmountCents != null
       ? property.fixedRentAmountCents * selectedMonths.length
@@ -87,9 +115,9 @@ function toRow(
   const cleaningProductGuesty = cleaning?.cleaningFeeGuesty != null ? checkoutCount * cleaning.cleaningFeeGuesty : null;
   const cleaningProductCustom = cleaning?.cleaningFeeCustomField != null ? checkoutCount * cleaning.cleaningFeeCustomField : null;
   const cleaningProfitCents =
-    cleaningProductGuesty != null && cleaningProductCustom != null
-      ? Math.round((cleaningProductGuesty - cleaningProductCustom) * 100)
-      : null;
+    cleaningExcludedForMoret || cleaningProductGuesty == null || cleaningProductCustom == null
+      ? null
+      : Math.round((cleaningProductGuesty - cleaningProductCustom) * 100);
 
   // Profit = (Commission, ou Net Revenue − Loyer fixe pour le modèle fixe) + City Tax + Profit ménage.
   const baseProfitCents = property.isFixedRent
@@ -183,6 +211,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [results, setResults] = useState<PropertyMonthlyResult[] | null>(null);
   const [cleaningResults, setCleaningResults] = useState<CleaningApiResult[] | null>(null);
+  const [moretMonths, setMoretMonths] = useState<GuestyMonthlyFinanceCents[] | null>(null);
   const [removedRowIds, setRemovedRowIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,9 +258,11 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
       const propertyIds = matchingProperties.map((p) => p.id).join(",");
       const monthlyParams = new URLSearchParams({ year: String(year), propertyIds });
       const cleaningParams = new URLSearchParams({ year: String(year), months: selectedMonths.join(","), propertyIds });
-      const [monthlyRes, cleaningRes] = await Promise.all([
+      const moretParams = new URLSearchParams({ year: String(year) });
+      const [monthlyRes, cleaningRes, moretRes] = await Promise.all([
         fetch(`/api/finance/monthly?${monthlyParams.toString()}`),
         fetch(`/api/finance/cleaning?${cleaningParams.toString()}`),
+        fetch(`/api/finance/moret-guesty-monthly?${moretParams.toString()}`),
       ]);
       const monthlyData = await monthlyRes.json();
       if (monthlyData.error) {
@@ -244,6 +275,10 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         // configuré, etc.) n'empêche pas d'afficher le reste du tableau.
         const cleaningData = await cleaningRes.json();
         setCleaningResults(cleaningData.error ? null : cleaningData.properties);
+        // Idem pour les montants Guesty de Moret — optionnel, le reste du
+        // tableau reste utilisable si cet appel échoue.
+        const moretData = await moretRes.json();
+        setMoretMonths(moretData.error ? null : moretData.months);
         setRemovedRowIds(new Set());
       }
     } catch {
@@ -269,7 +304,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const rows =
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
-      .map((r) => toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths, cleaningByPropertyId.get(r.propertyId))) ?? null;
+      .map((r) =>
+        toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths, cleaningByPropertyId.get(r.propertyId), moretMonths)
+      ) ?? null;
 
   function removeRow(propertyId: string) {
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
