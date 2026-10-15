@@ -96,9 +96,14 @@ function FillRateBadge({ value }: { value: number | null }) {
 
 /** "145€ / 160€ +10%" — prix moyen vendu / prix moyen encore libre / écart.
  * Écart positif = les nuits libres sont affichées plus cher que ce qui se
- * vend réellement (signal de sur-tarification possible) → en rouge. */
+ * vend réellement (signal de sur-tarification possible) → en rouge.
+ * Quand le taux de remplissage est nul, il n'y a pas de prix vendu (aucune
+ * nuit réservée) mais le prix libre reste connu — on l'affiche quand même
+ * plutôt que de masquer toute la cellule. */
 function PricingCell({ soldCents, freeCents, diffPercent }: { soldCents: number | null; freeCents: number | null; diffPercent: number | null }) {
-  if (soldCents == null || freeCents == null) return <span className="text-[#6e6e73]">—</span>;
+  if (soldCents == null && freeCents == null) return <span className="text-[#6e6e73]">—</span>;
+  if (soldCents == null) return <span className="whitespace-nowrap text-[#6e6e73]">— / {Math.round((freeCents as number) / 100)}€</span>;
+  if (freeCents == null) return <span className="whitespace-nowrap">{Math.round(soldCents / 100)}€ / —</span>;
   return (
     <span className="whitespace-nowrap">
       {Math.round(soldCents / 100)}€ / {Math.round(freeCents / 100)}€
