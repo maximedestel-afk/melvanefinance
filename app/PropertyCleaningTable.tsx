@@ -196,7 +196,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [showProperties, setShowProperties] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [tagFilters, setTagFilters] = useState<Record<string, "include" | "exclude">>({});
   const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
   const [selectedCleaningProviders, setSelectedCleaningProviders] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("reference");
@@ -211,17 +211,27 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [currentSortKey, setCurrentSortKey] = useState<CurrentSortKey>("reference");
   const [currentDirection, setCurrentDirection] = useState<"asc" | "desc">("asc");
 
+  const includedTags = useMemo(
+    () => Object.entries(tagFilters).filter(([, mode]) => mode === "include").map(([tag]) => tag),
+    [tagFilters]
+  );
+  const excludedTags = useMemo(
+    () => Object.entries(tagFilters).filter(([, mode]) => mode === "exclude").map(([tag]) => tag),
+    [tagFilters]
+  );
+
   const matchingProperties = useMemo(() => {
     return allProperties.filter((p) => {
       const isSelected = selectedPropertyIds.includes(p.id);
-      const matchesTags = selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t));
+      const matchesIncluded = includedTags.length === 0 || p.tags.some((t) => includedTags.includes(t));
+      const matchesExcluded = excludedTags.length === 0 || !p.tags.some((t) => excludedTags.includes(t));
       const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
       const matchesCleaningProvider =
         selectedCleaningProviders.length === 0 ||
         (p.cleaningProviderName != null && selectedCleaningProviders.includes(p.cleaningProviderName));
-      return isSelected && matchesTags && matchesRentType && matchesCleaningProvider;
+      return isSelected && matchesIncluded && matchesExcluded && matchesRentType && matchesCleaningProvider;
     });
-  }, [allProperties, selectedPropertyIds, selectedTags, selectedRentTypes, selectedCleaningProviders]);
+  }, [allProperties, selectedPropertyIds, includedTags, excludedTags, selectedRentTypes, selectedCleaningProviders]);
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
@@ -233,8 +243,15 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     setSelectedPropertyIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   }
 
-  function toggleTag(tag: string) {
-    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  // Cycle à trois états par tag : neutre → inclure → exclure → neutre.
+  function cycleTagFilter(tag: string) {
+    setTagFilters((prev) => {
+      const next = { ...prev };
+      if (next[tag] === "include") next[tag] = "exclude";
+      else if (next[tag] === "exclude") delete next[tag];
+      else next[tag] = "include";
+      return next;
+    });
   }
 
   function toggleRentType(rentType: RentType) {
@@ -613,20 +630,31 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       {allTags.length > 0 && (
         <div>
           <span className="field-label">Tags</span>
+          <p className="mt-0.5 text-[11px] text-[#86868b]">Clic : inclure · reclic : exclure · reclic : neutre</p>
           <div className="mt-1 flex flex-wrap gap-1">
             {allTags.map((tag) => {
-              const active = selectedTags.includes(tag);
+              const mode = tagFilters[tag];
               return (
                 <button
                   key={tag}
                   type="button"
-                  onClick={() => toggleTag(tag)}
+                  onClick={() => cycleTagFilter(tag)}
+                  title={
+                    mode === "include"
+                      ? "Inclus — clic pour exclure"
+                      : mode === "exclude"
+                        ? "Exclu — clic pour désactiver"
+                        : "Clic pour inclure"
+                  }
                   className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
-                    active
+                    mode === "include"
                       ? "border-[#0071e3] bg-[#0071e3] text-white"
-                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                      : mode === "exclude"
+                        ? "border-[#ff3b30] bg-[#ff3b30] text-white"
+                        : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
                   }`}
                 >
+                  {mode === "exclude" ? "− " : mode === "include" ? "+ " : ""}
                   {tag}
                 </button>
               );
