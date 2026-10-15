@@ -130,7 +130,7 @@ export async function GET(request: Request) {
       : null;
 
     const withIndicators = await mapWithGuestyConcurrency(results, async (r) => {
-      if (!r.guestyListingId) {
+      if (r.guestyListingIds.length === 0) {
         return {
           ...r,
           next15DaysFillRate: null,
@@ -140,10 +140,20 @@ export async function GET(request: Request) {
         };
       }
       try {
-        const [daysA, daysB] = await Promise.all([
-          getGuestyCalendarMonth(r.guestyListingId, windowAStart, windowAEnd),
-          getGuestyCalendarMonth(r.guestyListingId, windowBStart, windowBEnd),
-        ]);
+        // Un bien peut avoir plusieurs listings Guesty (plusieurs unités) —
+        // une réservation peut tomber sur n'importe lequel, donc on combine
+        // le calendrier de tous avant de calculer le TR/les prix, plutôt que
+        // de ne regarder que le listing principal.
+        const perListing = await Promise.all(
+          r.guestyListingIds.map((listingId) =>
+            Promise.all([
+              getGuestyCalendarMonth(listingId, windowAStart, windowAEnd),
+              getGuestyCalendarMonth(listingId, windowBStart, windowBEnd),
+            ])
+          )
+        );
+        const daysA = perListing.flatMap(([a]) => a);
+        const daysB = perListing.flatMap(([, b]) => b);
 
         let next15DaysPricing: PricingComparison | null = null;
         let next15To30DaysPricing: PricingComparison | null = null;

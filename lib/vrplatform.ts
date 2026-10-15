@@ -983,11 +983,15 @@ export interface PropertyBookingWindowResult extends BookingWindowStats {
   propertyId: string;
   reference: string;
   notFoundReferences: string[];
-  /** ID Guesty natif du listing principal (référence du bien, hors
-   * références supplémentaires) — null si non résolu côté VRPlatform. Sert
-   * à enchaîner un calcul basé sur le calendrier Guesty (ex. TR à court
-   * terme) sans refaire de résolution de listing. */
-  guestyListingId: string | null;
+  /** IDs Guesty natifs de TOUS les listings résolus du bien (référence
+   * principale + références supplémentaires) — un bien à plusieurs unités
+   * (ex: 4TOU) a une réservation sur n'importe laquelle d'entre elles, pas
+   * seulement la principale. Se limiter au seul listing principal faisait
+   * apparaître un TR à court terme nul alors qu'une réservation existait
+   * bien, mais sur un listing secondaire du même bien. Sert à enchaîner un
+   * calcul basé sur le calendrier Guesty (ex. TR à court terme) sans refaire
+   * de résolution de listing. */
+  guestyListingIds: string[];
 }
 
 /** Version portefeuille de getPropertyBookingWindowStats — un seul appel
@@ -999,6 +1003,7 @@ export async function getPortfolioBookingWindowStats(
 ): Promise<PropertyBookingWindowResult[]> {
   const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const listingsById = new Map(listings.map((l) => [l.id, l]));
   const dateFilter = bookingWindowDateFilter(referenceDate);
 
   return Promise.all(
@@ -1006,12 +1011,14 @@ export async function getPortfolioBookingWindowStats(
       const references = [property.reference, ...property.extraVrplatformReferences];
       const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
       const stats = await fetchBookingWindowForListings(listingIds, dateFilter);
-      const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
+      const guestyListingIds = listingIds
+        .map((id) => listingsById.get(id)?.uniqueRef)
+        .filter((id): id is string => !!id);
       return {
         propertyId: property.propertyId,
         reference: property.reference,
         notFoundReferences,
-        guestyListingId: primaryListing?.uniqueRef ?? null,
+        guestyListingIds,
         ...stats,
       };
     })
