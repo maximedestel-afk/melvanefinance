@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PropertyOccupancyTable } from "./PropertyOccupancyTable";
 import { PropertyFinanceTable } from "./PropertyFinanceTable";
 import { PropertyCleaningTable } from "./PropertyCleaningTable";
+import { PropertyCleaningTodoTable } from "./PropertyCleaningTodoTable";
 import { PropertyBonusTable } from "./PropertyBonusTable";
 import { PropertyOwnerComparisonTable } from "./PropertyOwnerComparisonTable";
 import { PropertyReservationsTable } from "./PropertyReservationsTable";
@@ -17,6 +18,7 @@ type Tab =
   | "occupancy"
   | "finance"
   | "cleaning"
+  | "cleaning-todo"
   | "bonus"
   | "owner-comparison"
   | "reservations"
@@ -86,6 +88,15 @@ export function DashboardClient({
           }`}
         >
           Ménage
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("cleaning-todo")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "cleaning-todo" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Ménages à faire
         </button>
         <button
           type="button"
@@ -170,6 +181,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "cleaning" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Ménage</h2>
         <PropertyCleaningTable properties={properties} />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "cleaning-todo" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Ménages à faire</h2>
+        <PropertyCleaningTodoTable properties={properties} />
       </section>
 
       <section className={`card space-y-3 p-5 ${tab === "bonus" ? "" : "hidden"}`}>
