@@ -641,7 +641,7 @@ export function PropertyAnalysisTable({
             id="analysis-property"
             value={propertyId}
             onChange={(e) => setPropertyId(e.target.value)}
-            className="mt-1 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-[7px] text-[14px] font-medium text-[#0071e3] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+            className="mt-1 h-9 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 text-[14px] font-medium text-[#0071e3] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
           >
             {properties.map((p) => (
               <option key={p.id} value={p.id}>
@@ -656,7 +656,7 @@ export function PropertyAnalysisTable({
           <button
             type="button"
             onClick={() => setShowPeriodPicker((v) => !v)}
-            className="mt-1 flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-[7px] text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
+            className="mt-1 flex h-9 items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
             📅 {periodSummary}
             <span aria-hidden className={`transition-transform ${showPeriodPicker ? "rotate-180" : ""}`}>
@@ -778,7 +778,7 @@ export function PropertyAnalysisTable({
             type="button"
             onClick={() => load()}
             disabled={loading}
-            className="btn-secondary btn-sm mt-1"
+            className="btn-secondary btn-sm mt-1 h-9"
           >
             {loading ? "Chargement…" : activeMeta ? "Actualiser" : "Charger"}
           </button>
