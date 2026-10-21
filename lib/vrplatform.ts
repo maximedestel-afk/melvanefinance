@@ -398,6 +398,57 @@ export async function getPropertyExpenseBreakdown(
   return { lines, totalCents };
 }
 
+export interface VendorExpenseEntry {
+  propertyId: string;
+  reference: string;
+  date: string;
+  accountName: string;
+  description: string | null;
+  cents: number;
+}
+
+/** Repère, sur le portefeuille entier, toutes les écritures de dépense
+ * (comptes EXPENSE_ACCOUNT_IDS) dont la description correspond (sous-chaîne,
+ * insensible à la casse) à un prestataire donné — ex: toutes les factures
+ * "Sweepit" sur un mois. Un seul appel /listings partagé entre tous les
+ * biens, comme getPortfolioReservationDetails. */
+export async function getPortfolioExpenseEntriesByVendor(
+  properties: PortfolioProperty[],
+  year: number,
+  months: number[],
+  vendorQuery: string
+): Promise<VendorExpenseEntry[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const needle = vendorQuery.trim().toLowerCase();
+
+  const perProperty = await Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds } = resolveListingIds(references, listingsByName);
+      const rows: VendorExpenseEntry[] = [];
+      for (const listingId of listingIds) {
+        for (const entry of await getListingExpenseEntries(listingId, String(year))) {
+          const month = Number(entry.txnAt.slice(5, 7));
+          if (!months.includes(month)) continue;
+          if (!(entry.description ?? "").toLowerCase().includes(needle)) continue;
+          rows.push({
+            propertyId: property.propertyId,
+            reference: property.reference,
+            date: entry.txnAt.slice(0, 10),
+            accountName: entry.account?.name ?? "Autre",
+            description: entry.description ?? null,
+            cents: entry.centTotal,
+          });
+        }
+      }
+      return rows;
+    })
+  );
+
+  return perProperty.flat().sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference));
+}
+
 interface VrPlatformReservationDetailed {
   id: string;
   checkIn: string | null;
