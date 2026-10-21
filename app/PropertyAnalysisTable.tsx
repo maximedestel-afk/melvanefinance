@@ -917,6 +917,12 @@ export function PropertyAnalysisTable({
               <StatTile label="Channel Fees">
                 <Money cents={activeFinance.channelFeesCents} />
               </StatTile>
+              <StatTile label="Commission">
+                <Money cents={figures.commissionCents} />
+                {figures.commissionCents != null && activeMeta.commissionPercent != null && (
+                  <span className="ml-1 text-[11px] font-normal text-[#86868b]">({activeMeta.commissionPercent}%)</span>
+                )}
+              </StatTile>
               <StatTile label="City Tax">
                 <Money cents={activeFinance.cityTaxCents} />
               </StatTile>
