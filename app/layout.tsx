@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Analyse financière — M.G.B",
+  title: "MGB Finance",
   description: "Analyse financière du parc M.G.B à partir des données VRPlatform.",
 };
 
