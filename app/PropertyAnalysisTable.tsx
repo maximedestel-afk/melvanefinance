@@ -772,9 +772,17 @@ export function PropertyAnalysisTable({
           )}
         </div>
 
-        <button type="button" onClick={() => load()} disabled={loading} className="btn-secondary btn-sm">
-          {loading ? "Chargement…" : activeMeta ? "Actualiser" : "Charger"}
-        </button>
+        <div>
+          <span className="field-label invisible">Charger</span>
+          <button
+            type="button"
+            onClick={() => load()}
+            disabled={loading}
+            className="btn-secondary btn-sm mt-1"
+          >
+            {loading ? "Chargement…" : activeMeta ? "Actualiser" : "Charger"}
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
