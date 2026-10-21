@@ -652,10 +652,11 @@ export function PropertyAnalysisTable({
         </div>
 
         <div className="relative">
+          <span className="field-label">Période</span>
           <button
             type="button"
             onClick={() => setShowPeriodPicker((v) => !v)}
-            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
+            className="mt-1 flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-[7px] text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
           >
             📅 {periodSummary}
             <span aria-hidden className={`transition-transform ${showPeriodPicker ? "rotate-180" : ""}`}>
