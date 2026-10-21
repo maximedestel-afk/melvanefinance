@@ -251,7 +251,6 @@ export function PropertyCleaningTodoTable({ properties: unsortedProperties }: { 
                       id="todo-range-start"
                       type="date"
                       value={rangeStart}
-                      max={rangeEnd}
                       onChange={(e) => setRangeStart(e.target.value)}
                       className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
                     />
@@ -264,7 +263,6 @@ export function PropertyCleaningTodoTable({ properties: unsortedProperties }: { 
                       id="todo-range-end"
                       type="date"
                       value={rangeEnd}
-                      min={rangeStart}
                       onChange={(e) => setRangeEnd(e.target.value)}
                       className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
                     />
