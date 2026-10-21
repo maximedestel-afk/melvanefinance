@@ -61,7 +61,7 @@ export function DashboardClient({
   return (
     <div className="space-y-8">
       <div className="sticky top-0 z-20 -mx-4 bg-[#f5f5f7]/95 px-4 py-3 backdrop-blur-sm">
-      <div className="flex overflow-hidden rounded-[10px] border border-black/10 w-fit">
+      <div className="flex flex-wrap overflow-hidden rounded-[10px] border border-black/10 w-fit">
         <button
           type="button"
           onClick={() => setTab("occupancy")}
