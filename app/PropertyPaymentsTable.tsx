@@ -22,6 +22,7 @@ interface ReservationApiRow {
   reference: string;
   confirmationCode: string | null;
   checkIn: string;
+  checkOut: string | null;
   bookingPlatform: string | null;
   guestName: string | null;
   netCommissionableRevenueCents: number;
@@ -180,14 +181,17 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
     }
   }
 
-  // Paiement attendu le lendemain du check-in (Airbnb et Booking.com) —
-  // "en retard" si cette date est passée et le paiement pas encore marqué
-  // reçu.
+  // Paiement attendu le lendemain du check-out pour Booking.com (paie après
+  // le départ), le lendemain du check-in pour les autres plateformes
+  // (Airbnb) — "en retard" si cette date est passée et le paiement pas
+  // encore marqué reçu.
   const rows: PaymentRow[] | null = reservations
     ? reservations
         .filter((r) => r.confirmationCode != null)
         .map((r) => {
-          const expectedPaymentDate = addDaysIso(r.checkIn, 1);
+          const isBookingCom = /booking/i.test(r.bookingPlatform ?? "");
+          const expectedPaymentDate =
+            isBookingCom && r.checkOut ? addDaysIso(r.checkOut, 1) : addDaysIso(r.checkIn, 1);
           const received = receivedCodes.has(r.confirmationCode as string);
           return {
             ...r,
@@ -203,11 +207,12 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
   function exportCsv() {
     if (!rows || rows.length === 0) return;
     const rowsForCsv = [
-      ["Bien", "Plateforme", "Check-in", "Paiement attendu", "Montant", "Reçu"],
+      ["Bien", "Plateforme", "Check-in", "Check-out", "Paiement attendu", "Montant", "Reçu"],
       ...rows.map((r) => [
         r.reference,
         r.bookingPlatform ?? "",
         r.checkIn,
+        r.checkOut ?? "",
         r.expectedPaymentDate,
         (r.netCommissionableRevenueCents / 100).toFixed(2),
         r.received ? "Oui" : "Non",
@@ -229,11 +234,15 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
       : `${rangeStart} → ${rangeEnd}`;
 
   const lateCount = rows?.filter((r) => r.late).length ?? 0;
+  const totalCents = rows?.reduce((sum, r) => sum + r.netCommissionableRevenueCents, 0) ?? 0;
 
   return (
     <div className="space-y-4">
       <p className="text-[12px] text-[#6e6e73]">
-        Paiement attendu le lendemain du check-in (Airbnb et Booking.com) — Moret exclu (facturation hors VRPlatform).
+        Montant = Rents − Channel Fees (Net Commissionable Revenue, même calcul que l&apos;onglet Revenus) — ce que la
+        plateforme verse réellement, après sa propre commission. Paiement attendu le lendemain du check-out pour
+        Booking.com, le lendemain du check-in pour les autres plateformes (Airbnb) — Moret exclu (facturation hors
+        VRPlatform).
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -468,7 +477,7 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
                 lateCount > 0 ? "bg-red-50 text-red-600" : "bg-[#0071e3]/10 text-[#0071e3]"
               }`}
             >
-              {rows.length} paiement{rows.length !== 1 ? "s" : ""} · {lateCount} en retard
+              {rows.length} paiement{rows.length !== 1 ? "s" : ""} · {lateCount} en retard · <Money cents={totalCents} />
             </span>
             <button type="button" onClick={exportCsv} className="btn-secondary btn-sm">
               Exporter (CSV)
@@ -482,6 +491,7 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
                     <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
                     <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Plateforme</th>
                     <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Check-in</th>
+                    <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Check-out</th>
                     <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Paiement attendu</th>
                     <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Montant</th>
                     <th className="py-1.5 px-2 text-center text-[11px] font-medium text-[#86868b]">Statut</th>
@@ -499,6 +509,9 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
                       <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">{row.reference}</td>
                       <td className="py-1.5 px-2 text-[#6e6e73]">{row.bookingPlatform ?? "—"}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{formatShortDate(row.checkIn)}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        {row.checkOut ? formatShortDate(row.checkOut) : "—"}
+                      </td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         {formatShortDate(row.expectedPaymentDate)}
                       </td>
@@ -532,6 +545,17 @@ export function PropertyPaymentsTable({ properties: unsortedProperties }: { prop
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
+                    <td className="py-1.5 pl-3 pr-2" colSpan={4}>
+                      Total ({rows.length} paiement{rows.length !== 1 ? "s" : ""})
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">
+                      <Money cents={totalCents} />
+                    </td>
+                    <td className="py-1.5 px-2" colSpan={2}></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>

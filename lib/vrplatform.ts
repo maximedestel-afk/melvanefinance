@@ -814,6 +814,7 @@ export interface PaymentTrackingReservation {
   reference: string;
   confirmationCode: string | null;
   checkIn: string;
+  checkOut: string | null;
   bookingPlatform: string | null;
   guestName: string | null;
   netCommissionableRevenueCents: number;
@@ -866,6 +867,7 @@ export async function getPortfolioReservationsByCheckInRange(
               reference: listingReference,
               confirmationCode: reservation.confirmationCode,
               checkIn: reservation.checkIn,
+              checkOut: reservation.checkOut,
               bookingPlatform: reservation.bookingPlatform,
               guestName: reservation.guestName,
               netCommissionableRevenueCents: rentsCents - channelFeesCents,
