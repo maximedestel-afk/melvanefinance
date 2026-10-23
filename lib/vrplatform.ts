@@ -809,6 +809,79 @@ export async function getPortfolioReservationDetailsByBookedRange(
   return perProperty.flat().sort((a, b) => (b.bookedAt ?? "").localeCompare(a.bookedAt ?? ""));
 }
 
+export interface PaymentTrackingReservation {
+  propertyId: string;
+  reference: string;
+  confirmationCode: string | null;
+  checkIn: string;
+  bookingPlatform: string | null;
+  guestName: string | null;
+  netCommissionableRevenueCents: number;
+}
+
+/** Réservations dont le CHECK-IN tombe dans [startDate, endDate] (inclus),
+ * avec juste de quoi suivre un paiement attendu (montant Rents − Channel
+ * Fees, comme netCommissionableRevenueCents ailleurs) — pas d'Expenses/
+ * Transfer Fees, inutiles ici. Filtre par check-in plutôt que check-out car
+ * le paiement du voyageur arrive en fonction de la date d'arrivée, pas de
+ * départ. Utilisé par l'onglet Paiements. */
+export async function getPortfolioReservationsByCheckInRange(
+  properties: PortfolioProperty[],
+  startDate: string,
+  endDate: string
+): Promise<PaymentTrackingReservation[]> {
+  const [listings, accountByLineType] = await Promise.all([listVrPlatformListings(), getReservationLineAccountMap()]);
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const checkInFilter = `${startDate}...${endDate}`;
+
+  const perProperty = await Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const referenceByListingId = new Map<string, string>();
+      for (const reference of references) {
+        const listing = listingsByName.get(reference.trim().toLowerCase());
+        if (listing) referenceByListingId.set(listing.id, listing.name);
+      }
+      const listingIds = Array.from(referenceByListingId.keys());
+      const results: PaymentTrackingReservation[] = [];
+
+      for (const listingId of listingIds) {
+        const listingReference = referenceByListingId.get(listingId) ?? property.reference;
+        let page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+            listingId,
+            date: checkInFilter,
+            dateField: "checkIn",
+            status: "booked",
+            limit: "250",
+            page: String(page),
+            includeLines: "true",
+          });
+          for (const reservation of res.data) {
+            if (!reservation.checkIn) continue;
+            const { rentsCents, channelFeesCents } = classifyReservationLines(reservation.lines, accountByLineType);
+            results.push({
+              propertyId: property.propertyId,
+              reference: listingReference,
+              confirmationCode: reservation.confirmationCode,
+              checkIn: reservation.checkIn,
+              bookingPlatform: reservation.bookingPlatform,
+              guestName: reservation.guestName,
+              netCommissionableRevenueCents: rentsCents - channelFeesCents,
+            });
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+      }
+      return results;
+    })
+  );
+
+  return perProperty.flat().sort((a, b) => a.checkIn.localeCompare(b.checkIn) || a.reference.localeCompare(b.reference));
+}
+
 /** Version "plage de dates" de getPropertyReservationDetails — filtre
  * directement côté serveur (dateField=checkOut) sur [startDate, endDate]
  * (inclus, YYYY-MM-DD) au lieu d'une année + une liste de mois. Utilisé par
