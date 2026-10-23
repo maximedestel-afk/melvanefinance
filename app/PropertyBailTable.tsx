@@ -12,6 +12,7 @@ interface BailRow {
   franchiseEndDate: string | null;
   daysRemainingInMonth: number | null;
   daysInMonth: number | null;
+  loyerNormalCents: number | null;
   loyerProrataCents: number | null;
   chargesCents: number | null;
   totalCents: number | null;
@@ -121,6 +122,7 @@ export function PropertyBailTable() {
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Début de bail</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Franchise</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Jours restants</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer normal</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer prorata</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Charges</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Total</th>
@@ -155,6 +157,9 @@ export function PropertyBailTable() {
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                       {row.daysRemainingInMonth != null ? `${row.daysRemainingInMonth} / ${row.daysInMonth}` : "—"}
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                      <Money cents={row.loyerNormalCents} />
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                       <Money cents={row.loyerProrataCents} />

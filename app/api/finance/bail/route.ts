@@ -14,6 +14,7 @@ export async function GET() {
   const rows = properties.map((p) => {
     const prorata = computeBailProrata(p.leaseStartDate, p.leaseRentFreePeriodText, p.rentAmountEuros);
     const chargesCents = p.chargesAmountEuros != null ? Math.round(p.chargesAmountEuros * 100) : null;
+    const loyerNormalCents = p.rentAmountEuros != null ? Math.round(p.rentAmountEuros * 100) : null;
     const totalCents =
       prorata.loyerProrataCents != null ? prorata.loyerProrataCents + (chargesCents ?? 0) : null;
     return {
@@ -25,6 +26,7 @@ export async function GET() {
       franchiseEndDate: prorata.franchiseEndIso,
       daysRemainingInMonth: prorata.daysRemainingInMonth,
       daysInMonth: prorata.daysInMonth,
+      loyerNormalCents,
       loyerProrataCents: prorata.loyerProrataCents,
       chargesCents,
       totalCents,
