@@ -113,7 +113,10 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   const rowsWithBonus = useMemo(() => {
     if (!rows) return null;
     return rows.map((r) => {
-      const bonusEciPercent = r.flat ? (bonusEciByReference.get(r.flat.trim().toLowerCase()) ?? null) : null;
+      // 8MOR n'a pas (ou plus) de bonus_eci_percent configuré côté M.G.B —
+      // toujours 50% pour ce bien, quoi que dise Supabase.
+      const bonusEciPercent =
+        r.flat?.trim().toLowerCase() === "8mor" ? 50 : r.flat ? (bonusEciByReference.get(r.flat.trim().toLowerCase()) ?? null) : null;
       const isEci = r.label != null && ECI_LABEL_PATTERN.test(r.label);
       const amountDue = isEci && r.price != null && bonusEciPercent != null ? (r.price * bonusEciPercent) / 100 : null;
       return { ...r, bonusEciPercent, amountDue };

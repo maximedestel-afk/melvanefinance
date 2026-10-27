@@ -182,7 +182,7 @@ export function DashboardClient({
             tab === "comm-sharing" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
           }`}
         >
-          Comm Sharing
+          ECI
         </button>
       </div>
       </div>
@@ -252,7 +252,7 @@ export function DashboardClient({
       </section>
 
       <section className={`card space-y-3 p-5 ${tab === "comm-sharing" ? "" : "hidden"}`}>
-        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Comm Sharing</h2>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">ECI</h2>
         <CommSharingTable properties={properties} />
       </section>
     </div>
