@@ -13,6 +13,7 @@ import { PropertyTrendsTable } from "./PropertyTrendsTable";
 import { PropertyBailTable } from "./PropertyBailTable";
 import { PropertyPaymentsTable } from "./PropertyPaymentsTable";
 import { CsvConverterTable } from "./CsvConverterTable";
+import { CommSharingTable } from "./CommSharingTable";
 import type { RentType } from "@/lib/types";
 
 type Tab =
@@ -27,7 +28,8 @@ type Tab =
   | "trends"
   | "bail"
   | "payments"
-  | "csv-converter";
+  | "csv-converter"
+  | "comm-sharing";
 
 export function DashboardClient({
   properties,
@@ -172,6 +174,15 @@ export function DashboardClient({
         >
           Convertisseur CSV
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("comm-sharing")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "comm-sharing" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Comm Sharing
+        </button>
       </div>
       </div>
 
@@ -237,6 +248,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "csv-converter" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Convertisseur CSV</h2>
         <CsvConverterTable />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "comm-sharing" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Comm Sharing</h2>
+        <CommSharingTable />
       </section>
     </div>
   );
