@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
 
-type SortKey = "name" | "date" | "flat" | "price" | "label" | "prestataire" | "billToOwner";
+type SortKey = "name" | "date" | "flat" | "price" | "label" | "prestataire" | "billToOwner" | "amountDue";
 
 interface CommSharingRow {
   id: string;
@@ -16,6 +16,15 @@ interface CommSharingRow {
   billId: string | null;
   billToOwner: string | null;
 }
+
+interface PropertyOption {
+  reference: string;
+  bonusEciPercent: number | null;
+}
+
+// Label Monday exact pour les lignes "Early Check-in" (voir le tableau Comm
+// Sharing) — seules ces lignes ont une somme due au titre du Bonus ECI.
+const ECI_LABEL_PATTERN = /early check/i;
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -56,9 +65,13 @@ function SortHeader({
   );
 }
 
-export function CommSharingTable() {
+export function CommSharingTable({ properties }: { properties: PropertyOption[] }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 3 }, (_, i) => currentYear - 1 + i);
+  const bonusEciByReference = useMemo(
+    () => new Map(properties.map((p) => [p.reference.trim().toLowerCase(), p.bonusEciPercent])),
+    [properties]
+  );
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [search, setSearch] = useState("");
@@ -97,15 +110,25 @@ export function CommSharingTable() {
     }
   }
 
-  const filteredRows = useMemo(() => {
+  const rowsWithBonus = useMemo(() => {
     if (!rows) return null;
+    return rows.map((r) => {
+      const bonusEciPercent = r.flat ? (bonusEciByReference.get(r.flat.trim().toLowerCase()) ?? null) : null;
+      const isEci = r.label != null && ECI_LABEL_PATTERN.test(r.label);
+      const amountDue = isEci && r.price != null && bonusEciPercent != null ? (r.price * bonusEciPercent) / 100 : null;
+      return { ...r, bonusEciPercent, amountDue };
+    });
+  }, [rows, bonusEciByReference]);
+
+  const filteredRows = useMemo(() => {
+    if (!rowsWithBonus) return null;
     const needle = search.trim().toLowerCase();
     return needle === ""
-      ? rows
-      : rows.filter((r) =>
+      ? rowsWithBonus
+      : rowsWithBonus.filter((r) =>
           [r.name, r.flat, r.label, r.prestataire].some((v) => v?.toLowerCase().includes(needle))
         );
-  }, [rows, search]);
+  }, [rowsWithBonus, search]);
 
   const sortedRows = useMemo(() => {
     if (!filteredRows) return null;
@@ -133,12 +156,16 @@ export function CommSharingTable() {
         case "billToOwner":
           cmp = (a.billToOwner ?? "").localeCompare(b.billToOwner ?? "");
           break;
+        case "amountDue":
+          cmp = (a.amountDue ?? 0) - (b.amountDue ?? 0);
+          break;
       }
       return direction === "asc" ? cmp : -cmp;
     });
   }, [filteredRows, sortKey, direction]);
 
   const total = sortedRows?.reduce((sum, r) => sum + (r.price ?? 0), 0) ?? 0;
+  const totalDue = sortedRows?.reduce((sum, r) => sum + (r.amountDue ?? 0), 0) ?? 0;
 
   return (
     <div className="space-y-4">
@@ -222,7 +249,8 @@ export function CommSharingTable() {
       {sortedRows && sortedRows.length > 0 && !loading && !error && (
         <div className="space-y-2">
           <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
-            {sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""} · {formatEuros(total)}
+            {sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""} · {formatEuros(total)} · {formatEuros(totalDue)}{" "}
+            dû (Bonus ECI)
           </span>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
@@ -238,6 +266,15 @@ export function CommSharingTable() {
                     <SortHeader
                       label="Bill to Owner"
                       k="billToOwner"
+                      sortKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                      align="right"
+                    />
+                    <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Bonus ECI %</th>
+                    <SortHeader
+                      label="Montant dû"
+                      k="amountDue"
                       sortKey={sortKey}
                       direction={direction}
                       onSort={handleSort}
@@ -261,7 +298,13 @@ export function CommSharingTable() {
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                         {row.price != null ? formatEuros(row.price) : "—"}
                       </td>
-                      <td className="py-1.5 pl-2 pr-3 text-right text-[#1d1d1f]">{row.billToOwner ?? "—"}</td>
+                      <td className="py-1.5 px-2 text-right text-[#1d1d1f]">{row.billToOwner ?? "—"}</td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#6e6e73]">
+                        {row.bonusEciPercent != null ? `${row.bonusEciPercent}%` : "—"}
+                      </td>
+                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                        {row.amountDue != null ? formatEuros(row.amountDue) : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -271,7 +314,8 @@ export function CommSharingTable() {
                       Total ({sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""})
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">{formatEuros(total)}</td>
-                    <td className="py-1.5 pl-2 pr-3"></td>
+                    <td className="py-1.5 px-2"></td>
+                    <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">{formatEuros(totalDue)}</td>
                   </tr>
                 </tfoot>
               </table>

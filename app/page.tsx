@@ -49,6 +49,7 @@ export default async function DashboardPage() {
           ownerEmail: p.ownerEmail,
           cleaningProviderName: p.cleaningProviderName,
           bonusFdPercent: p.bonusFdPercent,
+          bonusEciPercent: p.bonusEciPercent,
         }))}
       />
     </div>

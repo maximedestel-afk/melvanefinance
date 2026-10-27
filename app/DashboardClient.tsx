@@ -43,6 +43,7 @@ export function DashboardClient({
     ownerEmail: string | null;
     cleaningProviderName: string | null;
     bonusFdPercent: number | null;
+    bonusEciPercent: number | null;
   }[];
 }) {
   const [tab, setTab] = useState<Tab>("occupancy");
@@ -252,7 +253,7 @@ export function DashboardClient({
 
       <section className={`card space-y-3 p-5 ${tab === "comm-sharing" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Comm Sharing</h2>
-        <CommSharingTable />
+        <CommSharingTable properties={properties} />
       </section>
     </div>
   );

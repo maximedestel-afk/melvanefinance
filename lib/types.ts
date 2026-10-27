@@ -35,4 +35,8 @@ export interface PropertyFinanceInfo {
   /** Pourcentage de bonus ménage (`property_data.bonus_fd_percent`), utilisé
    * pour le calcul Net Revenue × FD% / jours dans l'onglet Bonus Ménage. */
   bonusFdPercent: number | null;
+  /** Pourcentage de bonus Early Check-in (`property_data.bonus_eci_percent`),
+   * utilisé pour calculer la somme due sur les lignes "Early Check-ins" de
+   * l'onglet Comm Sharing (Prix Monday × ce %). */
+  bonusEciPercent: number | null;
 }
