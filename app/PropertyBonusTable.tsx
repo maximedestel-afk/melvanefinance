@@ -5,7 +5,7 @@ import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
-type SortKey = "reference" | "ownerGross" | "fdPercent" | "bonus";
+type SortKey = "reference" | "rents" | "channelFees" | "commission" | "ownerGross" | "fdPercent" | "bonus";
 
 interface Loss {
   id: string;
@@ -31,6 +31,9 @@ interface BonusRow {
   propertyId: string;
   reference: string;
   notFoundReferences: string[];
+  rentsCents: number;
+  channelFeesCents: number;
+  commissionCents: number;
   ownerGrossCents: number;
   fdPercent: number | null;
   daysInPeriod: number;
@@ -39,7 +42,11 @@ interface BonusRow {
 
 function toRow(property: PropertyMonthlyResult, selectedMonths: number[], fdPercent: number | null): BonusRow {
   const selected = property.months.filter((m) => selectedMonths.includes(m.month));
-  const netCommissionableRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
+  // Brut (Rents) et commission plateforme (Channel Fees) tels que postés par
+  // VRPlatform — Net Commissionable Revenue = Brut − Comm. plateforme.
+  const rentsCents = selected.reduce((sum, m) => sum + m.rentsCents, 0);
+  const channelFeesCents = selected.reduce((sum, m) => sum + m.channelFeesCents, 0);
+  const netCommissionableRevenueCents = rentsCents - channelFeesCents;
   // Owner Gross = Net Commissionable Revenue − Commission de gestion (le
   // bonus ménage se calcule sur ce que le owner touche réellement, pas sur
   // le revenu brut avant commission).
@@ -56,6 +63,9 @@ function toRow(property: PropertyMonthlyResult, selectedMonths: number[], fdPerc
     propertyId: property.propertyId,
     reference: property.reference,
     notFoundReferences: property.notFoundReferences,
+    rentsCents,
+    channelFeesCents,
+    commissionCents,
     ownerGrossCents,
     fdPercent,
     daysInPeriod,
@@ -290,6 +300,15 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
           case "reference":
             cmp = a.reference.localeCompare(b.reference, "fr");
             break;
+          case "rents":
+            cmp = a.rentsCents - b.rentsCents;
+            break;
+          case "channelFees":
+            cmp = a.channelFeesCents - b.channelFeesCents;
+            break;
+          case "commission":
+            cmp = a.commissionCents - b.commissionCents;
+            break;
           case "ownerGross":
             cmp = a.ownerGrossCents - b.ownerGrossCents;
             break;
@@ -306,6 +325,9 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
 
   const totals = sortedRows
     ? {
+        rentsCents: sortedRows.reduce((sum, r) => sum + r.rentsCents, 0),
+        channelFeesCents: sortedRows.reduce((sum, r) => sum + r.channelFeesCents, 0),
+        commissionCents: sortedRows.reduce((sum, r) => sum + r.commissionCents, 0),
         ownerGrossCents: sortedRows.reduce((sum, r) => sum + r.ownerGrossCents, 0),
         bonusCentsPerDay: sortedRows.reduce((sum, r) => sum + (r.bonusCentsPerDay ?? 0), 0),
       }
@@ -593,6 +615,21 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                       onSort={handleSort}
                       align="left"
                     />
+                    <SortHeader label="Brut" sortKey="rents" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeader
+                      label="Comm. plateforme"
+                      sortKey="channelFees"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                    />
+                    <SortHeader
+                      label="Ma commission"
+                      sortKey="commission"
+                      activeKey={sortKey}
+                      direction={direction}
+                      onSort={handleSort}
+                    />
                     <SortHeader
                       label="Owner Gross"
                       sortKey="ownerGross"
@@ -631,6 +668,15 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                           </span>
                         )}
                       </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <Money cents={row.rentsCents} />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <Money cents={row.channelFeesCents} />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        <Money cents={row.commissionCents} />
+                      </td>
                       <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
                         <Money cents={row.ownerGrossCents} bold />
                       </td>
@@ -649,6 +695,15 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                       Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
+                      <Money cents={totals.rentsCents} />
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">
+                      <Money cents={totals.channelFeesCents} />
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">
+                      <Money cents={totals.commissionCents} />
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums">
                       <Money cents={totals.ownerGrossCents} bold />
                     </td>
                     <td className="py-1.5 px-2"></td>
@@ -661,8 +716,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                       {losses.map((loss) => (
                         <tr key={loss.id} className="border-t border-black/[0.05] text-[#1d1d1f]">
                           <td className="py-1.5 pl-3 pr-2.5 text-[#6e6e73]">Perte — {loss.name}</td>
-                          <td className="py-1.5 px-2.5"></td>
-                          <td className="py-1.5 px-2.5"></td>
+                          <td className="py-1.5 px-2.5" colSpan={5}></td>
                           <td className="py-1.5 pl-2.5 pr-3 text-right tabular-nums text-red-600">
                             −{formatEuros(loss.amountCents / 100)}
                           </td>
@@ -670,8 +724,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                       ))}
                       <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                         <td className="py-2 pl-3 pr-2.5">Total ajusté</td>
-                        <td className="py-2 px-2.5"></td>
-                        <td className="py-2 px-2.5"></td>
+                        <td className="py-2 px-2.5" colSpan={5}></td>
                         <td className="py-2 pl-2.5 pr-3 text-right tabular-nums">
                           <Money cents={adjustedBonusCentsPerDay} bold />
                         </td>
