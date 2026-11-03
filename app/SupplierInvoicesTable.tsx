@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { formatEuros } from "@/lib/format";
 
 interface PropertyOption {
@@ -21,6 +21,15 @@ interface Invoice {
   paid: boolean;
   notes: string | null;
   createdAt: string;
+}
+
+interface MatchEntry {
+  propertyId: string;
+  reference: string;
+  date: string;
+  accountName: string;
+  description: string | null;
+  cents: number;
 }
 
 function Money({ cents }: { cents: number }) {
@@ -56,6 +65,11 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
 
   const [hideShowPaid, setHideShowPaid] = useState(false);
   const [search, setSearch] = useState("");
+
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [matchError, setMatchError] = useState<string | null>(null);
+  const [matchResults, setMatchResults] = useState<MatchEntry[] | null>(null);
 
   async function load() {
     setLoading(true);
@@ -197,6 +211,27 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
       else setError(data.error ?? "Impossible d'ouvrir le fichier.");
     } catch {
       setError("Impossible d'ouvrir le fichier.");
+    }
+  }
+
+  async function toggleMatch(id: string) {
+    if (expandedMatchId === id) {
+      setExpandedMatchId(null);
+      return;
+    }
+    setExpandedMatchId(id);
+    setMatchResults(null);
+    setMatchError(null);
+    setMatchLoading(true);
+    try {
+      const res = await fetch(`/api/finance/invoices/${id}/match`);
+      const data = await res.json();
+      if (data.error) setMatchError(data.error);
+      else setMatchResults(data.matches);
+    } catch {
+      setMatchError("Impossible de chercher les écritures VRPlatform.");
+    } finally {
+      setMatchLoading(false);
     }
   }
 
@@ -401,13 +436,14 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                     <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Montant</th>
                     <th className="py-1.5 px-2 text-center text-[11px] font-medium text-[#86868b]">Fichier</th>
                     <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Payée</th>
+                    <th className="py-1.5 px-2 text-center text-[11px] font-medium text-[#86868b]">VRPlatform</th>
                     <th className="py-1.5 px-2"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleInvoices.map((inv, rowIndex) => (
+                    <Fragment key={inv.id}>
                     <tr
-                      key={inv.id}
                       className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
                         rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                       }`}
@@ -438,6 +474,16 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                           className="h-4 w-4 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
                         />
                       </td>
+                      <td className="py-1.5 px-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => toggleMatch(inv.id)}
+                          title="Chercher les écritures correspondantes dans VRPlatform"
+                          className={`text-[13px] ${expandedMatchId === inv.id ? "text-[#0071e3]" : "text-[#86868b] hover:text-[#0071e3]"}`}
+                        >
+                          🔗
+                        </button>
+                      </td>
                       <td className="py-1.5 px-2 text-right">
                         <button
                           type="button"
@@ -449,6 +495,41 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                         </button>
                       </td>
                     </tr>
+                    {expandedMatchId === inv.id && (
+                      <tr className="border-b border-black/[0.04] bg-[#f5f5f7]">
+                        <td colSpan={9} className="px-3 py-2.5">
+                          {matchLoading && <p className="text-[12px] text-[#6e6e73]">Recherche dans VRPlatform…</p>}
+                          {matchError && <p className="text-[12px] text-red-600">{matchError}</p>}
+                          {matchResults && matchResults.length === 0 && !matchLoading && (
+                            <p className="text-[12px] text-[#6e6e73]">
+                              Aucune écriture trouvée pour « {inv.supplierName} » dans VRPlatform.
+                            </p>
+                          )}
+                          {matchResults && matchResults.length > 0 && !matchLoading && (
+                            <div className="space-y-1">
+                              {matchResults.map((m, i) => {
+                                const isCloseMatch = Math.abs(m.cents - inv.amountCents) < 100;
+                                return (
+                                  <div key={i} className="flex items-center gap-2 text-[12px]">
+                                    <span className={isCloseMatch ? "text-emerald-600" : "text-amber-600"}>
+                                      {isCloseMatch ? "✓" : "≈"}
+                                    </span>
+                                    <span className="text-[#1d1d1f]">{m.reference}</span>
+                                    <span className="text-[#6e6e73]">{formatDate(m.date)}</span>
+                                    <span className="text-[#6e6e73]">{m.accountName}</span>
+                                    <span className="font-medium text-[#1d1d1f]">
+                                      <Money cents={m.cents} />
+                                    </span>
+                                    {m.description && <span className="text-[#86868b]">— {m.description}</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
