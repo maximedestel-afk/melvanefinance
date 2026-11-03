@@ -511,22 +511,6 @@ export interface VrPlatformTransactionMatch {
   }[];
 }
 
-interface VrPlatformContact {
-  id: string;
-  name: string | null;
-}
-interface VrPlatformContactsResponse {
-  data: VrPlatformContact[];
-}
-
-/** Cherche le contact VRPlatform (fournisseur) correspondant à un nom —
- * l'API expose /contacts?search=... (confirmé via l'OpenAPI spec). Renvoie
- * le premier résultat, ou null si aucun contact ne correspond. */
-async function findContactId(supplierName: string): Promise<string | null> {
-  const res = await vrPlatformFetch<VrPlatformContactsResponse>("/contacts", { search: supplierName, limit: "5" });
-  return res.data[0]?.id ?? null;
-}
-
 async function toTransactionMatch(summary: VrPlatformTransactionListItem): Promise<VrPlatformTransactionMatch> {
   const t = await vrPlatformFetch<VrPlatformTransactionDetailResponse>(`/transactions/${summary.id}`, {});
   return {
@@ -546,64 +530,19 @@ async function toTransactionMatch(summary: VrPlatformTransactionListItem): Promi
   };
 }
 
-export interface VrPlatformReconciliationResult {
-  /** Transactions du fournisseur dont le montant correspond exactement à la
-   * facture (±1 centime). */
-  exactMatches: VrPlatformTransactionMatch[];
-  /** Si aucune correspondance exacte : les transactions du même fournisseur
-   * dont le montant est le plus proche de la facture, pour vérification
-   * manuelle (l'API VRPlatform n'offre pas de recherche "montant proche"
-   * côté serveur — seulement un filtre `amount` exact, confirmé par
-   * l'OpenAPI spec). Vide si aucun contact VRPlatform ne correspond au nom
-   * du fournisseur. */
-  closestCandidates: VrPlatformTransactionMatch[];
-}
-
-/** Rapproche une facture fournisseur avec les vraies "transactions"
- * VRPlatform (le paiement bancaire complet — pas les lignes comptables par
- * compte de /reports/journal-entries) : cherche d'abord le contact
- * correspondant au nom du fournisseur (/contacts?search=...), puis, parmi
- * SES transactions, celle dont le montant correspond exactement à la
- * facture. Si rien ne correspond exactement, renvoie les transactions de ce
- * fournisseur les plus proches en montant (jusqu'à 300 transactions
- * scannées) plutôt qu'un simple "rien trouvé". */
-export async function reconcileInvoiceWithVrPlatform(
-  supplierName: string,
-  amountCents: number
-): Promise<VrPlatformReconciliationResult> {
-  const contactId = await findContactId(supplierName);
-  if (!contactId) return { exactMatches: [], closestCandidates: [] };
-
-  const exactRes = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
-    contactId,
+/** Cherche, dans TOUTES les transactions bancaires VRPlatform (le paiement
+ * complet — pas les lignes comptables par compte de
+ * /reports/journal-entries), celles dont le montant correspond exactement
+ * au montant payé — uniquement sur le montant, sans filtrer par fournisseur
+ * (confirmé par l'OpenAPI spec : /transactions accepte un filtre `amount`
+ * exact). Plusieurs transactions peuvent partager le même montant par
+ * coïncidence : toutes sont renvoyées. */
+export async function findTransactionsByAmount(amountCents: number): Promise<VrPlatformTransactionMatch[]> {
+  const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
     amount: String(-Math.abs(amountCents)),
     limit: "20",
   });
-  if (exactRes.data.length > 0) {
-    const matches = await Promise.all(exactRes.data.map(toTransactionMatch));
-    return { exactMatches: matches, closestCandidates: [] };
-  }
-
-  const summaries: VrPlatformTransactionListItem[] = [];
-  let page = 1;
-  for (;;) {
-    const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
-      contactId,
-      limit: "100",
-      page: String(page),
-    });
-    summaries.push(...res.data);
-    if (page >= res.pagination.totalPage || summaries.length >= 300) break;
-    page++;
-  }
-
-  const closest = summaries
-    .slice()
-    .sort((a, b) => Math.abs(Math.abs(a.amount) - amountCents) - Math.abs(Math.abs(b.amount) - amountCents))
-    .slice(0, 5);
-  const closestCandidates = await Promise.all(closest.map(toTransactionMatch));
-
-  return { exactMatches: [], closestCandidates };
+  return Promise.all(res.data.map(toTransactionMatch));
 }
 
 interface VrPlatformReservationDetailed {

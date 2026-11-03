@@ -42,8 +42,7 @@ interface MatchTransaction {
 }
 
 interface MatchResponse {
-  exactMatches: MatchTransaction[];
-  closestCandidates: MatchTransaction[];
+  matches: MatchTransaction[];
 }
 
 function Money({ cents }: { cents: number }) {
@@ -550,31 +549,19 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                         <td colSpan={9} className="px-3 py-2.5">
                           {matchLoading && <p className="text-[12px] text-[#6e6e73]">Recherche dans VRPlatform…</p>}
                           {matchError && <p className="text-[12px] text-red-600">{matchError}</p>}
-                          {matchResult && !matchLoading && matchResult.exactMatches.length > 0 && (
-                            <div className="space-y-3">
-                              <p className="text-[12px] font-semibold text-emerald-600">
-                                ✓ Paiement{matchResult.exactMatches.length !== 1 ? "s" : ""} trouvé{matchResult.exactMatches.length !== 1 ? "s" : ""} au
-                                montant exact
-                              </p>
-                              {matchResult.exactMatches.map((tx) => (
-                                <TransactionCard key={tx.id} tx={tx} highlight />
-                              ))}
-                            </div>
-                          )}
-                          {matchResult && !matchLoading && matchResult.exactMatches.length === 0 && matchResult.closestCandidates.length === 0 && (
+                          {matchResult && !matchLoading && matchResult.matches.length === 0 && (
                             <p className="text-[12px] text-[#6e6e73]">
-                              Aucune transaction VRPlatform trouvée pour « {inv.supplierName} » (aucun contact correspondant).
+                              Aucune transaction VRPlatform de <Money cents={inv.amountCents} /> trouvée.
                             </p>
                           )}
-                          {matchResult && !matchLoading && matchResult.exactMatches.length === 0 && matchResult.closestCandidates.length > 0 && (
+                          {matchResult && !matchLoading && matchResult.matches.length > 0 && (
                             <div className="space-y-3">
-                              <p className="text-[12px] font-semibold text-amber-600">
-                                ≈ Aucun paiement de <Money cents={inv.amountCents} /> trouvé — transactions de « {inv.supplierName} » les plus
-                                proches en montant :
-                              </p>
-                              {matchResult.closestCandidates.map((tx) => (
-                                <TransactionCard key={tx.id} tx={tx} highlight={false} />
-                              ))}
+                              {matchResult.matches.map((tx) => {
+                                const needle = inv.supplierName.trim().toLowerCase();
+                                const contactLower = (tx.contactName ?? "").toLowerCase();
+                                const isLikely = needle !== "" && (contactLower.includes(needle) || needle.includes(contactLower));
+                                return <TransactionCard key={tx.id} tx={tx} highlight={isLikely} />;
+                              })}
                             </div>
                           )}
                         </td>

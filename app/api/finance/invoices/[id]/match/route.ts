@@ -1,17 +1,15 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isVrPlatformConfigured, reconcileInvoiceWithVrPlatform } from "@/lib/vrplatform";
+import { findTransactionsByAmount, isVrPlatformConfigured } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Rapproche une facture avec les vraies transactions bancaires VRPlatform
- * (ressource /transactions, pas les lignes comptables de
- * /reports/journal-entries) : trouve le contact fournisseur
- * (/contacts?search=...), puis cherche parmi ses transactions celle au
- * montant exact. Sans correspondance exacte, renvoie les transactions de ce
- * fournisseur les plus proches en montant pour vérification manuelle. */
+/** Cherche, dans les transactions bancaires VRPlatform (ressource
+ * /transactions, pas les lignes comptables de /reports/journal-entries),
+ * celles dont le montant correspond exactement au montant de la facture —
+ * uniquement sur le montant, sans filtrer par fournisseur. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -31,9 +29,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!invoice) return NextResponse.json({ error: "Facture introuvable." }, { status: 404 });
 
   try {
-    const result = await reconcileInvoiceWithVrPlatform(invoice.supplier_name, invoice.amount_cents);
+    const matches = await findTransactionsByAmount(invoice.amount_cents);
     return NextResponse.json(
-      { invoiceAmountCents: invoice.amount_cents, supplierName: invoice.supplier_name, ...result },
+      { invoiceAmountCents: invoice.amount_cents, supplierName: invoice.supplier_name, matches },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
