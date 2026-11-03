@@ -547,6 +547,16 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                     {expandedMatchId === inv.id && (
                       <tr className="border-b border-black/[0.04] bg-[#f5f5f7]">
                         <td colSpan={9} className="px-3 py-2.5">
+                          <div className="mb-1.5 flex items-center justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedMatchId(null)}
+                              title="Fermer"
+                              className="text-[12px] text-[#86868b] hover:text-[#1d1d1f]"
+                            >
+                              ✕ Fermer
+                            </button>
+                          </div>
                           {matchLoading && <p className="text-[12px] text-[#6e6e73]">Recherche dans VRPlatform…</p>}
                           {matchError && <p className="text-[12px] text-red-600">{matchError}</p>}
                           {matchResult && !matchLoading && matchResult.matches.length === 0 && (
