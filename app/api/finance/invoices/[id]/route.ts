@@ -23,6 +23,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const update: Record<string, unknown> = {};
   if (typeof body.paid === "boolean") update.paid = body.paid;
   if (typeof body.notes === "string") update.notes = body.notes;
+  if (typeof body.amountCents === "number" && Number.isFinite(body.amountCents) && body.amountCents >= 0) {
+    update.amount_cents = Math.round(body.amountCents);
+  }
   if (Object.keys(update).length === 0) {
     return NextResponse.json({ error: "Aucun champ à mettre à jour." }, { status: 400 });
   }

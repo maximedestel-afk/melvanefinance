@@ -97,6 +97,9 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
+  const [editingAmountValue, setEditingAmountValue] = useState("");
+  const [savingAmount, setSavingAmount] = useState(false);
 
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -232,6 +235,41 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
       setInvoices(previous);
     } finally {
       setTogglingId(null);
+    }
+  }
+
+  function startEditAmount(inv: Invoice) {
+    setEditingAmountId(inv.id);
+    setEditingAmountValue((inv.amountCents / 100).toFixed(2).replace(".", ","));
+  }
+
+  async function saveEditedAmount(id: string) {
+    const amountValue = Number.parseFloat(editingAmountValue.replace(",", "."));
+    if (!Number.isFinite(amountValue) || amountValue < 0) {
+      setEditingAmountId(null);
+      return;
+    }
+    const amountCents = Math.round(amountValue * 100);
+    const previous = invoices;
+    setEditingAmountId(null);
+    setSavingAmount(true);
+    setInvoices((prev) => (prev ? prev.map((inv) => (inv.id === id ? { ...inv, amountCents } : inv)) : prev));
+    try {
+      const res = await fetch(`/api/finance/invoices/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountCents }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setInvoices(previous);
+      }
+    } catch {
+      setError("Impossible de mettre à jour le montant.");
+      setInvoices(previous);
+    } finally {
+      setSavingAmount(false);
     }
   }
 
@@ -502,7 +540,31 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{formatDate(inv.invoiceDate)}</td>
                       <td className="py-1.5 px-2 text-[#6e6e73]">{inv.invoiceNumber ?? "—"}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                        <Money cents={inv.amountCents} />
+                        {editingAmountId === inv.id ? (
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            autoFocus
+                            value={editingAmountValue}
+                            onChange={(e) => setEditingAmountValue(e.target.value)}
+                            onBlur={() => saveEditedAmount(inv.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEditedAmount(inv.id);
+                              else if (e.key === "Escape") setEditingAmountId(null);
+                            }}
+                            disabled={savingAmount}
+                            className="w-24 rounded-[6px] border border-[#0071e3]/40 px-1.5 py-0.5 text-right text-[12px] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/20"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startEditAmount(inv)}
+                            title="Modifier le montant"
+                            className="hover:text-[#0071e3]"
+                          >
+                            <Money cents={inv.amountCents} />
+                          </button>
+                        )}
                       </td>
                       <td className="py-1.5 px-2 text-center">
                         <button
