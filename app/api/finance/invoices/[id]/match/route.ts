@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findTransactionsByAmount, isVrPlatformConfigured } from "@/lib/vrplatform";
+import { findBankRecordsByAmount, isVrPlatformConfigured } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Cherche, dans les transactions bancaires VRPlatform (ressource
- * /transactions, pas les lignes comptables de /reports/journal-entries),
- * celles dont le montant correspond exactement au montant de la facture —
- * uniquement sur le montant, sans filtrer par fournisseur. */
+/** Cherche, dans les enregistrements bancaires VRPlatform (ressource
+ * /bank-records — le relevé bancaire réel, pas les écritures comptables
+ * individuelles de /transactions), ceux dont le montant correspond
+ * exactement au montant de la facture — uniquement sur le montant, sans
+ * filtrer par fournisseur. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -29,7 +30,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!invoice) return NextResponse.json({ error: "Facture introuvable." }, { status: 404 });
 
   try {
-    const matches = await findTransactionsByAmount(invoice.amount_cents);
+    const matches = await findBankRecordsByAmount(invoice.amount_cents);
     return NextResponse.json(
       { invoiceAmountCents: invoice.amount_cents, supplierName: invoice.supplier_name, matches },
       { headers: { "Cache-Control": "no-store, max-age=0" } }

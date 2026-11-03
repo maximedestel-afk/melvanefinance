@@ -465,84 +465,59 @@ export async function getPortfolioExpenseEntriesByVendor(
   return perProperty.flat().sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference));
 }
 
-interface VrPlatformTransactionListItem {
+interface VrPlatformBankRecordListItem {
   id: string;
   description: string | null;
   date: string;
   amount: number;
-  contact: { name: string | null } | null;
-  payment: { status: string; date?: string } | null;
+  reconciliation: {
+    status: string;
+    transactions: { id: string; date: string; description: string | null; type: string; amount: number }[];
+  };
 }
-interface VrPlatformTransactionsListResponse {
-  data: VrPlatformTransactionListItem[];
+interface VrPlatformBankRecordsListResponse {
+  data: VrPlatformBankRecordListItem[];
   pagination: { page: number; totalPage: number };
 }
 
-interface VrPlatformTransactionLineDetail {
-  description: string | null;
-  amount: number;
-  listing: { name: string } | null;
-  reservation: { confirmationCode: string | null; checkIn: string | null; checkOut: string | null } | null;
-  account: { name: string } | null;
-}
-interface VrPlatformTransactionDetailResponse {
-  id: string;
-  description: string | null;
-  date: string;
-  amount: number;
-  contact: { name: string | null } | null;
-  payment: { status: string; date?: string } | null;
-  lines: VrPlatformTransactionLineDetail[];
-}
-
-export interface VrPlatformTransactionMatch {
+export interface VrPlatformBankRecordMatch {
   id: string;
   description: string | null;
   date: string;
   amountCents: number;
-  contactName: string | null;
-  paymentStatus: string | null;
-  paymentDate: string | null;
-  lines: {
-    description: string | null;
-    amountCents: number;
-    listingName: string | null;
-    accountName: string | null;
-  }[];
+  reconciliationStatus: string;
+  lines: { id: string; date: string; description: string | null; type: string; amountCents: number }[];
 }
 
-async function toTransactionMatch(summary: VrPlatformTransactionListItem): Promise<VrPlatformTransactionMatch> {
-  const t = await vrPlatformFetch<VrPlatformTransactionDetailResponse>(`/transactions/${summary.id}`, {});
-  return {
-    id: t.id,
-    description: t.description,
-    date: t.date,
-    amountCents: t.amount,
-    contactName: t.contact?.name ?? null,
-    paymentStatus: t.payment?.status ?? null,
-    paymentDate: t.payment?.date ?? null,
-    lines: t.lines.map((l) => ({
-      description: l.description,
-      amountCents: l.amount,
-      listingName: l.listing?.name ?? null,
-      accountName: l.account?.name ?? null,
-    })),
-  };
-}
-
-/** Cherche, dans TOUTES les transactions bancaires VRPlatform (le paiement
- * complet — pas les lignes comptables par compte de
- * /reports/journal-entries), celles dont le montant correspond exactement
- * au montant payé — uniquement sur le montant, sans filtrer par fournisseur
- * (confirmé par l'OpenAPI spec : /transactions accepte un filtre `amount`
- * exact). Plusieurs transactions peuvent partager le même montant par
- * coïncidence : toutes sont renvoyées. */
-export async function findTransactionsByAmount(amountCents: number): Promise<VrPlatformTransactionMatch[]> {
-  const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
+/** Cherche, dans les vrais ENREGISTREMENTS BANCAIRES VRPlatform (ressource
+ * /bank-records — le relevé bancaire réel, PAS /transactions qui ne sont
+ * que les écritures comptables individuelles : un seul paiement bancaire
+ * peut regrouper plusieurs transactions, ex: "Sweep It - New Flat Set Up et
+ * Periodic Audit octobre 2026" à -4225,00€ regroupe 27 transactions de
+ * -250€/-75€ chacune, trouvé via GET /bank-records/{id} — voir
+ * reconciliation.transactions), ceux dont le montant correspond exactement
+ * au montant payé — uniquement sur le montant, sans filtrer par
+ * fournisseur. Plusieurs enregistrements peuvent partager le même montant
+ * par coïncidence : tous sont renvoyés. */
+export async function findBankRecordsByAmount(amountCents: number): Promise<VrPlatformBankRecordMatch[]> {
+  const res = await vrPlatformFetch<VrPlatformBankRecordsListResponse>("/bank-records", {
     amount: String(-Math.abs(amountCents)),
     limit: "20",
   });
-  return Promise.all(res.data.map(toTransactionMatch));
+  return res.data.map((r) => ({
+    id: r.id,
+    description: r.description,
+    date: r.date,
+    amountCents: r.amount,
+    reconciliationStatus: r.reconciliation.status,
+    lines: r.reconciliation.transactions.map((t) => ({
+      id: t.id,
+      date: t.date,
+      description: t.description,
+      type: t.type,
+      amountCents: t.amount,
+    })),
+  }));
 }
 
 interface VrPlatformReservationDetailed {

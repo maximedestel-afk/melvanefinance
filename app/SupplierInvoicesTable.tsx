@@ -24,25 +24,24 @@ interface Invoice {
 }
 
 interface MatchLine {
+  id: string;
+  date: string;
   description: string | null;
+  type: string;
   amountCents: number;
-  listingName: string | null;
-  accountName: string | null;
 }
 
-interface MatchTransaction {
+interface MatchBankRecord {
   id: string;
   description: string | null;
   date: string;
   amountCents: number;
-  contactName: string | null;
-  paymentStatus: string | null;
-  paymentDate: string | null;
+  reconciliationStatus: string;
   lines: MatchLine[];
 }
 
 interface MatchResponse {
-  matches: MatchTransaction[];
+  matches: MatchBankRecord[];
 }
 
 function Money({ cents }: { cents: number }) {
@@ -56,30 +55,31 @@ function formatDate(iso: string | null): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
-function TransactionCard({ tx, highlight }: { tx: MatchTransaction; highlight: boolean }) {
+function BankRecordCard({ record }: { record: MatchBankRecord }) {
   return (
-    <div className={`rounded-[8px] border p-2 ${highlight ? "border-emerald-300 bg-emerald-50/50" : "border-black/10 bg-white"}`}>
+    <div className="rounded-[8px] border border-black/10 bg-white p-2">
       <div className="flex flex-wrap items-center gap-2 text-[12px]">
-        <span className="font-semibold text-[#1d1d1f]">{tx.contactName ?? "Fournisseur inconnu"}</span>
-        <span className="text-[#6e6e73]">{formatDate(tx.date)}</span>
+        <span className="font-semibold text-[#1d1d1f]">{record.description ?? "Paiement bancaire"}</span>
+        <span className="text-[#6e6e73]">{formatDate(record.date)}</span>
         <span className="font-medium text-[#1d1d1f]">
-          <Money cents={Math.abs(tx.amountCents)} />
+          <Money cents={Math.abs(record.amountCents)} />
         </span>
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-            tx.paymentStatus === "paid" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+            record.reconciliationStatus === "paired" || record.reconciliationStatus === "matched"
+              ? "bg-emerald-50 text-emerald-600"
+              : "bg-amber-50 text-amber-600"
           }`}
         >
-          {tx.paymentStatus === "paid" ? `Payé${tx.paymentDate ? ` le ${formatDate(tx.paymentDate)}` : ""}` : "Non payé"}
+          {record.reconciliationStatus}
         </span>
-        {tx.description && <span className="text-[#86868b]">— {tx.description}</span>}
       </div>
-      {tx.lines.length > 0 && (
+      {record.lines.length > 0 && (
         <div className="mt-1 space-y-0.5 pl-4">
-          {tx.lines.map((l, i) => (
-            <div key={i} className="flex items-center gap-2 text-[11px] text-[#6e6e73]">
-              <span>{l.listingName ?? "—"}</span>
-              <span>{l.accountName}</span>
+          {record.lines.map((l) => (
+            <div key={l.id} className="flex items-center gap-2 text-[11px] text-[#6e6e73]">
+              <span>{formatDate(l.date)}</span>
+              <span>{l.type}</span>
               <span className="font-medium text-[#1d1d1f]">
                 <Money cents={Math.abs(l.amountCents)} />
               </span>
@@ -556,12 +556,9 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                           )}
                           {matchResult && !matchLoading && matchResult.matches.length > 0 && (
                             <div className="space-y-3">
-                              {matchResult.matches.map((tx) => {
-                                const needle = inv.supplierName.trim().toLowerCase();
-                                const contactLower = (tx.contactName ?? "").toLowerCase();
-                                const isLikely = needle !== "" && (contactLower.includes(needle) || needle.includes(contactLower));
-                                return <TransactionCard key={tx.id} tx={tx} highlight={isLikely} />;
-                              })}
+                              {matchResult.matches.map((record) => (
+                                <BankRecordCard key={record.id} record={record} />
+                              ))}
                             </div>
                           )}
                         </td>
