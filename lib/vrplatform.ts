@@ -300,6 +300,12 @@ interface VrPlatformExpenseJournalEntry {
   description?: string;
   account?: { id: string; name: string };
   reservationId?: string;
+  /** Regroupe plusieurs lignes d'écriture qui font partie du même paiement
+   * VRPlatform (ex: une intervention facturée sur plusieurs réservations/
+   * listings à la fois) — utilisé pour rapprocher une facture fournisseur
+   * par montant total de paiement plutôt que ligne par ligne. */
+  transactionId?: string;
+  txnCode?: string;
 }
 interface VrPlatformExpenseJournalEntriesResponse {
   data: VrPlatformExpenseJournalEntry[];
@@ -405,6 +411,12 @@ export interface VendorExpenseEntry {
   accountName: string;
   description: string | null;
   cents: number;
+  /** ID du paiement VRPlatform (transaction) regroupant cette ligne avec
+   * d'autres éventuelles lignes du même paiement (sur d'autres biens/
+   * réservations) — permet de rapprocher une facture par montant total de
+   * paiement plutôt que ligne par ligne. */
+  transactionId: string | null;
+  txnCode: string | null;
 }
 
 /** Repère, sur le portefeuille entier, toutes les écritures de dépense
@@ -439,6 +451,8 @@ export async function getPortfolioExpenseEntriesByVendor(
             accountName: entry.account?.name ?? "Autre",
             description: entry.description ?? null,
             cents: entry.centTotal,
+            transactionId: entry.transactionId ?? null,
+            txnCode: entry.txnCode ?? null,
           });
         }
       }

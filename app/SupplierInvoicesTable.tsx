@@ -30,6 +30,15 @@ interface MatchEntry {
   accountName: string;
   description: string | null;
   cents: number;
+  transactionId: string | null;
+  txnCode: string | null;
+}
+
+interface MatchResponse {
+  found: boolean;
+  matchedTotalCents: number;
+  matchedLines: MatchEntry[];
+  allEntries: MatchEntry[];
 }
 
 function Money({ cents }: { cents: number }) {
@@ -69,7 +78,7 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchError, setMatchError] = useState<string | null>(null);
-  const [matchResults, setMatchResults] = useState<MatchEntry[] | null>(null);
+  const [matchResult, setMatchResult] = useState<MatchResponse | null>(null);
 
   async function load() {
     setLoading(true);
@@ -220,14 +229,14 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
       return;
     }
     setExpandedMatchId(id);
-    setMatchResults(null);
+    setMatchResult(null);
     setMatchError(null);
     setMatchLoading(true);
     try {
       const res = await fetch(`/api/finance/invoices/${id}/match`);
       const data = await res.json();
       if (data.error) setMatchError(data.error);
-      else setMatchResults(data.matches);
+      else setMatchResult(data);
     } catch {
       setMatchError("Impossible de chercher les écritures VRPlatform.");
     } finally {
@@ -500,15 +509,17 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                         <td colSpan={9} className="px-3 py-2.5">
                           {matchLoading && <p className="text-[12px] text-[#6e6e73]">Recherche dans VRPlatform…</p>}
                           {matchError && <p className="text-[12px] text-red-600">{matchError}</p>}
-                          {matchResults && matchResults.length === 0 && !matchLoading && (
-                            <p className="text-[12px] text-[#6e6e73]">
-                              Aucune écriture trouvée pour « {inv.supplierName} » dans VRPlatform.
-                            </p>
-                          )}
-                          {matchResults && matchResults.length > 0 && !matchLoading && (
+                          {matchResult && !matchLoading && matchResult.found && (
                             <div className="space-y-1.5">
+                              <div className="flex items-center gap-2 text-[12px] font-semibold text-emerald-600">
+                                <span>✓</span>
+                                <span>
+                                  Paiement trouvé — <Money cents={matchResult.matchedTotalCents} /> ({matchResult.matchedLines.length}{" "}
+                                  ligne{matchResult.matchedLines.length !== 1 ? "s" : ""})
+                                </span>
+                              </div>
                               <div className="space-y-1">
-                                {matchResults.map((m, i) => (
+                                {matchResult.matchedLines.map((m, i) => (
                                   <div key={i} className="flex items-center gap-2 text-[12px]">
                                     <span className="text-[#1d1d1f]">{m.reference}</span>
                                     <span className="text-[#6e6e73]">{formatDate(m.date)}</span>
@@ -520,29 +531,31 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                                   </div>
                                 ))}
                               </div>
-                              {(() => {
-                                const totalMatchedCents = matchResults.reduce((sum, m) => sum + m.cents, 0);
-                                const diffCents = totalMatchedCents - inv.amountCents;
-                                const isReconciled = Math.abs(diffCents) < 100;
-                                return (
-                                  <div
-                                    className={`flex items-center gap-2 border-t border-black/10 pt-1.5 text-[12px] font-semibold ${
-                                      isReconciled ? "text-emerald-600" : "text-amber-600"
-                                    }`}
-                                  >
-                                    <span>{isReconciled ? "✓" : "≈"}</span>
-                                    <span>
-                                      Total rapproché <Money cents={totalMatchedCents} /> vs facture <Money cents={inv.amountCents} />
-                                    </span>
-                                    {!isReconciled && (
-                                      <span className="font-normal text-[#86868b]">
-                                        (écart {diffCents > 0 ? "+" : ""}
-                                        <Money cents={diffCents} />)
+                            </div>
+                          )}
+                          {matchResult && !matchLoading && !matchResult.found && (
+                            <div className="space-y-1.5">
+                              <p className="text-[12px] font-semibold text-amber-600">
+                                ≈ Aucun paiement de <Money cents={inv.amountCents} /> trouvé pour « {inv.supplierName} » dans VRPlatform
+                                {matchResult.allEntries.length > 0
+                                  ? " — lignes correspondant au fournisseur, pour vérification manuelle :"
+                                  : "."}
+                              </p>
+                              {matchResult.allEntries.length > 0 && (
+                                <div className="space-y-1">
+                                  {matchResult.allEntries.map((m, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-[12px]">
+                                      <span className="text-[#1d1d1f]">{m.reference}</span>
+                                      <span className="text-[#6e6e73]">{formatDate(m.date)}</span>
+                                      <span className="text-[#6e6e73]">{m.accountName}</span>
+                                      <span className="font-medium text-[#1d1d1f]">
+                                        <Money cents={m.cents} />
                                       </span>
-                                    )}
-                                  </div>
-                                );
-                              })()}
+                                      {m.description && <span className="text-[#86868b]">— {m.description}</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           )}
                         </td>

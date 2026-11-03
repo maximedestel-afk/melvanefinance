@@ -6,13 +6,17 @@ import { getPortfolioExpenseEntriesByVendor, isVrPlatformConfigured } from "@/li
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Cherche, dans les écritures de dépense VRPlatform (comptes
- * EXPENSE_ACCOUNT_IDS — Housekeeping, Maintenance, Supplies...), les lignes
- * dont la description contient le nom du fournisseur de cette facture —
- * même mécanique que /api/admin/vendor-expenses, mais ciblée sur UNE
- * facture : son bien si renseigné, sinon tout le portefeuille, sur l'année
- * de la facture (les écritures peuvent être postées un peu après la date
- * de facture). */
+// Tolérance pour considérer deux montants comme égaux (arrondis éventuels).
+const MATCH_TOLERANCE_CENTS = 1;
+
+/** Cherche, parmi les écritures de dépense VRPlatform (comptes
+ * EXPENSE_ACCOUNT_IDS) dont la description contient le fournisseur de cette
+ * facture, LE PAIEMENT (regroupement par transactionId — une même
+ * transaction VRPlatform peut avoir plusieurs lignes, ex: une intervention
+ * facturée sur plusieurs réservations/biens à la fois) dont le total
+ * correspond exactement au montant payé. Recherche sur tout le portefeuille
+ * (un paiement peut couvrir plusieurs biens), jamais limitée au bien de la
+ * facture. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -25,7 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const supabase = createAdminClient();
   const { data: invoice, error: fetchError } = await supabase
     .from("supplier_invoices")
-    .select("supplier_name, amount_cents, invoice_date, property_id")
+    .select("supplier_name, amount_cents, invoice_date")
     .eq("id", id)
     .maybeSingle();
   if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
@@ -36,10 +40,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   try {
     const allProperties = await listPropertiesForFinance();
-    const properties = invoice.property_id ? allProperties.filter((p) => p.id === invoice.property_id) : allProperties;
 
-    const matches = await getPortfolioExpenseEntriesByVendor(
-      properties.map((p) => ({
+    const entries = await getPortfolioExpenseEntriesByVendor(
+      allProperties.map((p) => ({
         propertyId: p.id,
         reference: p.reference,
         name: p.name,
@@ -53,8 +56,37 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       invoice.supplier_name
     );
 
+    // Regroupe par paiement VRPlatform (transactionId) — une ligne sans
+    // transactionId reste un paiement à elle seule.
+    const groups = new Map<string, typeof entries>();
+    entries.forEach((entry, i) => {
+      const key = entry.transactionId ?? `__solo-${i}`;
+      const group = groups.get(key);
+      if (group) group.push(entry);
+      else groups.set(key, [entry]);
+    });
+
+    let matchedLines: typeof entries = [];
+    let matchedTotalCents = 0;
+    let found = false;
+    for (const group of groups.values()) {
+      const total = group.reduce((sum, e) => sum + e.cents, 0);
+      if (Math.abs(total - invoice.amount_cents) <= MATCH_TOLERANCE_CENTS) {
+        matchedLines = group;
+        matchedTotalCents = total;
+        found = true;
+        break;
+      }
+    }
+
     return NextResponse.json(
-      { invoiceAmountCents: invoice.amount_cents, matches },
+      {
+        invoiceAmountCents: invoice.amount_cents,
+        found,
+        matchedTotalCents,
+        matchedLines,
+        allEntries: entries,
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
