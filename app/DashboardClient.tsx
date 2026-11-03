@@ -14,6 +14,7 @@ import { PropertyBailTable } from "./PropertyBailTable";
 import { PropertyPaymentsTable } from "./PropertyPaymentsTable";
 import { CsvConverterTable } from "./CsvConverterTable";
 import { CommSharingTable } from "./CommSharingTable";
+import { SupplierInvoicesTable } from "./SupplierInvoicesTable";
 import type { RentType } from "@/lib/types";
 
 type Tab =
@@ -29,7 +30,8 @@ type Tab =
   | "bail"
   | "payments"
   | "csv-converter"
-  | "comm-sharing";
+  | "comm-sharing"
+  | "invoices";
 
 export function DashboardClient({
   properties,
@@ -184,6 +186,15 @@ export function DashboardClient({
         >
           ECI
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("invoices")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "invoices" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Factures
+        </button>
       </div>
       </div>
 
@@ -254,6 +265,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "comm-sharing" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">ECI</h2>
         <CommSharingTable properties={properties} />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "invoices" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Factures</h2>
+        <SupplierInvoicesTable properties={properties} />
       </section>
     </div>
   );
