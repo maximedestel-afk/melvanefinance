@@ -506,14 +506,10 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                             </p>
                           )}
                           {matchResults && matchResults.length > 0 && !matchLoading && (
-                            <div className="space-y-1">
-                              {matchResults.map((m, i) => {
-                                const isCloseMatch = Math.abs(m.cents - inv.amountCents) < 100;
-                                return (
+                            <div className="space-y-1.5">
+                              <div className="space-y-1">
+                                {matchResults.map((m, i) => (
                                   <div key={i} className="flex items-center gap-2 text-[12px]">
-                                    <span className={isCloseMatch ? "text-emerald-600" : "text-amber-600"}>
-                                      {isCloseMatch ? "✓" : "≈"}
-                                    </span>
                                     <span className="text-[#1d1d1f]">{m.reference}</span>
                                     <span className="text-[#6e6e73]">{formatDate(m.date)}</span>
                                     <span className="text-[#6e6e73]">{m.accountName}</span>
@@ -522,8 +518,31 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                                     </span>
                                     {m.description && <span className="text-[#86868b]">— {m.description}</span>}
                                   </div>
+                                ))}
+                              </div>
+                              {(() => {
+                                const totalMatchedCents = matchResults.reduce((sum, m) => sum + m.cents, 0);
+                                const diffCents = totalMatchedCents - inv.amountCents;
+                                const isReconciled = Math.abs(diffCents) < 100;
+                                return (
+                                  <div
+                                    className={`flex items-center gap-2 border-t border-black/10 pt-1.5 text-[12px] font-semibold ${
+                                      isReconciled ? "text-emerald-600" : "text-amber-600"
+                                    }`}
+                                  >
+                                    <span>{isReconciled ? "✓" : "≈"}</span>
+                                    <span>
+                                      Total rapproché <Money cents={totalMatchedCents} /> vs facture <Money cents={inv.amountCents} />
+                                    </span>
+                                    {!isReconciled && (
+                                      <span className="font-normal text-[#86868b]">
+                                        (écart {diffCents > 0 ? "+" : ""}
+                                        <Money cents={diffCents} />)
+                                      </span>
+                                    )}
+                                  </div>
                                 );
-                              })}
+                              })()}
                             </div>
                           )}
                         </td>
