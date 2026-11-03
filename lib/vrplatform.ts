@@ -465,6 +465,97 @@ export async function getPortfolioExpenseEntriesByVendor(
   return perProperty.flat().sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference));
 }
 
+interface VrPlatformTransactionListItem {
+  id: string;
+  description: string | null;
+  date: string;
+  amount: number;
+  contact: { name: string | null } | null;
+  payment: { status: string; date?: string } | null;
+}
+interface VrPlatformTransactionsListResponse {
+  data: VrPlatformTransactionListItem[];
+  pagination: { page: number; totalPage: number };
+}
+
+interface VrPlatformTransactionLineDetail {
+  description: string | null;
+  amount: number;
+  listing: { name: string } | null;
+  reservation: { confirmationCode: string | null; checkIn: string | null; checkOut: string | null } | null;
+  account: { name: string } | null;
+}
+interface VrPlatformTransactionDetailResponse {
+  id: string;
+  description: string | null;
+  date: string;
+  amount: number;
+  contact: { name: string | null } | null;
+  payment: { status: string; date?: string } | null;
+  lines: VrPlatformTransactionLineDetail[];
+}
+
+export interface VrPlatformTransactionMatch {
+  id: string;
+  description: string | null;
+  date: string;
+  amountCents: number;
+  contactName: string | null;
+  paymentStatus: string | null;
+  paymentDate: string | null;
+  lines: {
+    description: string | null;
+    amountCents: number;
+    listingName: string | null;
+    accountName: string | null;
+  }[];
+}
+
+/** Cherche, dans les vraies "transactions" VRPlatform (le paiement bancaire
+ * complet — pas les lignes comptables par compte de /reports/journal-entries)
+ * de type "expense", celles dont le montant total correspond exactement au
+ * montant payé — l'API supporte un filtre `amount` natif (confirmé par
+ * diagnostic : ?type=expense&amount=-15000 renvoie uniquement les
+ * transactions de -150,00€). Plusieurs transactions peuvent partager le même
+ * montant (coïncidence) : toutes sont renvoyées, avec leur détail (lignes,
+ * fournisseur, statut de paiement) pour que l'utilisateur confirme laquelle
+ * correspond. */
+export async function findExpenseTransactionsByAmount(amountCents: number): Promise<VrPlatformTransactionMatch[]> {
+  const summaries: VrPlatformTransactionListItem[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
+      type: "expense",
+      amount: String(-Math.abs(amountCents)),
+      limit: "50",
+      page: String(page),
+    });
+    summaries.push(...res.data);
+    if (page >= res.pagination.totalPage || summaries.length >= 20) break;
+    page++;
+  }
+
+  const details = await Promise.all(
+    summaries.map((s) => vrPlatformFetch<VrPlatformTransactionDetailResponse>(`/transactions/${s.id}`, {}))
+  );
+
+  return details.map((t) => ({
+    id: t.id,
+    description: t.description,
+    date: t.date,
+    amountCents: t.amount,
+    contactName: t.contact?.name ?? null,
+    paymentStatus: t.payment?.status ?? null,
+    paymentDate: t.payment?.date ?? null,
+    lines: t.lines.map((l) => ({
+      description: l.description,
+      amountCents: l.amount,
+      listingName: l.listing?.name ?? null,
+      accountName: l.account?.name ?? null,
+    })),
+  }));
+}
+
 interface VrPlatformReservationDetailed {
   id: string;
   checkIn: string | null;

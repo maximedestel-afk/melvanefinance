@@ -23,22 +23,26 @@ interface Invoice {
   createdAt: string;
 }
 
-interface MatchEntry {
-  propertyId: string;
-  reference: string;
-  date: string;
-  accountName: string;
+interface MatchLine {
   description: string | null;
-  cents: number;
-  transactionId: string | null;
-  txnCode: string | null;
+  amountCents: number;
+  listingName: string | null;
+  accountName: string | null;
+}
+
+interface MatchTransaction {
+  id: string;
+  description: string | null;
+  date: string;
+  amountCents: number;
+  contactName: string | null;
+  paymentStatus: string | null;
+  paymentDate: string | null;
+  lines: MatchLine[];
 }
 
 interface MatchResponse {
-  found: boolean;
-  matchedTotalCents: number;
-  matchedLines: MatchEntry[];
-  allEntries: MatchEntry[];
+  matches: MatchTransaction[];
 }
 
 function Money({ cents }: { cents: number }) {
@@ -509,53 +513,55 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                         <td colSpan={9} className="px-3 py-2.5">
                           {matchLoading && <p className="text-[12px] text-[#6e6e73]">Recherche dans VRPlatform…</p>}
                           {matchError && <p className="text-[12px] text-red-600">{matchError}</p>}
-                          {matchResult && !matchLoading && matchResult.found && (
-                            <div className="space-y-1.5">
-                              <div className="flex items-center gap-2 text-[12px] font-semibold text-emerald-600">
-                                <span>✓</span>
-                                <span>
-                                  Paiement trouvé — <Money cents={matchResult.matchedTotalCents} /> ({matchResult.matchedLines.length}{" "}
-                                  ligne{matchResult.matchedLines.length !== 1 ? "s" : ""})
-                                </span>
-                              </div>
-                              <div className="space-y-1">
-                                {matchResult.matchedLines.map((m, i) => (
-                                  <div key={i} className="flex items-center gap-2 text-[12px]">
-                                    <span className="text-[#1d1d1f]">{m.reference}</span>
-                                    <span className="text-[#6e6e73]">{formatDate(m.date)}</span>
-                                    <span className="text-[#6e6e73]">{m.accountName}</span>
-                                    <span className="font-medium text-[#1d1d1f]">
-                                      <Money cents={m.cents} />
-                                    </span>
-                                    {m.description && <span className="text-[#86868b]">— {m.description}</span>}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
+                          {matchResult && !matchLoading && matchResult.matches.length === 0 && (
+                            <p className="text-[12px] text-[#6e6e73]">
+                              Aucune transaction VRPlatform de <Money cents={inv.amountCents} /> trouvée.
+                            </p>
                           )}
-                          {matchResult && !matchLoading && !matchResult.found && (
-                            <div className="space-y-1.5">
-                              <p className="text-[12px] font-semibold text-amber-600">
-                                ≈ Aucun paiement de <Money cents={inv.amountCents} /> trouvé pour « {inv.supplierName} » dans VRPlatform
-                                {matchResult.allEntries.length > 0
-                                  ? " — lignes correspondant au fournisseur, pour vérification manuelle :"
-                                  : "."}
-                              </p>
-                              {matchResult.allEntries.length > 0 && (
-                                <div className="space-y-1">
-                                  {matchResult.allEntries.map((m, i) => (
-                                    <div key={i} className="flex items-center gap-2 text-[12px]">
-                                      <span className="text-[#1d1d1f]">{m.reference}</span>
-                                      <span className="text-[#6e6e73]">{formatDate(m.date)}</span>
-                                      <span className="text-[#6e6e73]">{m.accountName}</span>
+                          {matchResult && !matchLoading && matchResult.matches.length > 0 && (
+                            <div className="space-y-3">
+                              {matchResult.matches.map((tx) => {
+                                const needle = inv.supplierName.trim().toLowerCase();
+                                const contactLower = (tx.contactName ?? "").toLowerCase();
+                                const isLikely = needle !== "" && (contactLower.includes(needle) || needle.includes(contactLower));
+                                return (
+                                  <div
+                                    key={tx.id}
+                                    className={`rounded-[8px] border p-2 ${isLikely ? "border-emerald-300 bg-emerald-50/50" : "border-black/10 bg-white"}`}
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                                      {isLikely && <span className="text-emerald-600">✓</span>}
+                                      <span className="font-semibold text-[#1d1d1f]">{tx.contactName ?? "Fournisseur inconnu"}</span>
+                                      <span className="text-[#6e6e73]">{formatDate(tx.date)}</span>
                                       <span className="font-medium text-[#1d1d1f]">
-                                        <Money cents={m.cents} />
+                                        <Money cents={Math.abs(tx.amountCents)} />
                                       </span>
-                                      {m.description && <span className="text-[#86868b]">— {m.description}</span>}
+                                      <span
+                                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                          tx.paymentStatus === "paid" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+                                        }`}
+                                      >
+                                        {tx.paymentStatus === "paid" ? `Payé${tx.paymentDate ? ` le ${formatDate(tx.paymentDate)}` : ""}` : "Non payé"}
+                                      </span>
+                                      {tx.description && <span className="text-[#86868b]">— {tx.description}</span>}
                                     </div>
-                                  ))}
-                                </div>
-                              )}
+                                    {tx.lines.length > 0 && (
+                                      <div className="mt-1 space-y-0.5 pl-4">
+                                        {tx.lines.map((l, i) => (
+                                          <div key={i} className="flex items-center gap-2 text-[11px] text-[#6e6e73]">
+                                            <span>{l.listingName ?? "—"}</span>
+                                            <span>{l.accountName}</span>
+                                            <span className="font-medium text-[#1d1d1f]">
+                                              <Money cents={Math.abs(l.amountCents)} />
+                                            </span>
+                                            {l.description && <span>— {l.description}</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </td>
