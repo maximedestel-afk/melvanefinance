@@ -42,6 +42,7 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
 
   const [file, setFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
   const [supplierName, setSupplierName] = useState("");
@@ -215,16 +216,42 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
         <span className="field-label">Nouvelle facture</span>
 
         <div>
-          <label className="text-[12px] text-[#6e6e73]" htmlFor="invoice-file">
-            Fichier (PDF, photo)
-          </label>
+          <span className="text-[12px] text-[#6e6e73]">Fichier (PDF, photo)</span>
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click();
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(true);
+            }}
+            onDragLeave={() => setIsDraggingOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDraggingOver(false);
+              const dropped = e.dataTransfer.files?.[0];
+              if (dropped) onFileChange(dropped);
+            }}
+            className={`mt-0.5 flex cursor-pointer items-center justify-center rounded-[10px] border-2 border-dashed px-4 py-5 text-center text-[13px] transition ${
+              isDraggingOver ? "border-[#0071e3] bg-[#0071e3]/5 text-[#0071e3]" : "border-black/15 text-[#6e6e73] hover:border-black/25"
+            }`}
+          >
+            {file ? (
+              <span className="text-[#1d1d1f]">📄 {file.name}</span>
+            ) : (
+              <span>Glisse une facture ici, ou clique pour en choisir une</span>
+            )}
+          </div>
           <input
             id="invoice-file"
             ref={fileInputRef}
             type="file"
             accept="application/pdf,image/png,image/jpeg,image/webp"
             onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-            className="mt-0.5 block text-[13px] text-[#1d1d1f]"
+            className="hidden"
           />
         </div>
 
