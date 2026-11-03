@@ -511,36 +511,25 @@ export interface VrPlatformTransactionMatch {
   }[];
 }
 
-/** Cherche, dans les vraies "transactions" VRPlatform (le paiement bancaire
- * complet — pas les lignes comptables par compte de /reports/journal-entries),
- * celles dont le montant total correspond exactement au montant payé —
- * l'API supporte un filtre `amount` natif (confirmé par diagnostic :
- * ?amount=-15000 renvoie uniquement les transactions de -150,00€). Pas de
- * filtre `type` : un paiement fournisseur peut être enregistré en "expense"
- * ou en "payout" selon comment il a été saisi côté VRPlatform, et un montant
- * négatif exclut déjà naturellement les dépôts (toujours positifs). Plusieurs
- * transactions peuvent partager le même montant (coïncidence) : toutes sont
- * renvoyées, avec leur détail (lignes, fournisseur, statut de paiement) pour
- * que l'utilisateur confirme laquelle correspond. */
-export async function findExpenseTransactionsByAmount(amountCents: number): Promise<VrPlatformTransactionMatch[]> {
-  const summaries: VrPlatformTransactionListItem[] = [];
-  let page = 1;
-  for (;;) {
-    const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
-      amount: String(-Math.abs(amountCents)),
-      limit: "50",
-      page: String(page),
-    });
-    summaries.push(...res.data);
-    if (page >= res.pagination.totalPage || summaries.length >= 20) break;
-    page++;
-  }
+interface VrPlatformContact {
+  id: string;
+  name: string | null;
+}
+interface VrPlatformContactsResponse {
+  data: VrPlatformContact[];
+}
 
-  const details = await Promise.all(
-    summaries.map((s) => vrPlatformFetch<VrPlatformTransactionDetailResponse>(`/transactions/${s.id}`, {}))
-  );
+/** Cherche le contact VRPlatform (fournisseur) correspondant à un nom —
+ * l'API expose /contacts?search=... (confirmé via l'OpenAPI spec). Renvoie
+ * le premier résultat, ou null si aucun contact ne correspond. */
+async function findContactId(supplierName: string): Promise<string | null> {
+  const res = await vrPlatformFetch<VrPlatformContactsResponse>("/contacts", { search: supplierName, limit: "5" });
+  return res.data[0]?.id ?? null;
+}
 
-  return details.map((t) => ({
+async function toTransactionMatch(summary: VrPlatformTransactionListItem): Promise<VrPlatformTransactionMatch> {
+  const t = await vrPlatformFetch<VrPlatformTransactionDetailResponse>(`/transactions/${summary.id}`, {});
+  return {
     id: t.id,
     description: t.description,
     date: t.date,
@@ -554,7 +543,67 @@ export async function findExpenseTransactionsByAmount(amountCents: number): Prom
       listingName: l.listing?.name ?? null,
       accountName: l.account?.name ?? null,
     })),
-  }));
+  };
+}
+
+export interface VrPlatformReconciliationResult {
+  /** Transactions du fournisseur dont le montant correspond exactement à la
+   * facture (±1 centime). */
+  exactMatches: VrPlatformTransactionMatch[];
+  /** Si aucune correspondance exacte : les transactions du même fournisseur
+   * dont le montant est le plus proche de la facture, pour vérification
+   * manuelle (l'API VRPlatform n'offre pas de recherche "montant proche"
+   * côté serveur — seulement un filtre `amount` exact, confirmé par
+   * l'OpenAPI spec). Vide si aucun contact VRPlatform ne correspond au nom
+   * du fournisseur. */
+  closestCandidates: VrPlatformTransactionMatch[];
+}
+
+/** Rapproche une facture fournisseur avec les vraies "transactions"
+ * VRPlatform (le paiement bancaire complet — pas les lignes comptables par
+ * compte de /reports/journal-entries) : cherche d'abord le contact
+ * correspondant au nom du fournisseur (/contacts?search=...), puis, parmi
+ * SES transactions, celle dont le montant correspond exactement à la
+ * facture. Si rien ne correspond exactement, renvoie les transactions de ce
+ * fournisseur les plus proches en montant (jusqu'à 300 transactions
+ * scannées) plutôt qu'un simple "rien trouvé". */
+export async function reconcileInvoiceWithVrPlatform(
+  supplierName: string,
+  amountCents: number
+): Promise<VrPlatformReconciliationResult> {
+  const contactId = await findContactId(supplierName);
+  if (!contactId) return { exactMatches: [], closestCandidates: [] };
+
+  const exactRes = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
+    contactId,
+    amount: String(-Math.abs(amountCents)),
+    limit: "20",
+  });
+  if (exactRes.data.length > 0) {
+    const matches = await Promise.all(exactRes.data.map(toTransactionMatch));
+    return { exactMatches: matches, closestCandidates: [] };
+  }
+
+  const summaries: VrPlatformTransactionListItem[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
+      contactId,
+      limit: "100",
+      page: String(page),
+    });
+    summaries.push(...res.data);
+    if (page >= res.pagination.totalPage || summaries.length >= 300) break;
+    page++;
+  }
+
+  const closest = summaries
+    .slice()
+    .sort((a, b) => Math.abs(Math.abs(a.amount) - amountCents) - Math.abs(Math.abs(b.amount) - amountCents))
+    .slice(0, 5);
+  const closestCandidates = await Promise.all(closest.map(toTransactionMatch));
+
+  return { exactMatches: [], closestCandidates };
 }
 
 interface VrPlatformReservationDetailed {

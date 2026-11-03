@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findExpenseTransactionsByAmount, isVrPlatformConfigured } from "@/lib/vrplatform";
+import { isVrPlatformConfigured, reconcileInvoiceWithVrPlatform } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Cherche, dans les transactions bancaires VRPlatform (ressource
- * /transactions, pas les lignes comptables de /reports/journal-entries),
- * celles dont le montant correspond exactement au montant de la facture —
- * l'API VRPlatform supporte un filtre `amount` natif sur /transactions.
- * Peut renvoyer plusieurs candidats (même montant par coïncidence) ;
- * l'utilisateur confirme visuellement lequel correspond (fournisseur, date,
- * lignes). */
+/** Rapproche une facture avec les vraies transactions bancaires VRPlatform
+ * (ressource /transactions, pas les lignes comptables de
+ * /reports/journal-entries) : trouve le contact fournisseur
+ * (/contacts?search=...), puis cherche parmi ses transactions celle au
+ * montant exact. Sans correspondance exacte, renvoie les transactions de ce
+ * fournisseur les plus proches en montant pour vérification manuelle. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -32,9 +31,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!invoice) return NextResponse.json({ error: "Facture introuvable." }, { status: 404 });
 
   try {
-    const matches = await findExpenseTransactionsByAmount(invoice.amount_cents);
+    const result = await reconcileInvoiceWithVrPlatform(invoice.supplier_name, invoice.amount_cents);
     return NextResponse.json(
-      { invoiceAmountCents: invoice.amount_cents, supplierName: invoice.supplier_name, matches },
+      { invoiceAmountCents: invoice.amount_cents, supplierName: invoice.supplier_name, ...result },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {

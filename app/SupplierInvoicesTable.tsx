@@ -42,7 +42,8 @@ interface MatchTransaction {
 }
 
 interface MatchResponse {
-  matches: MatchTransaction[];
+  exactMatches: MatchTransaction[];
+  closestCandidates: MatchTransaction[];
 }
 
 function Money({ cents }: { cents: number }) {
@@ -54,6 +55,42 @@ function formatDate(iso: string | null): string {
   const d = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function TransactionCard({ tx, highlight }: { tx: MatchTransaction; highlight: boolean }) {
+  return (
+    <div className={`rounded-[8px] border p-2 ${highlight ? "border-emerald-300 bg-emerald-50/50" : "border-black/10 bg-white"}`}>
+      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+        <span className="font-semibold text-[#1d1d1f]">{tx.contactName ?? "Fournisseur inconnu"}</span>
+        <span className="text-[#6e6e73]">{formatDate(tx.date)}</span>
+        <span className="font-medium text-[#1d1d1f]">
+          <Money cents={Math.abs(tx.amountCents)} />
+        </span>
+        <span
+          className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+            tx.paymentStatus === "paid" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
+          }`}
+        >
+          {tx.paymentStatus === "paid" ? `Payé${tx.paymentDate ? ` le ${formatDate(tx.paymentDate)}` : ""}` : "Non payé"}
+        </span>
+        {tx.description && <span className="text-[#86868b]">— {tx.description}</span>}
+      </div>
+      {tx.lines.length > 0 && (
+        <div className="mt-1 space-y-0.5 pl-4">
+          {tx.lines.map((l, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px] text-[#6e6e73]">
+              <span>{l.listingName ?? "—"}</span>
+              <span>{l.accountName}</span>
+              <span className="font-medium text-[#1d1d1f]">
+                <Money cents={Math.abs(l.amountCents)} />
+              </span>
+              {l.description && <span>— {l.description}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SupplierInvoicesTable({ properties }: { properties: PropertyOption[] }) {
@@ -513,55 +550,31 @@ export function SupplierInvoicesTable({ properties }: { properties: PropertyOpti
                         <td colSpan={9} className="px-3 py-2.5">
                           {matchLoading && <p className="text-[12px] text-[#6e6e73]">Recherche dans VRPlatform…</p>}
                           {matchError && <p className="text-[12px] text-red-600">{matchError}</p>}
-                          {matchResult && !matchLoading && matchResult.matches.length === 0 && (
+                          {matchResult && !matchLoading && matchResult.exactMatches.length > 0 && (
+                            <div className="space-y-3">
+                              <p className="text-[12px] font-semibold text-emerald-600">
+                                ✓ Paiement{matchResult.exactMatches.length !== 1 ? "s" : ""} trouvé{matchResult.exactMatches.length !== 1 ? "s" : ""} au
+                                montant exact
+                              </p>
+                              {matchResult.exactMatches.map((tx) => (
+                                <TransactionCard key={tx.id} tx={tx} highlight />
+                              ))}
+                            </div>
+                          )}
+                          {matchResult && !matchLoading && matchResult.exactMatches.length === 0 && matchResult.closestCandidates.length === 0 && (
                             <p className="text-[12px] text-[#6e6e73]">
-                              Aucune transaction VRPlatform de <Money cents={inv.amountCents} /> trouvée.
+                              Aucune transaction VRPlatform trouvée pour « {inv.supplierName} » (aucun contact correspondant).
                             </p>
                           )}
-                          {matchResult && !matchLoading && matchResult.matches.length > 0 && (
+                          {matchResult && !matchLoading && matchResult.exactMatches.length === 0 && matchResult.closestCandidates.length > 0 && (
                             <div className="space-y-3">
-                              {matchResult.matches.map((tx) => {
-                                const needle = inv.supplierName.trim().toLowerCase();
-                                const contactLower = (tx.contactName ?? "").toLowerCase();
-                                const isLikely = needle !== "" && (contactLower.includes(needle) || needle.includes(contactLower));
-                                return (
-                                  <div
-                                    key={tx.id}
-                                    className={`rounded-[8px] border p-2 ${isLikely ? "border-emerald-300 bg-emerald-50/50" : "border-black/10 bg-white"}`}
-                                  >
-                                    <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                                      {isLikely && <span className="text-emerald-600">✓</span>}
-                                      <span className="font-semibold text-[#1d1d1f]">{tx.contactName ?? "Fournisseur inconnu"}</span>
-                                      <span className="text-[#6e6e73]">{formatDate(tx.date)}</span>
-                                      <span className="font-medium text-[#1d1d1f]">
-                                        <Money cents={Math.abs(tx.amountCents)} />
-                                      </span>
-                                      <span
-                                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                          tx.paymentStatus === "paid" ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"
-                                        }`}
-                                      >
-                                        {tx.paymentStatus === "paid" ? `Payé${tx.paymentDate ? ` le ${formatDate(tx.paymentDate)}` : ""}` : "Non payé"}
-                                      </span>
-                                      {tx.description && <span className="text-[#86868b]">— {tx.description}</span>}
-                                    </div>
-                                    {tx.lines.length > 0 && (
-                                      <div className="mt-1 space-y-0.5 pl-4">
-                                        {tx.lines.map((l, i) => (
-                                          <div key={i} className="flex items-center gap-2 text-[11px] text-[#6e6e73]">
-                                            <span>{l.listingName ?? "—"}</span>
-                                            <span>{l.accountName}</span>
-                                            <span className="font-medium text-[#1d1d1f]">
-                                              <Money cents={Math.abs(l.amountCents)} />
-                                            </span>
-                                            {l.description && <span>— {l.description}</span>}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                              <p className="text-[12px] font-semibold text-amber-600">
+                                ≈ Aucun paiement de <Money cents={inv.amountCents} /> trouvé — transactions de « {inv.supplierName} » les plus
+                                proches en montant :
+                              </p>
+                              {matchResult.closestCandidates.map((tx) => (
+                                <TransactionCard key={tx.id} tx={tx} highlight={false} />
+                              ))}
                             </div>
                           )}
                         </td>
