@@ -9,14 +9,15 @@ export const maxDuration = 60;
 // Tolérance pour considérer deux montants comme égaux (arrondis éventuels).
 const MATCH_TOLERANCE_CENTS = 1;
 
-/** Cherche, parmi les écritures de dépense VRPlatform (comptes
- * EXPENSE_ACCOUNT_IDS) dont la description contient le fournisseur de cette
- * facture, LE PAIEMENT (regroupement par transactionId — une même
- * transaction VRPlatform peut avoir plusieurs lignes, ex: une intervention
- * facturée sur plusieurs réservations/biens à la fois) dont le total
- * correspond exactement au montant payé. Recherche sur tout le portefeuille
- * (un paiement peut couvrir plusieurs biens), jamais limitée au bien de la
- * facture. */
+/** Cherche, parmi TOUTES les écritures de dépense VRPlatform (comptes
+ * EXPENSE_ACCOUNT_IDS, tout le portefeuille, sans filtrer par fournisseur —
+ * le texte de la description ne contient pas toujours fidèlement son nom),
+ * LE PAIEMENT (regroupement par transactionId — une même transaction
+ * VRPlatform peut avoir plusieurs lignes, ex: une intervention facturée sur
+ * plusieurs réservations/biens à la fois) dont le total correspond
+ * exactement au montant payé. Si aucun paiement exact n'est trouvé, renvoie
+ * en secours les lignes dont la description contient le nom du fournisseur,
+ * pour vérification manuelle. */
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -52,8 +53,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
         extraVrplatformReferences: p.extraVrplatformReferences,
       })),
       year,
-      allMonths,
-      invoice.supplier_name
+      allMonths
+      // Pas de filtre fournisseur ici — on cherche par montant de paiement,
+      // pas par texte de description (voir commentaire plus haut).
     );
 
     // Regroupe par paiement VRPlatform (transactionId) — une ligne sans
@@ -79,13 +81,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       }
     }
 
+    const needle = invoice.supplier_name.trim().toLowerCase();
+    const vendorFilteredEntries = found ? [] : entries.filter((e) => (e.description ?? "").toLowerCase().includes(needle));
+
     return NextResponse.json(
       {
         invoiceAmountCents: invoice.amount_cents,
         found,
         matchedTotalCents,
         matchedLines,
-        allEntries: entries,
+        allEntries: vendorFilteredEntries,
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );

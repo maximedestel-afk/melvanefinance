@@ -423,16 +423,18 @@ export interface VendorExpenseEntry {
  * (comptes EXPENSE_ACCOUNT_IDS) dont la description correspond (sous-chaîne,
  * insensible à la casse) à un prestataire donné — ex: toutes les factures
  * "Sweepit" sur un mois. Un seul appel /listings partagé entre tous les
- * biens, comme getPortfolioReservationDetails. */
+ * biens, comme getPortfolioReservationDetails. `vendorQuery` vide/omis ne
+ * filtre pas par description (utilisé pour rapprocher par montant de
+ * paiement, sans dépendre du texte exact du fournisseur dans VRPlatform). */
 export async function getPortfolioExpenseEntriesByVendor(
   properties: PortfolioProperty[],
   year: number,
   months: number[],
-  vendorQuery: string
+  vendorQuery?: string
 ): Promise<VendorExpenseEntry[]> {
   const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
-  const needle = vendorQuery.trim().toLowerCase();
+  const needle = (vendorQuery ?? "").trim().toLowerCase();
 
   const perProperty = await Promise.all(
     properties.map(async (property) => {
@@ -443,7 +445,7 @@ export async function getPortfolioExpenseEntriesByVendor(
         for (const entry of await getListingExpenseEntries(listingId, String(year))) {
           const month = Number(entry.txnAt.slice(5, 7));
           if (!months.includes(month)) continue;
-          if (!(entry.description ?? "").toLowerCase().includes(needle)) continue;
+          if (needle !== "" && !(entry.description ?? "").toLowerCase().includes(needle)) continue;
           rows.push({
             propertyId: property.propertyId,
             reference: property.reference,
