@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isVrPlatformConfigured } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// TEMPORAIRE — diagnostic pour voir si VRPlatform expose les "transactions"
-// (le paiement bancaire réel, parent des lignes /reports/journal-entries)
-// comme ressource à part, et sous quelle forme (GET /transactions/{id},
-// GET /transactions?...). L'utilisateur veut rapprocher une facture avec le
-// PAIEMENT BANCAIRE, pas avec les lignes comptables par compte — on a déjà
-// vu "entityType":"transaction" et un "transactionId" sur chaque ligne
-// (voir /api/admin/journal-entry-fields-check), donc l'objet transaction
-// existe forcément quelque part côté VRPlatform.
+// TEMPORAIRE — diagnostic pour comprendre pourquoi findExpenseTransactionsByAmount
+// (lib/vrplatform.ts) ne retrouve pas un paiement dont l'utilisateur confirme
+// l'existence côté VRPlatform. Prend ?invoiceNumber=... (ou ?amountCents=...
+// directement), relit le montant exact stocké en base pour cette facture, et
+// teste plusieurs variantes de requête /transactions (signe, avec/sans type,
+// recherche élargie ±1€) pour voir laquelle retrouve le bon paiement.
 const API_BASE_URL = "https://api.vrplatform.app";
 
 async function vrPlatformFetchRaw(path: string, query: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
@@ -34,13 +33,34 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "VRPlatform n'est pas configuré sur ce déploiement." }, { status: 500 });
   }
 
-  const transactionId = new URL(request.url).searchParams.get("transactionId") ?? "39848b77-cb88-4985-b8b2-078318a7bf25";
+  const searchParams = new URL(request.url).searchParams;
+  const invoiceNumber = searchParams.get("invoiceNumber");
+  let amountCents = searchParams.get("amountCents") ? Number.parseInt(searchParams.get("amountCents") as string, 10) : null;
+  let invoiceRow: Record<string, unknown> | null = null;
+
+  if (invoiceNumber) {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("supplier_invoices")
+      .select("id, supplier_name, amount_cents, invoice_date, invoice_number")
+      .eq("invoice_number", invoiceNumber)
+      .maybeSingle();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: `Aucune facture avec invoice_number="${invoiceNumber}".` }, { status: 404 });
+    invoiceRow = data;
+    amountCents = data.amount_cents;
+  }
+
+  if (amountCents == null) {
+    return NextResponse.json({ error: "Paramètre 'invoiceNumber' ou 'amountCents' requis." }, { status: 400 });
+  }
 
   const attempts: Record<string, unknown> = {};
   const candidates: [string, string, Record<string, string>?][] = [
-    ["list_transactions_expense_type_dated", "/transactions", { limit: "5", type: "expense", date: "2026" }],
-    ["list_transactions_expense_type_date_field", "/transactions", { limit: "5", type: "expense", date: "2026", dateField: "txnAt" }],
-    ["list_transactions_expense_amount", "/transactions", { limit: "5", type: "expense", amount: "-15000" }],
+    ["amount_negative_no_type", "/transactions", { limit: "10", amount: String(-amountCents) }],
+    ["amount_positive_no_type", "/transactions", { limit: "10", amount: String(amountCents) }],
+    ["amount_negative_type_expense", "/transactions", { limit: "10", type: "expense", amount: String(-amountCents) }],
+    ["amount_negative_type_payout", "/transactions", { limit: "10", type: "payout", amount: String(-amountCents) }],
   ];
 
   for (const [key, path, query] of candidates) {
@@ -51,5 +71,8 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ transactionId, attempts }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  return NextResponse.json(
+    { invoiceRow, amountCents, attempts },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
