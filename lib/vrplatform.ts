@@ -512,20 +512,21 @@ export interface VrPlatformTransactionMatch {
 }
 
 /** Cherche, dans les vraies "transactions" VRPlatform (le paiement bancaire
- * complet — pas les lignes comptables par compte de /reports/journal-entries)
- * de type "expense", celles dont le montant total correspond exactement au
- * montant payé — l'API supporte un filtre `amount` natif (confirmé par
- * diagnostic : ?type=expense&amount=-15000 renvoie uniquement les
- * transactions de -150,00€). Plusieurs transactions peuvent partager le même
- * montant (coïncidence) : toutes sont renvoyées, avec leur détail (lignes,
- * fournisseur, statut de paiement) pour que l'utilisateur confirme laquelle
- * correspond. */
+ * complet — pas les lignes comptables par compte de /reports/journal-entries),
+ * celles dont le montant total correspond exactement au montant payé —
+ * l'API supporte un filtre `amount` natif (confirmé par diagnostic :
+ * ?amount=-15000 renvoie uniquement les transactions de -150,00€). Pas de
+ * filtre `type` : un paiement fournisseur peut être enregistré en "expense"
+ * ou en "payout" selon comment il a été saisi côté VRPlatform, et un montant
+ * négatif exclut déjà naturellement les dépôts (toujours positifs). Plusieurs
+ * transactions peuvent partager le même montant (coïncidence) : toutes sont
+ * renvoyées, avec leur détail (lignes, fournisseur, statut de paiement) pour
+ * que l'utilisateur confirme laquelle correspond. */
 export async function findExpenseTransactionsByAmount(amountCents: number): Promise<VrPlatformTransactionMatch[]> {
   const summaries: VrPlatformTransactionListItem[] = [];
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformTransactionsListResponse>("/transactions", {
-      type: "expense",
       amount: String(-Math.abs(amountCents)),
       limit: "50",
       page: String(page),
