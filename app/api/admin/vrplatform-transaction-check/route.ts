@@ -38,12 +38,9 @@ export async function GET(request: Request) {
 
   const attempts: Record<string, unknown> = {};
   const candidates: [string, string, Record<string, string>?][] = [
-    ["get_transaction_by_id", `/transactions/${transactionId}`],
-    ["list_transactions", "/transactions", { limit: "5" }],
-    ["list_transactions_expense_type", "/transactions", { limit: "5", type: "expense" }],
-    ["list_payments", "/payments", { limit: "5" }],
-    ["list_bills", "/bills", { limit: "5" }],
-    ["list_bank_transactions", "/bank-transactions", { limit: "5" }],
+    ["list_transactions_expense_type_dated", "/transactions", { limit: "5", type: "expense", date: "2026" }],
+    ["list_transactions_expense_type_date_field", "/transactions", { limit: "5", type: "expense", date: "2026", dateField: "txnAt" }],
+    ["list_transactions_expense_amount", "/transactions", { limit: "5", type: "expense", amount: "-15000" }],
   ];
 
   for (const [key, path, query] of candidates) {
