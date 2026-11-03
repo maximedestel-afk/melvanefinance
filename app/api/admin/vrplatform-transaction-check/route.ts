@@ -55,12 +55,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Paramètre 'invoiceNumber' ou 'amountCents' requis." }, { status: 400 });
   }
 
+  const sweepItContactId = "7e1bb3b4-788d-4aef-90b3-897ca74952cc";
   const attempts: Record<string, unknown> = {};
   const candidates: [string, string, Record<string, string>?][] = [
     ["amount_negative_no_type", "/transactions", { limit: "10", amount: String(-amountCents) }],
     ["amount_positive_no_type", "/transactions", { limit: "10", amount: String(amountCents) }],
     ["amount_negative_type_expense", "/transactions", { limit: "10", type: "expense", amount: String(-amountCents) }],
     ["amount_negative_type_payout", "/transactions", { limit: "10", type: "payout", amount: String(-amountCents) }],
+    ["by_contactId", "/transactions", { limit: "20", contactId: sweepItContactId }],
+    ["by_contact_id_snake", "/transactions", { limit: "20", contact_id: sweepItContactId }],
   ];
 
   for (const [key, path, query] of candidates) {
