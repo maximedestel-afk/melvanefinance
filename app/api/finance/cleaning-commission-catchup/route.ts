@@ -28,10 +28,6 @@ export interface CleaningCommissionCatchupRow {
    * bien quel que soit le séjour — null si Guesty n'est pas configuré/
    * disponible pour ce bien. */
   cleaningFeeCents: number | null;
-  /** Coût réel payé au prestataire de ménage (Guesty, custom field
-   * "cleaning_rate") — distinct du prix facturé au client, utilisé pour
-   * l'écriture qui facture ce coût à Melvane. Null si absent/indisponible. */
-  cleaningProviderCostCents: number | null;
   cleaningError: string | null;
   /** Taux de commission M.G.B. du bien (property_owner.commission_percent),
    * ex: 20 pour 20 % — null si non configuré. */
@@ -89,7 +85,6 @@ export async function GET(request: Request) {
     const commissionPercentByPropertyId = new Map(portfolioProperties.map((p) => [p.propertyId, p.commissionPercent]));
 
     const cleaningFeeByPropertyId = new Map<string, number | null>();
-    const cleaningProviderCostByPropertyId = new Map<string, number | null>();
     const cleaningErrorByPropertyId = new Map<string, string | null>();
     if (isGuestyConfigured()) {
       const guestyListingIdByPropertyId = await getPortfolioGuestyListingIds(portfolioProperties);
@@ -102,7 +97,6 @@ export async function GET(request: Request) {
         try {
           const prices = await getGuestyCleaningPrices(guestyListingId);
           cleaningFeeByPropertyId.set(property.propertyId, prices.standard != null ? Math.round(prices.standard * 100) : null);
-          cleaningProviderCostByPropertyId.set(property.propertyId, prices.customField != null ? Math.round(prices.customField * 100) : null);
         } catch (err) {
           cleaningErrorByPropertyId.set(property.propertyId, err instanceof Error ? err.message : "Erreur Guesty inconnue.");
         }
@@ -122,7 +116,6 @@ export async function GET(request: Request) {
       grossCents: r.rentsCents,
       platformCommissionCents: r.channelFeesCents,
       cleaningFeeCents: cleaningFeeByPropertyId.get(r.propertyId) ?? null,
-      cleaningProviderCostCents: cleaningProviderCostByPropertyId.get(r.propertyId) ?? null,
       cleaningError: cleaningErrorByPropertyId.get(r.propertyId) ?? null,
       commissionPercent: commissionPercentByPropertyId.get(r.propertyId) ?? null,
     }));

@@ -24,7 +24,6 @@ interface CatchupApiRow {
   grossCents: number;
   platformCommissionCents: number;
   cleaningFeeCents: number | null;
-  cleaningProviderCostCents: number | null;
   cleaningError: string | null;
   /** Taux de commission M.G.B. du bien, ex: 20 pour 20 % — null si non
    * configuré. */
@@ -444,12 +443,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
    * lignes par réservation sélectionnée, toutes Bill to Owner = TRUE :
    * - Housekeeping, montant positif : remboursement au propriétaire du
    *   rattrapage Comm Ménage.
-   * - Housekeeping, montant négatif : coût du ménage payé au prestataire,
-   *   retiré des comptes du propriétaire (profit pour lui, Melvane absorbe
-   *   ce coût).
-   * - Management Commission, montant positif (Comm Supp, signe inversé —
-   *   négatif dans le tableau car coût pour le propriétaire, positif ici
-   *   car crédité au manager) : commission M.G.B. supplémentaire. */
+   * - Housekeeping, montant négatif : prix ménage facturé au client
+   *   (cleaningFeeCents), retiré des comptes du propriétaire — pas le coût
+   *   prestataire, qu'on ne touche pas.
+   * - Management Commission, montant positif : commission M.G.B. (taux du
+   *   bien) sur ce même prix ménage, créditée au manager. */
   function exportSelectedAsCsv() {
     if (!sortedRows || selectedReservationIds.size === 0) return;
     const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
@@ -504,11 +502,17 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
       if (r.commissionOnCleaningCents != null && r.commissionOnCleaningCents !== 0) {
         addLine(r, stayLabel, "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
       }
-      if (r.cleaningProviderCostCents != null && r.cleaningProviderCostCents !== 0) {
-        addLine(r, stayLabel, "Ménage", "Housekeeping", -r.cleaningProviderCostCents);
+      if (r.cleaningFeeCents != null && r.cleaningFeeCents !== 0) {
+        addLine(r, stayLabel, "Ménage", "Housekeeping", -r.cleaningFeeCents);
       }
-      if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
-        addLine(r, stayLabel, "Commission ménage supplémentaire", "Management Commission", -r.additionalCommissionCents);
+      if (r.cleaningFeeCents != null && r.cleaningFeeCents !== 0 && r.commissionPercent != null) {
+        addLine(
+          r,
+          stayLabel,
+          "Commission ménage",
+          "Management Commission",
+          Math.round((r.cleaningFeeCents * r.commissionPercent) / 100)
+        );
       }
     }
     const csvContent = csvRows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
