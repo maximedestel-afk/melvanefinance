@@ -232,6 +232,10 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   const [sortKey, setSortKey] = useState<SortKey>("checkIn");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [hiddenColumns, setHiddenColumns] = useState<Set<ColumnKey>>(new Set());
+  const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set());
+  const [exportedByReservationId, setExportedByReservationId] = useState<Map<string, string>>(new Map());
+  const [exportActionLoading, setExportActionLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   function toggleColumn(col: ColumnKey) {
     setHiddenColumns((prev) => {
@@ -239,6 +243,23 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
       if (next.has(col)) next.delete(col);
       else next.add(col);
       return next;
+    });
+  }
+
+  function toggleReservationSelection(reservationId: string) {
+    setSelectedReservationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(reservationId)) next.delete(reservationId);
+      else next.add(reservationId);
+      return next;
+    });
+  }
+
+  function toggleSelectAllVisible(visibleReservationIds: string[]) {
+    setSelectedReservationIds((prev) => {
+      const allSelected = visibleReservationIds.length > 0 && visibleReservationIds.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(visibleReservationIds);
     });
   }
 
@@ -323,12 +344,139 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
       } else {
         setRows(data.rows);
         setSelectedPlatforms([]);
+        setSelectedReservationIds(new Set());
+        await loadExportStatus((data.rows as CatchupApiRow[]).map((r) => r.reservationId));
       }
     } catch {
       setError("Impossible de charger le rattrapage ménage.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadExportStatus(reservationIds: string[]) {
+    if (reservationIds.length === 0) {
+      setExportedByReservationId(new Map());
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ reservationIds: reservationIds.join(",") });
+      const res = await fetch(`/api/finance/cleaning-commission-catchup/exports?${params.toString()}`);
+      const data = await res.json();
+      if (!data.error) {
+        setExportedByReservationId(
+          new Map((data.exports as { reservationId: string; exportedAt: string }[]).map((e) => [e.reservationId, e.exportedAt]))
+        );
+      }
+    } catch {
+      // Dégradation silencieuse — l'absence de statut d'export n'empêche pas d'afficher le tableau.
+    }
+  }
+
+  async function markSelectedAsExported() {
+    if (!sortedRows || selectedReservationIds.size === 0) return;
+    setExportActionLoading(true);
+    setExportError(null);
+    try {
+      const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
+      const res = await fetch("/api/finance/cleaning-commission-catchup/exports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: selectedRows.map((r) => ({
+            reservationId: r.reservationId,
+            propertyId: r.propertyId,
+            propertyReference: r.reference,
+            checkoutDate: r.checkOut,
+            commissionOnCleaningCents: r.commissionOnCleaningCents ?? 0,
+            additionalCommissionCents: r.additionalCommissionCents ?? 0,
+            pnlCents: r.pnlCents ?? 0,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setExportError(data.error);
+      } else {
+        const now = new Date().toISOString();
+        setExportedByReservationId((prev) => {
+          const next = new Map(prev);
+          for (const id of selectedReservationIds) next.set(id, now);
+          return next;
+        });
+      }
+    } catch {
+      setExportError("Impossible de marquer ces réservations comme exportées.");
+    } finally {
+      setExportActionLoading(false);
+    }
+  }
+
+  async function unmarkSelectedAsExported() {
+    if (selectedReservationIds.size === 0) return;
+    setExportActionLoading(true);
+    setExportError(null);
+    try {
+      const params = new URLSearchParams({ reservationIds: Array.from(selectedReservationIds).join(",") });
+      const res = await fetch(`/api/finance/cleaning-commission-catchup/exports?${params.toString()}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) {
+        setExportError(data.error);
+      } else {
+        setExportedByReservationId((prev) => {
+          const next = new Map(prev);
+          for (const id of selectedReservationIds) next.delete(id);
+          return next;
+        });
+      }
+    } catch {
+      setExportError("Impossible d'annuler l'export de ces réservations.");
+    } finally {
+      setExportActionLoading(false);
+    }
+  }
+
+  function exportSelectedAsCsv() {
+    if (!sortedRows || selectedReservationIds.size === 0) return;
+    const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
+    const header = [
+      "Bien",
+      "Séjour (check-out)",
+      "Plateforme",
+      "Référence",
+      "Brut",
+      "Ménage",
+      "Comm OTA",
+      "Comm Ménage (rattrapage)",
+      "Comm Melvane %",
+      "Comm Supp",
+      "PNL Owner",
+    ];
+    const escapeCsvField = (value: string): string => (/[";\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+    const rowsForCsv = [
+      header,
+      ...selectedRows.map((r) => [
+        r.reference,
+        r.checkOut,
+        r.bookingPlatform ?? "",
+        r.confirmationCode ?? "",
+        formatEuros(r.grossCents / 100),
+        r.cleaningFeeCents != null ? formatEuros(r.cleaningFeeCents / 100) : "",
+        formatEuros(r.platformCommissionCents / 100),
+        r.commissionOnCleaningCents != null ? formatEuros(r.commissionOnCleaningCents / 100) : "",
+        r.commissionPercent != null ? String(r.commissionPercent) : "",
+        r.additionalCommissionCents != null ? formatEuros(r.additionalCommissionCents / 100) : "",
+        r.pnlCents != null ? formatEuros(r.pnlCents / 100) : "",
+      ]),
+    ];
+    const csvContent = rowsForCsv.map((row) => row.map(escapeCsvField).join(";")).join("\r\n");
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rattrapage_menage_${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const filteredRows = rows
@@ -618,9 +766,32 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
 
       {sortedRows && totals && !loading && !error && (
         <div className="space-y-2">
-          <p className="text-[13px] text-[#6e6e73]">
-            {sortedRows.length} réservation{sortedRows.length !== 1 ? "s" : ""}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[13px] text-[#6e6e73]">
+              {sortedRows.length} réservation{sortedRows.length !== 1 ? "s" : ""}
+              {selectedReservationIds.size > 0 && ` · ${selectedReservationIds.size} sélectionnée${selectedReservationIds.size !== 1 ? "s" : ""}`}
+            </p>
+            {selectedReservationIds.size > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={markSelectedAsExported}
+                  disabled={exportActionLoading}
+                  className="btn-secondary btn-sm"
+                  title="Marque les réservations sélectionnées comme exportées, une fois l'écriture de rattrapage posée à la main dans VRPlatform"
+                >
+                  ✓ Marquer comme exporté
+                </button>
+                <button type="button" onClick={unmarkSelectedAsExported} disabled={exportActionLoading} className="btn-secondary btn-sm">
+                  Annuler l&apos;export
+                </button>
+                <button type="button" onClick={exportSelectedAsCsv} className="btn-secondary btn-sm">
+                  Exporter (CSV)
+                </button>
+              </>
+            )}
+          </div>
+          {exportError && <p className="text-[13px] text-red-600">{exportError}</p>}
 
           {sortedRows.length === 0 ? (
             <p className="text-[13px] text-[#6e6e73]">Aucune réservation sur cette période.</p>
@@ -630,6 +801,14 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                 <table className="w-full border-collapse whitespace-nowrap text-[11px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                      <th className="py-1 pl-3 pr-1.5">
+                        <input
+                          type="checkbox"
+                          checked={sortedRows.length > 0 && sortedRows.every((r) => selectedReservationIds.has(r.reservationId))}
+                          onChange={() => toggleSelectAllVisible(sortedRows.map((r) => r.reservationId))}
+                          className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                        />
+                      </th>
                       {!hiddenColumns.has("reference") && (
                         <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
                       )}
@@ -717,19 +896,34 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedRows.map((r, rowIndex) => (
+                    {sortedRows.map((r, rowIndex) => {
+                      const exportedAt = exportedByReservationId.get(r.reservationId);
+                      return (
                       <tr
                         key={r.reservationId}
                         className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
-                          rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                          exportedAt ? "opacity-50" : rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                         }`}
                       >
+                        <td className="py-1 pl-3 pr-1.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedReservationIds.has(r.reservationId)}
+                            onChange={() => toggleReservationSelection(r.reservationId)}
+                            className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                          />
+                        </td>
                         {!hiddenColumns.has("reference") && (
                           <td className="py-1 pl-2.5 pr-1.5 font-medium text-[#1d1d1f]">
                             {r.reference}
                             {r.cleaningError && (
                               <span title={`Guesty : ${r.cleaningError}`} className="ml-1.5 text-red-600">
                                 ⚠
+                              </span>
+                            )}
+                            {exportedAt && (
+                              <span title={`Exporté le ${formatDate(exportedAt.slice(0, 10))}`} className="ml-1.5 text-emerald-600">
+                                ✓
                               </span>
                             )}
                           </td>
@@ -799,10 +993,12 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           </td>
                         )}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
+                      <td className="py-1 pl-3 pr-1.5"></td>
                       {!hiddenColumns.has("reference") && <td className="py-1 pl-2.5 pr-1.5">Total ({sortedRows.length})</td>}
                       {!hiddenColumns.has("bookedAt") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("stay") && <td className="py-1 px-1.5"></td>}
