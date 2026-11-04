@@ -87,6 +87,16 @@ function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }
   return <span className={bold ? "font-semibold" : undefined}>{formatEuros(cents / 100)}</span>;
 }
 
+function SignedMoney({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
+  if (cents == null) return <span className="text-[#6e6e73]">—</span>;
+  return (
+    <span className={`${bold ? "font-semibold " : ""}${cents >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+      {cents >= 0 ? "+" : ""}
+      {formatEuros(cents / 100)}
+    </span>
+  );
+}
+
 function Percent({ value }: { value: number | null }) {
   if (value == null) return <span className="text-[#6e6e73]">—</span>;
   return <span>{value.toFixed(1)} %</span>;
@@ -545,7 +555,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
           ) : (
             <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[12px]">
+                <table className="w-full border-collapse whitespace-nowrap text-[12px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                       <th className="py-1.5 px-2"></th>
@@ -553,7 +563,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
                       <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Rents, avant Comm OTA" />
                       <SortHeader label="Ménage" sortKey="cleaning" activeKey={sortKey} direction={direction} onSort={handleSort} title="Prix ménage facturé au client (Guesty)" />
-                      <SortHeader label="Brut + Ménage" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                      <SortHeader label="Total Comm Amount" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} title="Brut + Ménage" />
                       <SortHeader
                         label="Comm OTA"
                         sortKey="platformCommission"
@@ -659,11 +669,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           {r.commissionPercent != null ? `${r.commissionPercent} %` : <span className="text-[#6e6e73]">—</span>}
                         </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#0071e3]">
+                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-red-600">
                           <Money cents={r.additionalCommissionCents} bold />
                         </td>
-                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                          <Money cents={r.pnlCents} bold />
+                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                          <SignedMoney cents={r.pnlCents} bold />
                         </td>
                       </tr>
                     ))}
@@ -691,11 +701,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         <Money cents={totals.commissionOnCleaningCents} bold />
                       </td>
                       <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 px-2 text-right tabular-nums text-[#0071e3]">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-red-600">
                         <Money cents={totals.additionalCommissionCents} bold />
                       </td>
-                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
-                        <Money cents={totals.pnlCents} bold />
+                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                        <SignedMoney cents={totals.pnlCents} bold />
                       </td>
                     </tr>
                   </tfoot>
