@@ -11,6 +11,9 @@ export interface CleaningCommissionCatchupRow {
   reservationId: string;
   guestName: string | null;
   bookingPlatform: string | null;
+  /** Date à laquelle la réservation a été effectuée (bookedAt VRPlatform),
+   * distincte des dates de séjour. */
+  bookedAt: string | null;
   checkIn: string;
   checkOut: string;
   /** Rents brut de la réservation (Brut), avant déduction de la commission
@@ -105,6 +108,7 @@ export async function GET(request: Request) {
       reservationId: r.reservationId,
       guestName: r.guestName,
       bookingPlatform: r.bookingPlatform,
+      bookedAt: r.bookedAt,
       checkIn: r.checkIn,
       checkOut: r.checkOut,
       grossCents: r.rentsCents,

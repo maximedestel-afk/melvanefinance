@@ -17,6 +17,7 @@ interface CatchupApiRow {
   reservationId: string;
   guestName: string | null;
   bookingPlatform: string | null;
+  bookedAt: string | null;
   checkIn: string;
   checkOut: string;
   grossCents: number;
@@ -55,6 +56,7 @@ interface CatchupRow extends CatchupApiRow {
 
 type SortKey =
   | "reference"
+  | "bookedAt"
   | "checkIn"
   | "gross"
   | "cleaning"
@@ -67,6 +69,7 @@ type SortKey =
 
 type ColumnKey =
   | "reference"
+  | "bookedAt"
   | "stay"
   | "gross"
   | "cleaning"
@@ -81,6 +84,7 @@ type ColumnKey =
 
 const ALL_COLUMNS: ColumnKey[] = [
   "reference",
+  "bookedAt",
   "stay",
   "gross",
   "cleaning",
@@ -96,6 +100,7 @@ const ALL_COLUMNS: ColumnKey[] = [
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
   reference: "Bien",
+  bookedAt: "Date résa",
   stay: "Séjour",
   gross: "Brut",
   cleaning: "Ménage",
@@ -170,7 +175,7 @@ function SortHeader({
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className={`py-1.5 px-2 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`} title={title}>
+    <th className={`py-1 px-1.5 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`} title={title}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -279,7 +284,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
       setDirection((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setDirection(key === "checkIn" || key === "reference" ? "asc" : "desc");
+      setDirection(key === "checkIn" || key === "bookedAt" || key === "reference" ? "asc" : "desc");
     }
   }
 
@@ -329,6 +334,9 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
             break;
           case "checkIn":
             cmp = a.checkIn.localeCompare(b.checkIn);
+            break;
+          case "bookedAt":
+            cmp = (a.bookedAt ?? "").localeCompare(b.bookedAt ?? "");
             break;
           case "gross":
             cmp = a.grossCents - b.grossCents;
@@ -609,14 +617,17 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
           ) : (
             <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse whitespace-nowrap text-[12px]">
+                <table className="w-full border-collapse whitespace-nowrap text-[11px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                       {!hiddenColumns.has("reference") && (
                         <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
                       )}
+                      {!hiddenColumns.has("bookedAt") && (
+                        <SortHeader label="Date résa" sortKey="bookedAt" activeKey={sortKey} direction={direction} onSort={handleSort} />
+                      )}
                       {!hiddenColumns.has("stay") && (
-                        <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
+                        <th className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
                       )}
                       {!hiddenColumns.has("gross") && (
                         <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Rents, avant Comm OTA" />
@@ -638,7 +649,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         />
                       )}
                       {!hiddenColumns.has("effectivePercent") && (
-                        <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Comm OTA / (Brut + Ménage)">
+                        <th className="py-1 px-1.5 text-right text-[11px] font-medium text-[#86868b]" title="Comm OTA / (Brut + Ménage)">
                           % (Brut+Ménage)
                         </th>
                       )}
@@ -663,7 +674,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         />
                       )}
                       {!hiddenColumns.has("commissionPercent") && (
-                        <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Taux de commission M.G.B. du bien">
+                        <th className="py-1 px-1.5 text-right text-[11px] font-medium text-[#86868b]" title="Taux de commission M.G.B. du bien">
                           Comm Melvane
                         </th>
                       )}
@@ -698,7 +709,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         }`}
                       >
                         {!hiddenColumns.has("reference") && (
-                          <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
+                          <td className="py-1 pl-2.5 pr-1.5 font-medium text-[#1d1d1f]">
                             {r.reference}
                             {r.cleaningError && (
                               <span title={`Guesty : ${r.cleaningError}`} className="ml-1.5 text-red-600">
@@ -707,62 +718,64 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                             )}
                           </td>
                         )}
+                        {!hiddenColumns.has("bookedAt") && (
+                          <td className="py-1 px-1.5 text-[#6e6e73]">{r.bookedAt ? formatDate(r.bookedAt) : "—"}</td>
+                        )}
                         {!hiddenColumns.has("stay") && (
-                          <td className="py-1.5 px-2 text-[#6e6e73]">
+                          <td
+                            className="py-1 px-1.5 text-[#6e6e73]"
+                            title={`${r.bookingPlatform ?? "Plateforme inconnue"}${r.guestName ? ` · ${r.guestName}` : ""}`}
+                          >
                             {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
-                            <div className="text-[10.5px] text-[#86868b]">
-                              {r.bookingPlatform ?? "Inconnu"}
-                              {r.guestName ? ` · ${r.guestName}` : ""}
-                            </div>
                           </td>
                         )}
                         {!hiddenColumns.has("gross") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
                             <Money cents={r.grossCents} />
                           </td>
                         )}
                         {!hiddenColumns.has("cleaning") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
                             <Money cents={r.cleaningFeeCents} />
                           </td>
                         )}
                         {!hiddenColumns.has("sum") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums font-medium text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums font-medium text-[#1d1d1f]">
                             <Money cents={r.sumCents} />
                           </td>
                         )}
                         {!hiddenColumns.has("platformCommission") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
                             <Money cents={r.platformCommissionCents} />
                           </td>
                         )}
                         {!hiddenColumns.has("effectivePercent") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
                             <Percent value={r.effectivePercent} />
                           </td>
                         )}
                         {!hiddenColumns.has("percentOnGrossOnly") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
                             <Percent value={r.percentOnGrossOnly} />
                           </td>
                         )}
                         {!hiddenColumns.has("commissionOnCleaning") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#0071e3]">
+                          <td className="py-1 px-1.5 text-right tabular-nums font-semibold text-[#0071e3]">
                             <Money cents={r.commissionOnCleaningCents} bold />
                           </td>
                         )}
                         {!hiddenColumns.has("commissionPercent") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
                             {r.commissionPercent != null ? `${r.commissionPercent} %` : <span className="text-[#6e6e73]">—</span>}
                           </td>
                         )}
                         {!hiddenColumns.has("additionalCommission") && (
-                          <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-red-600">
+                          <td className="py-1 px-1.5 text-right tabular-nums font-semibold text-red-600">
                             <Money cents={r.additionalCommissionCents} bold />
                           </td>
                         )}
                         {!hiddenColumns.has("pnl") && (
-                          <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                          <td className="py-1 pl-1.5 pr-2.5 text-right tabular-nums">
                             <SignedMoney cents={r.pnlCents} bold />
                           </td>
                         )}
@@ -771,43 +784,44 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                      {!hiddenColumns.has("reference") && <td className="py-1.5 pl-3 pr-2">Total ({sortedRows.length})</td>}
-                      {!hiddenColumns.has("stay") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("reference") && <td className="py-1 pl-2.5 pr-1.5">Total ({sortedRows.length})</td>}
+                      {!hiddenColumns.has("bookedAt") && <td className="py-1 px-1.5"></td>}
+                      {!hiddenColumns.has("stay") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("gross") && (
-                        <td className="py-1.5 px-2 text-right tabular-nums">
+                        <td className="py-1 px-1.5 text-right tabular-nums">
                           <Money cents={totals.grossCents} bold />
                         </td>
                       )}
                       {!hiddenColumns.has("cleaning") && (
-                        <td className="py-1.5 px-2 text-right tabular-nums">
+                        <td className="py-1 px-1.5 text-right tabular-nums">
                           <Money cents={totals.cleaningFeeCents} bold />
                         </td>
                       )}
                       {!hiddenColumns.has("sum") && (
-                        <td className="py-1.5 px-2 text-right tabular-nums">
+                        <td className="py-1 px-1.5 text-right tabular-nums">
                           <Money cents={totals.sumCents} bold />
                         </td>
                       )}
                       {!hiddenColumns.has("platformCommission") && (
-                        <td className="py-1.5 px-2 text-right tabular-nums">
+                        <td className="py-1 px-1.5 text-right tabular-nums">
                           <Money cents={totals.platformCommissionCents} bold />
                         </td>
                       )}
-                      {!hiddenColumns.has("effectivePercent") && <td className="py-1.5 px-2"></td>}
-                      {!hiddenColumns.has("percentOnGrossOnly") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("effectivePercent") && <td className="py-1 px-1.5"></td>}
+                      {!hiddenColumns.has("percentOnGrossOnly") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("commissionOnCleaning") && (
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#0071e3]">
+                        <td className="py-1 px-1.5 text-right tabular-nums text-[#0071e3]">
                           <Money cents={totals.commissionOnCleaningCents} bold />
                         </td>
                       )}
-                      {!hiddenColumns.has("commissionPercent") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("commissionPercent") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("additionalCommission") && (
-                        <td className="py-1.5 px-2 text-right tabular-nums text-red-600">
+                        <td className="py-1 px-1.5 text-right tabular-nums text-red-600">
                           <Money cents={totals.additionalCommissionCents} bold />
                         </td>
                       )}
                       {!hiddenColumns.has("pnl") && (
-                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                        <td className="py-1 pl-1.5 pr-2.5 text-right tabular-nums">
                           <SignedMoney cents={totals.pnlCents} bold />
                         </td>
                       )}
