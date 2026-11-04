@@ -11,6 +11,7 @@ export interface CleaningCommissionCatchupRow {
   reservationId: string;
   guestName: string | null;
   bookingPlatform: string | null;
+  confirmationCode: string | null;
   /** Date à laquelle la réservation a été effectuée (bookedAt VRPlatform),
    * distincte des dates de séjour. */
   bookedAt: string | null;
@@ -108,6 +109,7 @@ export async function GET(request: Request) {
       reservationId: r.reservationId,
       guestName: r.guestName,
       bookingPlatform: r.bookingPlatform,
+      confirmationCode: r.confirmationCode,
       bookedAt: r.bookedAt,
       checkIn: r.checkIn,
       checkOut: r.checkOut,

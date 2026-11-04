@@ -17,6 +17,7 @@ interface CatchupApiRow {
   reservationId: string;
   guestName: string | null;
   bookingPlatform: string | null;
+  confirmationCode: string | null;
   bookedAt: string | null;
   checkIn: string;
   checkOut: string;
@@ -71,6 +72,8 @@ type ColumnKey =
   | "reference"
   | "bookedAt"
   | "stay"
+  | "platform"
+  | "confirmationCode"
   | "gross"
   | "cleaning"
   | "sum"
@@ -86,6 +89,8 @@ const ALL_COLUMNS: ColumnKey[] = [
   "reference",
   "bookedAt",
   "stay",
+  "platform",
+  "confirmationCode",
   "gross",
   "cleaning",
   "sum",
@@ -102,6 +107,8 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   reference: "Bien",
   bookedAt: "Date résa",
   stay: "Séjour",
+  platform: "Plateforme",
+  confirmationCode: "Référence",
   gross: "Brut",
   cleaning: "Ménage",
   sum: "Commissionable Amount",
@@ -632,6 +639,12 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       {!hiddenColumns.has("stay") && (
                         <th className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
                       )}
+                      {!hiddenColumns.has("platform") && (
+                        <th className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]">Plateforme</th>
+                      )}
+                      {!hiddenColumns.has("confirmationCode") && (
+                        <th className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]">Référence</th>
+                      )}
                       {!hiddenColumns.has("gross") && (
                         <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Rents, avant Comm OTA" />
                       )}
@@ -725,12 +738,15 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           <td className="py-1 px-1.5 text-[#6e6e73]">{r.bookedAt ? formatDate(r.bookedAt) : "—"}</td>
                         )}
                         {!hiddenColumns.has("stay") && (
-                          <td
-                            className="py-1 px-1.5 text-[#6e6e73]"
-                            title={`${r.bookingPlatform ?? "Plateforme inconnue"}${r.guestName ? ` · ${r.guestName}` : ""}`}
-                          >
+                          <td className="py-1 px-1.5 text-[#6e6e73]" title={r.guestName ?? undefined}>
                             {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
                           </td>
+                        )}
+                        {!hiddenColumns.has("platform") && (
+                          <td className="py-1 px-1.5 text-[#6e6e73]">{r.bookingPlatform ?? "—"}</td>
+                        )}
+                        {!hiddenColumns.has("confirmationCode") && (
+                          <td className="py-1 px-1.5 text-[#6e6e73]">{r.confirmationCode ?? "—"}</td>
                         )}
                         {!hiddenColumns.has("gross") && (
                           <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
@@ -790,6 +806,8 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       {!hiddenColumns.has("reference") && <td className="py-1 pl-2.5 pr-1.5">Total ({sortedRows.length})</td>}
                       {!hiddenColumns.has("bookedAt") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("stay") && <td className="py-1 px-1.5"></td>}
+                      {!hiddenColumns.has("platform") && <td className="py-1 px-1.5"></td>}
+                      {!hiddenColumns.has("confirmationCode") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("gross") && (
                         <td className="py-1 px-1.5 text-right tabular-nums">
                           <Money cents={totals.grossCents} bold />
