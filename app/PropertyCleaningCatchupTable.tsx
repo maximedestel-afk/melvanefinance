@@ -442,9 +442,8 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
    * Bill to Owner/Applied amount/Markup/Markup Tax), avec deux lignes par
    * réservation sélectionnée, toutes Bill to Owner = TRUE :
    * - Housekeeping, +Comm Ménage : rattrapage crédité au propriétaire.
-   * - Management Fee Rebate, +Comm Supp (signe inversé — négatif dans le
-   *   tableau car coût pour le propriétaire, positif ici car crédité au
-   *   manager) : commission M.G.B. supplémentaire sur le ménage. */
+   * - Management Fee Rebate, Comm Supp (même signe que dans le tableau —
+   *   négatif) : commission M.G.B. supplémentaire sur le ménage. */
   function exportSelectedAsCsv() {
     if (!sortedRows || selectedReservationIds.size === 0) return;
     const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
@@ -476,10 +475,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
       expenseAccount: string,
       appliedAmountCents: number
     ) => {
+      const fullDescription = `${description} — ${stayLabel}`;
       csvRows.push([
         r.checkOut,
         r.checkOut,
-        `${description} — ${stayLabel}`,
+        fullDescription,
         "Paid",
         "Non-Trust Account",
         "info@melvanebydesign.com",
@@ -487,7 +487,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         "EUR",
         r.reference,
         "",
-        description,
+        fullDescription,
         expenseAccount,
         "TRUE",
         (appliedAmountCents / 100).toFixed(2),
@@ -501,7 +501,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         addLine(r, stayLabel, "RM", "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
       }
       if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
-        addLine(r, stayLabel, "CS", "Commission ménage", "Management Fee Rebate", -r.additionalCommissionCents);
+        addLine(r, stayLabel, "CS", "Commission ménage", "Management Fee Rebate", r.additionalCommissionCents);
       }
     }
     const csvContent = csvRows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
