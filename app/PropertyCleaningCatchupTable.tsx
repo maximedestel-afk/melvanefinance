@@ -441,7 +441,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
    * Bill ID/Currency/Listing/Reservation/Line Description/Expense account/
    * Bill to Owner/Applied amount/Markup/Markup Tax), avec deux lignes par
    * réservation sélectionnée, toutes Bill to Owner = TRUE :
-   * - Housekeeping, −Comm Ménage : rattrapage retiré au propriétaire.
+   * - Housekeeping, +Comm Ménage : rattrapage crédité au propriétaire.
    * - Management Commission, +Comm Supp (signe inversé — négatif dans le
    *   tableau car coût pour le propriétaire, positif ici car crédité au
    *   manager) : commission M.G.B. supplémentaire sur le ménage. */
@@ -497,7 +497,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     for (const r of selectedRows) {
       const stayLabel = `${r.confirmationCode ?? r.reservationId} (${r.checkOut})`;
       if (r.commissionOnCleaningCents != null && r.commissionOnCleaningCents !== 0) {
-        addLine(r, stayLabel, "Rattrapage commission ménage", "Housekeeping", -r.commissionOnCleaningCents);
+        addLine(r, stayLabel, "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
       }
       if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
         addLine(r, stayLabel, "Commission ménage", "Management Commission", -r.additionalCommissionCents);
