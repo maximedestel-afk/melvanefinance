@@ -106,7 +106,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   commissionOnCleaning: "Comm Ménage",
   commissionPercent: "Comm Melvane",
   additionalCommission: "Comm Supp",
-  pnl: "PNL",
+  pnl: "PNL Owner",
 };
 
 function toRow(r: CatchupApiRow): CatchupRow {
@@ -679,7 +679,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       )}
                       {!hiddenColumns.has("pnl") && (
                         <SortHeader
-                          label="PNL"
+                          label="PNL Owner"
                           sortKey="pnl"
                           activeKey={sortKey}
                           direction={direction}
