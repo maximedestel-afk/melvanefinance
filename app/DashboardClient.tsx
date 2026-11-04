@@ -6,6 +6,7 @@ import { PropertyFinanceTable } from "./PropertyFinanceTable";
 import { PropertyCleaningTable } from "./PropertyCleaningTable";
 import { PropertyCleaningTodoTable } from "./PropertyCleaningTodoTable";
 import { PropertyBonusTable } from "./PropertyBonusTable";
+import { PropertyCleaningCatchupTable } from "./PropertyCleaningCatchupTable";
 import { PropertyOwnerComparisonTable } from "./PropertyOwnerComparisonTable";
 import { PropertyReservationsTable } from "./PropertyReservationsTable";
 import { PropertyAnalysisTable } from "./PropertyAnalysisTable";
@@ -23,6 +24,7 @@ type Tab =
   | "cleaning"
   | "cleaning-todo"
   | "bonus"
+  | "cleaning-catchup"
   | "owner-comparison"
   | "reservations"
   | "analysis"
@@ -113,6 +115,15 @@ export function DashboardClient({
           }`}
         >
           Bonus Ménage
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("cleaning-catchup")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "cleaning-catchup" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Rattrapage Ménage
         </button>
         <button
           type="button"
@@ -225,6 +236,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "bonus" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Bonus Ménage</h2>
         <PropertyBonusTable properties={properties} />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "cleaning-catchup" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Rattrapage Ménage</h2>
+        <PropertyCleaningCatchupTable properties={properties} />
       </section>
 
       <section className={`card space-y-3 p-5 ${tab === "owner-comparison" ? "" : "hidden"}`}>
