@@ -513,12 +513,12 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         % (Brut+Ménage)
                       </th>
                       <SortHeader
-                        label="Comm. sur Brut"
+                        label="Comm. plateforme sur Brut seul"
                         sortKey="commissionOnGross"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
-                        title="Part de la commission plateforme imputable au Brut au prorata"
+                        title="Part de la commission plateforme imputable au Brut seul, au prorata Brut/(Brut+Ménage)"
                       />
                       <SortHeader
                         label="Comm. sur Ménage — rattrapage"
