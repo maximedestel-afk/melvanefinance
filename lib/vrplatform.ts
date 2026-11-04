@@ -551,6 +551,15 @@ export interface ReservationDetail {
   /** Rents / nuits — prix brut côté hébergement, avant déduction des
    * Channel Fees. */
   grossNightlyRateCents: number | null;
+  /** Rents brut de la réservation (Brut), avant déduction des Channel
+   * Fees — contrairement à netCommissionableRevenueCents qui est déjà net
+   * de la commission plateforme. */
+  rentsCents: number;
+  /** Commission prélevée par la plateforme de réservation (Airbnb, etc.),
+   * en euros, déjà connue côté VRPlatform (lignes "Channel Commissions...")
+   * — pas un pourcentage recalculé, le vrai montant prélevé sur cette
+   * réservation. */
+  channelFeesCents: number;
   netCommissionableRevenueCents: number;
   commissionCents: number;
   expensesCents: number;
@@ -611,6 +620,8 @@ export async function getPropertyReservationDetails(
           confirmationCode: reservation.confirmationCode,
           bookingPlatform: reservation.bookingPlatform,
           grossNightlyRateCents,
+          rentsCents,
+          channelFeesCents,
           netCommissionableRevenueCents,
           commissionCents,
           expensesCents,
@@ -757,6 +768,8 @@ export async function getPortfolioReservationDetails(
               confirmationCode: reservation.confirmationCode,
               bookingPlatform: reservation.bookingPlatform,
               grossNightlyRateCents,
+              rentsCents,
+              channelFeesCents,
               netCommissionableRevenueCents,
               commissionCents,
               expensesCents,
@@ -860,6 +873,8 @@ export async function getPortfolioReservationDetailsByBookedRange(
               confirmationCode: reservation.confirmationCode,
               bookingPlatform: reservation.bookingPlatform,
               grossNightlyRateCents,
+              rentsCents,
+              channelFeesCents,
               netCommissionableRevenueCents,
               commissionCents,
               expensesCents,
@@ -1006,6 +1021,8 @@ export async function getPropertyReservationDetailsForDateRange(
           confirmationCode: reservation.confirmationCode,
           bookingPlatform: reservation.bookingPlatform,
           grossNightlyRateCents,
+          rentsCents,
+          channelFeesCents,
           netCommissionableRevenueCents,
           commissionCents,
           expensesCents,

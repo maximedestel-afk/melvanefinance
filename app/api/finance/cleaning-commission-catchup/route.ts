@@ -10,14 +10,16 @@ export interface CleaningCommissionCatchupRow {
   reference: string;
   reservationId: string;
   guestName: string | null;
+  bookingPlatform: string | null;
   checkIn: string;
   checkOut: string;
-  /** Pourcentage de commission M.G.B du bien (ex: 20 pour 20 %). */
-  commissionPercent: number;
-  /** Net Commissionable Revenue de la réservation — même "brut" que partout
-   * ailleurs dans l'app (Rents − Channel Fees), base actuelle de calcul de
-   * la commission. */
+  /** Rents brut de la réservation (Brut), avant déduction de la commission
+   * de la plateforme de réservation. */
   grossCents: number;
+  /** Commission prélevée par la plateforme de réservation (Airbnb, etc.),
+   * en euros — déjà connue côté VRPlatform (lignes "Channel Commissions"),
+   * pas un pourcentage recalculé. */
+  platformCommissionCents: number;
   /** Prix ménage facturé au client (Guesty), constant par bien quel que
    * soit le séjour — null si Guesty n'est pas configuré/disponible pour ce
    * bien. */
@@ -25,12 +27,15 @@ export interface CleaningCommissionCatchupRow {
   cleaningError: string | null;
 }
 
-/** Pour chaque réservation d'un bien à commission variable, calcule le
- * "brut" (Net Commissionable Revenue, base actuelle de la commission) et le
- * prix ménage Guesty du bien, pour que le client puisse comparer la
- * commission réellement appliquée (sur le brut seul) à ce qu'elle serait si
- * elle portait aussi sur le ménage — un rattrapage à facturer au
- * propriétaire sur la part ménage jamais commissionnée jusqu'ici. */
+/** Pour chaque réservation, la commission prélevée par la plateforme de
+ * réservation (Airbnb...) est un montant en euros déjà connu côté
+ * VRPlatform, mais aujourd'hui entièrement imputé au Brut (Rents) — alors
+ * que la plateforme la prélève en réalité sur tout ce que paie le client, y
+ * compris le ménage. Cette route renvoie, par réservation, le Brut et le
+ * ménage (pour reconstituer la base réelle) ainsi que le montant de
+ * commission déjà connu, pour que le client puisse répartir ce montant au
+ * prorata Brut/Ménage — la part qui retombe sur le ménage est le
+ * rattrapage à reporter sur le propriétaire. */
 export async function GET(request: Request) {
   const profile = await getCurrentProfile();
   if (!profile) return NextResponse.json({ error: "Non authentifié." }, { status: 401 });
@@ -54,14 +59,9 @@ export async function GET(request: Request) {
 
   try {
     const allProperties = await listPropertiesForFinance();
-    const properties = allProperties.filter(
-      (p) => propertyIds.has(p.id) && p.rentType !== "fixe" && p.commissionPercent != null
-    );
+    const properties = allProperties.filter((p) => propertyIds.has(p.id));
     if (properties.length === 0) {
-      return NextResponse.json(
-        { error: "Aucun bien à commission variable ne correspond aux filtres." },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Aucun bien ne correspond aux filtres." }, { status: 404 });
     }
 
     const portfolioProperties = properties.map((p) => ({
@@ -75,7 +75,6 @@ export async function GET(request: Request) {
     }));
 
     const reservations = await getPortfolioReservationDetails(portfolioProperties, year, months);
-    const commissionPercentByPropertyId = new Map(portfolioProperties.map((p) => [p.propertyId, p.commissionPercent ?? 0]));
 
     const cleaningFeeByPropertyId = new Map<string, number | null>();
     const cleaningErrorByPropertyId = new Map<string, string | null>();
@@ -101,10 +100,11 @@ export async function GET(request: Request) {
       reference: r.reference,
       reservationId: r.reservationId,
       guestName: r.guestName,
+      bookingPlatform: r.bookingPlatform,
       checkIn: r.checkIn,
       checkOut: r.checkOut,
-      commissionPercent: commissionPercentByPropertyId.get(r.propertyId) ?? 0,
-      grossCents: r.netCommissionableRevenueCents,
+      grossCents: r.rentsCents,
+      platformCommissionCents: r.channelFeesCents,
       cleaningFeeCents: cleaningFeeByPropertyId.get(r.propertyId) ?? null,
       cleaningError: cleaningErrorByPropertyId.get(r.propertyId) ?? null,
     }));

@@ -16,18 +16,28 @@ interface CatchupApiRow {
   reference: string;
   reservationId: string;
   guestName: string | null;
+  bookingPlatform: string | null;
   checkIn: string;
   checkOut: string;
-  commissionPercent: number;
   grossCents: number;
+  platformCommissionCents: number;
   cleaningFeeCents: number | null;
   cleaningError: string | null;
 }
 
 interface CatchupRow extends CatchupApiRow {
   sumCents: number | null;
-  commissionOnSumCents: number | null;
+  /** % que représente la commission plateforme (déjà connue en euros) par
+   * rapport à Brut + Ménage — null si le ménage n'est pas connu. */
+  effectivePercent: number | null;
+  /** Part de la commission plateforme imputable au Brut au prorata
+   * Brut/(Brut+Ménage) — égale à platformCommissionCents si le ménage est
+   * inconnu (tout reste imputé au brut, comme aujourd'hui). */
   commissionOnGrossCents: number;
+  /** Part de la commission plateforme imputable au Ménage — le rattrapage
+   * à reporter sur le propriétaire, puisqu'aujourd'hui tout est imputé au
+   * Brut alors que la plateforme prélève sa commission sur l'ensemble payé
+   * par le client (loyer + ménage). Null si le ménage n'est pas connu. */
   commissionOnCleaningCents: number | null;
 }
 
@@ -37,21 +47,27 @@ type SortKey =
   | "gross"
   | "cleaning"
   | "sum"
-  | "commissionOnSum"
+  | "platformCommission"
   | "commissionOnGross"
   | "commissionOnCleaning";
 
 function toRow(r: CatchupApiRow): CatchupRow {
-  const commissionOnGrossCents = Math.round((r.grossCents * r.commissionPercent) / 100);
   const sumCents = r.cleaningFeeCents != null ? r.grossCents + r.cleaningFeeCents : null;
-  const commissionOnSumCents = sumCents != null ? Math.round((sumCents * r.commissionPercent) / 100) : null;
-  const commissionOnCleaningCents = commissionOnSumCents != null ? commissionOnSumCents - commissionOnGrossCents : null;
-  return { ...r, sumCents, commissionOnSumCents, commissionOnGrossCents, commissionOnCleaningCents };
+  const effectivePercent = sumCents != null && sumCents > 0 ? (r.platformCommissionCents / sumCents) * 100 : null;
+  const commissionOnGrossCents =
+    sumCents != null && sumCents > 0 ? Math.round((r.platformCommissionCents * r.grossCents) / sumCents) : r.platformCommissionCents;
+  const commissionOnCleaningCents = sumCents != null ? r.platformCommissionCents - commissionOnGrossCents : null;
+  return { ...r, sumCents, effectivePercent, commissionOnGrossCents, commissionOnCleaningCents };
 }
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
   if (cents == null) return <span className="text-[#6e6e73]">—</span>;
   return <span className={bold ? "font-semibold" : undefined}>{formatEuros(cents / 100)}</span>;
+}
+
+function Percent({ value }: { value: number | null }) {
+  if (value == null) return <span className="text-[#6e6e73]">—</span>;
+  return <span>{value.toFixed(1)} %</span>;
 }
 
 function formatDate(iso: string): string {
@@ -93,20 +109,18 @@ function SortHeader({
   );
 }
 
-/** Onglet "Rattrapage Ménage" — pour chaque réservation d'un bien à
- * commission variable, compare la commission réellement appliquée
- * aujourd'hui (sur le Brut/Net Commissionable Revenue seul) à ce qu'elle
- * serait si elle portait aussi sur le prix ménage facturé au client. La
- * colonne "Commission sur le ménage" est le montant de rattrapage à
- * facturer au propriétaire pour la part ménage jamais commissionnée. */
+/** Onglet "Rattrapage Ménage" — la commission prélevée par la plateforme de
+ * réservation (Airbnb...) est un montant en euros déjà connu côté
+ * VRPlatform, mais aujourd'hui entièrement imputé au Brut (Rents) dans les
+ * comptes — alors que la plateforme la prélève en réalité sur tout ce que
+ * paie le client, ménage compris. Ce tableau répartit ce montant déjà
+ * connu au prorata Brut/(Brut+Ménage) : la part qui retombe sur le ménage
+ * est le rattrapage à reporter sur le propriétaire. */
 export function PropertyCleaningCatchupTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
   const allProperties = useMemo(
-    () =>
-      [...unsortedProperties]
-        .filter((p) => p.rentType !== "fixe")
-        .sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
+    () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
     [unsortedProperties]
   );
   const allTags = useMemo(
@@ -120,6 +134,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [showProperties, setShowProperties] = useState(false);
   const [tagFilters, setTagFilters] = useState<Record<string, "include" | "exclude">>({});
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [rows, setRows] = useState<CatchupApiRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +159,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     });
   }, [allProperties, selectedPropertyIds, includedTags, excludedTags]);
 
+  const allPlatforms = useMemo(
+    () => (rows ? Array.from(new Set(rows.map((r) => r.bookingPlatform ?? "Inconnu"))).sort((a, b) => a.localeCompare(b, "fr")) : []),
+    [rows]
+  );
+
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
       prev.includes(month) ? prev.filter((m) => m !== month) : [...prev, month].sort((a, b) => a - b)
@@ -164,6 +184,10 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     });
   }
 
+  function togglePlatform(name: string) {
+    setSelectedPlatforms((prev) => (prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]));
+  }
+
   function handleSort(key: SortKey) {
     if (key === sortKey) {
       setDirection((d) => (d === "asc" ? "desc" : "asc"));
@@ -175,7 +199,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
 
   async function load() {
     if (matchingProperties.length === 0) {
-      setError("Aucun bien à commission variable ne correspond aux filtres.");
+      setError("Aucun bien ne correspond aux filtres.");
       return;
     }
     if (selectedMonths.length === 0) {
@@ -197,6 +221,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         setRows(null);
       } else {
         setRows(data.rows);
+        setSelectedPlatforms([]);
       }
     } catch {
       setError("Impossible de charger le rattrapage ménage.");
@@ -205,8 +230,12 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     }
   }
 
-  const sortedRows = rows
-    ? [...rows.map(toRow)].sort((a, b) => {
+  const filteredRows = rows
+    ? rows.filter((r) => selectedPlatforms.length === 0 || selectedPlatforms.includes(r.bookingPlatform ?? "Inconnu"))
+    : null;
+
+  const sortedRows = filteredRows
+    ? [...filteredRows.map(toRow)].sort((a, b) => {
         let cmp: number;
         switch (sortKey) {
           case "reference":
@@ -224,8 +253,8 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
           case "sum":
             cmp = (a.sumCents ?? 0) - (b.sumCents ?? 0);
             break;
-          case "commissionOnSum":
-            cmp = (a.commissionOnSumCents ?? 0) - (b.commissionOnSumCents ?? 0);
+          case "platformCommission":
+            cmp = a.platformCommissionCents - b.platformCommissionCents;
             break;
           case "commissionOnGross":
             cmp = a.commissionOnGrossCents - b.commissionOnGrossCents;
@@ -243,7 +272,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         grossCents: sortedRows.reduce((sum, r) => sum + r.grossCents, 0),
         cleaningFeeCents: sortedRows.reduce((sum, r) => sum + (r.cleaningFeeCents ?? 0), 0),
         sumCents: sortedRows.reduce((sum, r) => sum + (r.sumCents ?? r.grossCents), 0),
-        commissionOnSumCents: sortedRows.reduce((sum, r) => sum + (r.commissionOnSumCents ?? r.commissionOnGrossCents), 0),
+        platformCommissionCents: sortedRows.reduce((sum, r) => sum + r.platformCommissionCents, 0),
         commissionOnGrossCents: sortedRows.reduce((sum, r) => sum + r.commissionOnGrossCents, 0),
         commissionOnCleaningCents: sortedRows.reduce((sum, r) => sum + (r.commissionOnCleaningCents ?? 0), 0),
       }
@@ -259,9 +288,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   return (
     <div className="space-y-4">
       <p className="text-[12px] text-[#86868b]">
-        Compare, réservation par réservation, la commission réellement appliquée aujourd&apos;hui (sur le Brut seul) à ce
-        qu&apos;elle serait si elle portait aussi sur le prix ménage facturé au client — la dernière colonne est le
-        rattrapage à facturer au propriétaire sur la part ménage jamais commissionnée.
+        La commission prélevée par la plateforme de réservation (Airbnb...) est un montant en euros déjà connu côté
+        VRPlatform, mais aujourd&apos;hui entièrement imputé au Brut dans les comptes — alors qu&apos;elle est en
+        réalité prélevée sur tout ce que paie le client, ménage compris. Ce tableau répartit ce montant déjà connu au
+        prorata Brut/(Brut+Ménage) : la dernière colonne (part imputable au ménage) est le rattrapage à reporter sur
+        le propriétaire.
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -353,9 +384,6 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
             {matchingProperties.length !== 1 ? "s" : ""} (après filtres)
           </span>
         </div>
-        <p className="mt-1 text-[11px] text-[#86868b]">
-          Seuls les biens à commission variable sont proposés — un loyer fixe n&apos;a pas de commission à rattraper.
-        </p>
         {showProperties && (
           <>
             <div className="mt-2 flex justify-end gap-2">
@@ -427,6 +455,31 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         </div>
       )}
 
+      {rows && allPlatforms.length > 0 && (
+        <div>
+          <span className="field-label">Plateforme de réservation</span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {allPlatforms.map((name) => {
+              const active = selectedPlatforms.includes(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => togglePlatform(name)}
+                  className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                    active
+                      ? "border-[#0071e3] bg-[#0071e3] text-white"
+                      : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
+                >
+                  {name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && totals && !loading && !error && (
@@ -445,32 +498,35 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                       <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
                       <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
-                      <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Net Commissionable Revenue (Rents − Channel Fees)" />
+                      <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Rents, avant commission plateforme" />
                       <SortHeader label="Ménage" sortKey="cleaning" activeKey={sortKey} direction={direction} onSort={handleSort} title="Prix ménage facturé au client (Guesty)" />
                       <SortHeader label="Brut + Ménage" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} />
-                      <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Commission</th>
                       <SortHeader
-                        label="Comm. (Brut+Ménage)"
-                        sortKey="commissionOnSum"
+                        label="Commission plateforme"
+                        sortKey="platformCommission"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
+                        title="Montant déjà connu côté VRPlatform (Channel Commissions)"
                       />
+                      <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Commission plateforme / (Brut + Ménage)">
+                        % (Brut+Ménage)
+                      </th>
                       <SortHeader
-                        label="Comm. (Brut seul)"
+                        label="Comm. sur Brut"
                         sortKey="commissionOnGross"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
-                        title="Ce qui est réellement facturé aujourd'hui"
+                        title="Part de la commission plateforme imputable au Brut au prorata"
                       />
                       <SortHeader
-                        label="Comm. (Ménage) — rattrapage"
+                        label="Comm. sur Ménage — rattrapage"
                         sortKey="commissionOnCleaning"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
-                        title="Montant à rattraper si la commission portait aussi sur le ménage"
+                        title="Part de la commission plateforme imputable au ménage — à rattraper sur le propriétaire"
                       />
                     </tr>
                   </thead>
@@ -492,7 +548,10 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         </td>
                         <td className="py-1.5 px-2 text-[#6e6e73]">
                           {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
-                          <div className="text-[10.5px] text-[#86868b]">{r.guestName ?? ""}</div>
+                          <div className="text-[10.5px] text-[#86868b]">
+                            {r.bookingPlatform ?? "Inconnu"}
+                            {r.guestName ? ` · ${r.guestName}` : ""}
+                          </div>
                         </td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.grossCents} />
@@ -503,9 +562,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         <td className="py-1.5 px-2 text-right tabular-nums font-medium text-[#1d1d1f]">
                           <Money cents={r.sumCents} />
                         </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{r.commissionPercent} %</td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          <Money cents={r.commissionOnSumCents} />
+                          <Money cents={r.platformCommissionCents} />
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <Percent value={r.effectivePercent} />
                         </td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.commissionOnGrossCents} />
@@ -529,10 +590,10 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.sumCents} bold />
                       </td>
-                      <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2 text-right tabular-nums">
-                        <Money cents={totals.commissionOnSumCents} bold />
+                        <Money cents={totals.platformCommissionCents} bold />
                       </td>
+                      <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.commissionOnGrossCents} bold />
                       </td>
