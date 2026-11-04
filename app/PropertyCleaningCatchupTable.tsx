@@ -442,7 +442,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
    * Bill to Owner/Applied amount/Markup/Markup Tax), avec deux lignes par
    * réservation sélectionnée, toutes Bill to Owner = TRUE :
    * - Housekeeping, +Comm Ménage : rattrapage crédité au propriétaire.
-   * - Payout Adjustments, +Comm Supp (signe inversé — négatif dans le
+   * - Management Fee Rebate, +Comm Supp (signe inversé — négatif dans le
    *   tableau car coût pour le propriétaire, positif ici car crédité au
    *   manager) : commission M.G.B. supplémentaire sur le ménage. */
   function exportSelectedAsCsv() {
@@ -501,7 +501,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         addLine(r, stayLabel, "RM", "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
       }
       if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
-        addLine(r, stayLabel, "CS", "Commission ménage", "Payout Adjustments", -r.additionalCommissionCents);
+        addLine(r, stayLabel, "CS", "Commission ménage", "Management Fee Rebate", -r.additionalCommissionCents);
       }
     }
     const csvContent = csvRows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
