@@ -23,6 +23,9 @@ interface CatchupApiRow {
   platformCommissionCents: number;
   cleaningFeeCents: number | null;
   cleaningError: string | null;
+  /** Taux de commission M.G.B. du bien, ex: 20 pour 20 % — null si non
+   * configuré. */
+  commissionPercent: number | null;
 }
 
 interface CatchupRow extends CatchupApiRow {
@@ -37,8 +40,13 @@ interface CatchupRow extends CatchupApiRow {
    * Ménage/(Brut+Ménage) — le rattrapage à reporter sur le propriétaire,
    * puisqu'aujourd'hui tout est imputé au Brut alors que la plateforme
    * prélève sa commission sur l'ensemble payé par le client (loyer +
-   * ménage). Null si le ménage n'est pas connu. */
+   * ménage). Null si le ménage n'est pas connu. C'est la colonne "Comm
+   * Ménage". */
   commissionOnCleaningCents: number | null;
+  /** Commission M.G.B. supplémentaire à facturer sur ce rattrapage — Comm
+   * Ménage × le taux de commission M.G.B. du bien. Null si Comm Ménage ou
+   * le taux de commission ne sont pas connus. */
+  additionalCommissionCents: number | null;
 }
 
 type SortKey =
@@ -49,7 +57,8 @@ type SortKey =
   | "sum"
   | "platformCommission"
   | "percentOnGrossOnly"
-  | "commissionOnCleaning";
+  | "commissionOnCleaning"
+  | "additionalCommission";
 
 function toRow(r: CatchupApiRow): CatchupRow {
   const sumCents = r.cleaningFeeCents != null ? r.grossCents + r.cleaningFeeCents : null;
@@ -57,7 +66,11 @@ function toRow(r: CatchupApiRow): CatchupRow {
   const percentOnGrossOnly = r.grossCents > 0 ? (r.platformCommissionCents / r.grossCents) * 100 : null;
   const commissionOnCleaningCents =
     sumCents == null ? null : sumCents > 0 ? Math.round((r.platformCommissionCents * (r.cleaningFeeCents ?? 0)) / sumCents) : 0;
-  return { ...r, sumCents, effectivePercent, percentOnGrossOnly, commissionOnCleaningCents };
+  const additionalCommissionCents =
+    commissionOnCleaningCents != null && r.commissionPercent != null
+      ? Math.round((commissionOnCleaningCents * r.commissionPercent) / 100)
+      : null;
+  return { ...r, sumCents, effectivePercent, percentOnGrossOnly, commissionOnCleaningCents, additionalCommissionCents };
 }
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
@@ -262,6 +275,9 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
           case "commissionOnCleaning":
             cmp = (a.commissionOnCleaningCents ?? 0) - (b.commissionOnCleaningCents ?? 0);
             break;
+          case "additionalCommission":
+            cmp = (a.additionalCommissionCents ?? 0) - (b.additionalCommissionCents ?? 0);
+            break;
         }
         return direction === "asc" ? cmp : -cmp;
       })
@@ -274,6 +290,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         sumCents: sortedRows.reduce((sum, r) => sum + (r.sumCents ?? r.grossCents), 0),
         platformCommissionCents: sortedRows.reduce((sum, r) => sum + r.platformCommissionCents, 0),
         commissionOnCleaningCents: sortedRows.reduce((sum, r) => sum + (r.commissionOnCleaningCents ?? 0), 0),
+        additionalCommissionCents: sortedRows.reduce((sum, r) => sum + (r.additionalCommissionCents ?? 0), 0),
       }
     : null;
 
@@ -520,12 +537,23 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         title="Commission plateforme / Brut"
                       />
                       <SortHeader
-                        label="Comm. sur Ménage — rattrapage"
+                        label="Comm Ménage"
                         sortKey="commissionOnCleaning"
                         activeKey={sortKey}
                         direction={direction}
                         onSort={handleSort}
                         title="Part de la commission plateforme imputable au ménage — à rattraper sur le propriétaire"
+                      />
+                      <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Taux de commission M.G.B. du bien">
+                        Mon taux
+                      </th>
+                      <SortHeader
+                        label="Comm Supp"
+                        sortKey="additionalCommission"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        title="Comm Ménage × mon taux de commission"
                       />
                     </tr>
                   </thead>
@@ -570,8 +598,14 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Percent value={r.percentOnGrossOnly} />
                         </td>
-                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#0071e3]">
+                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#0071e3]">
                           <Money cents={r.commissionOnCleaningCents} bold />
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          {r.commissionPercent != null ? `${r.commissionPercent} %` : <span className="text-[#6e6e73]">—</span>}
+                        </td>
+                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#0071e3]">
+                          <Money cents={r.additionalCommissionCents} bold />
                         </td>
                       </tr>
                     ))}
@@ -594,8 +628,12 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       </td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#0071e3]">
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#0071e3]">
                         <Money cents={totals.commissionOnCleaningCents} bold />
+                      </td>
+                      <td className="py-1.5 px-2"></td>
+                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#0071e3]">
+                        <Money cents={totals.additionalCommissionCents} bold />
                       </td>
                     </tr>
                   </tfoot>

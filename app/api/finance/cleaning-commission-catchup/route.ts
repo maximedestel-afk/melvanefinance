@@ -25,6 +25,9 @@ export interface CleaningCommissionCatchupRow {
    * bien. */
   cleaningFeeCents: number | null;
   cleaningError: string | null;
+  /** Taux de commission M.G.B. du bien (property_owner.commission_percent),
+   * ex: 20 pour 20 % — null si non configuré. */
+  commissionPercent: number | null;
 }
 
 /** Pour chaque réservation, la commission prélevée par la plateforme de
@@ -75,6 +78,7 @@ export async function GET(request: Request) {
     }));
 
     const reservations = await getPortfolioReservationDetails(portfolioProperties, year, months);
+    const commissionPercentByPropertyId = new Map(portfolioProperties.map((p) => [p.propertyId, p.commissionPercent]));
 
     const cleaningFeeByPropertyId = new Map<string, number | null>();
     const cleaningErrorByPropertyId = new Map<string, string | null>();
@@ -107,6 +111,7 @@ export async function GET(request: Request) {
       platformCommissionCents: r.channelFeesCents,
       cleaningFeeCents: cleaningFeeByPropertyId.get(r.propertyId) ?? null,
       cleaningError: cleaningErrorByPropertyId.get(r.propertyId) ?? null,
+      commissionPercent: commissionPercentByPropertyId.get(r.propertyId) ?? null,
     }));
 
     return NextResponse.json({ rows }, { headers: { "Cache-Control": "no-store, max-age=0" } });
