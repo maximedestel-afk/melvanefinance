@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
+import { formatEuros, MONTH_LABELS_SHORT, todayIso } from "@/lib/format";
 import type { RentType } from "@/lib/types";
 
 interface PropertyOption {
@@ -236,6 +236,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   const [exportedByReservationId, setExportedByReservationId] = useState<Map<string, string>>(new Map());
   const [exportActionLoading, setExportActionLoading] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [csvExportDate, setCsvExportDate] = useState(todayIso());
 
   function toggleColumn(col: ColumnKey) {
     setHiddenColumns((prev) => {
@@ -477,8 +478,8 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     ) => {
       const fullDescription = `${description} — ${stayLabel}`;
       csvRows.push([
-        r.checkOut,
-        r.checkOut,
+        csvExportDate,
+        csvExportDate,
         fullDescription,
         "Paid",
         "Non-Trust Account",
@@ -820,7 +821,17 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                 <button type="button" onClick={unmarkSelectedAsExported} disabled={exportActionLoading} className="btn-secondary btn-sm">
                   Annuler l&apos;export
                 </button>
-                <button type="button" onClick={exportSelectedAsCsv} className="btn-secondary btn-sm">
+                <label className="flex items-center gap-1.5 text-[12px] text-[#6e6e73]" htmlFor="csv-export-date">
+                  Date du CSV
+                  <input
+                    id="csv-export-date"
+                    type="date"
+                    value={csvExportDate}
+                    onChange={(e) => setCsvExportDate(e.target.value)}
+                    className="rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                  />
+                </label>
+                <button type="button" onClick={exportSelectedAsCsv} disabled={!csvExportDate} className="btn-secondary btn-sm">
                   Exporter (CSV)
                 </button>
               </>
