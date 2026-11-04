@@ -65,6 +65,50 @@ type SortKey =
   | "additionalCommission"
   | "pnl";
 
+type ColumnKey =
+  | "reference"
+  | "stay"
+  | "gross"
+  | "cleaning"
+  | "sum"
+  | "platformCommission"
+  | "effectivePercent"
+  | "percentOnGrossOnly"
+  | "commissionOnCleaning"
+  | "commissionPercent"
+  | "additionalCommission"
+  | "pnl";
+
+const ALL_COLUMNS: ColumnKey[] = [
+  "reference",
+  "stay",
+  "gross",
+  "cleaning",
+  "sum",
+  "platformCommission",
+  "effectivePercent",
+  "percentOnGrossOnly",
+  "commissionOnCleaning",
+  "commissionPercent",
+  "additionalCommission",
+  "pnl",
+];
+
+const COLUMN_LABELS: Record<ColumnKey, string> = {
+  reference: "Bien",
+  stay: "Séjour",
+  gross: "Brut",
+  cleaning: "Ménage",
+  sum: "Commissionable Amount",
+  platformCommission: "Comm OTA",
+  effectivePercent: "% (Brut+Ménage)",
+  percentOnGrossOnly: "% Brut",
+  commissionOnCleaning: "Comm Ménage",
+  commissionPercent: "Comm Melvane",
+  additionalCommission: "Comm Supp",
+  pnl: "PNL",
+};
+
 function toRow(r: CatchupApiRow): CatchupRow {
   const sumCents = r.cleaningFeeCents != null ? r.grossCents + r.cleaningFeeCents : null;
   const effectivePercent = sumCents != null && sumCents > 0 ? (r.platformCommissionCents / sumCents) * 100 : null;
@@ -172,10 +216,15 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("checkIn");
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
-  const [hiddenRowIds, setHiddenRowIds] = useState<Set<string>>(new Set());
+  const [hiddenColumns, setHiddenColumns] = useState<Set<ColumnKey>>(new Set());
 
-  function hideRow(reservationId: string) {
-    setHiddenRowIds((prev) => new Set(prev).add(reservationId));
+  function toggleColumn(col: ColumnKey) {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
   }
 
   const includedTags = useMemo(
@@ -259,7 +308,6 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
       } else {
         setRows(data.rows);
         setSelectedPlatforms([]);
-        setHiddenRowIds(new Set());
       }
     } catch {
       setError("Impossible de charger le rattrapage ménage.");
@@ -269,11 +317,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   }
 
   const filteredRows = rows
-    ? rows.filter(
-        (r) =>
-          (selectedPlatforms.length === 0 || selectedPlatforms.includes(r.bookingPlatform ?? "Inconnu")) &&
-          !hiddenRowIds.has(r.reservationId)
-      )
+    ? rows.filter((r) => selectedPlatforms.length === 0 || selectedPlatforms.includes(r.bookingPlatform ?? "Inconnu"))
     : null;
 
   const sortedRows = filteredRows
@@ -529,25 +573,35 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         </div>
       )}
 
+      <div>
+        <span className="field-label">Colonnes</span>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {ALL_COLUMNS.map((col) => {
+            const visible = !hiddenColumns.has(col);
+            return (
+              <button
+                key={col}
+                type="button"
+                onClick={() => toggleColumn(col)}
+                className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                  visible
+                    ? "border-[#0071e3] bg-[#0071e3] text-white"
+                    : "border-black/10 bg-white text-[#86868b] hover:bg-black/[0.04]"
+                }`}
+              >
+                {COLUMN_LABELS[col]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {sortedRows && totals && !loading && !error && (
         <div className="space-y-2">
           <p className="text-[13px] text-[#6e6e73]">
             {sortedRows.length} réservation{sortedRows.length !== 1 ? "s" : ""}
-            {hiddenRowIds.size > 0 && (
-              <>
-                {" "}
-                · {hiddenRowIds.size} masquée{hiddenRowIds.size !== 1 ? "s" : ""} ·{" "}
-                <button
-                  type="button"
-                  onClick={() => setHiddenRowIds(new Set())}
-                  className="font-medium text-[#0071e3] hover:underline"
-                >
-                  Réafficher
-                </button>
-              </>
-            )}
           </p>
 
           {sortedRows.length === 0 ? (
@@ -558,58 +612,81 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                 <table className="w-full border-collapse whitespace-nowrap text-[12px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                      <th className="py-1.5 px-2"></th>
-                      <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
-                      <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
-                      <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Rents, avant Comm OTA" />
-                      <SortHeader label="Ménage" sortKey="cleaning" activeKey={sortKey} direction={direction} onSort={handleSort} title="Prix ménage facturé au client (Guesty)" />
-                      <SortHeader label="Total Comm Amount" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} title="Brut + Ménage" />
-                      <SortHeader
-                        label="Comm OTA"
-                        sortKey="platformCommission"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="Montant déjà connu côté VRPlatform (Channel Commissions)"
-                      />
-                      <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Comm OTA / (Brut + Ménage)">
-                        % (Brut+Ménage)
-                      </th>
-                      <SortHeader
-                        label="% Brut"
-                        sortKey="percentOnGrossOnly"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="Comm OTA / Brut"
-                      />
-                      <SortHeader
-                        label="Comm Ménage"
-                        sortKey="commissionOnCleaning"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="Part de la Comm OTA imputable au ménage — à rattraper sur le propriétaire"
-                      />
-                      <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Taux de commission M.G.B. du bien">
-                        Comm Melvane
-                      </th>
-                      <SortHeader
-                        label="Comm Supp"
-                        sortKey="additionalCommission"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="Comm Ménage × mon taux de commission, en négatif"
-                      />
-                      <SortHeader
-                        label="PNL"
-                        sortKey="pnl"
-                        activeKey={sortKey}
-                        direction={direction}
-                        onSort={handleSort}
-                        title="Comm Ménage − Comm Supp"
-                      />
+                      {!hiddenColumns.has("reference") && (
+                        <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
+                      )}
+                      {!hiddenColumns.has("stay") && (
+                        <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Séjour</th>
+                      )}
+                      {!hiddenColumns.has("gross") && (
+                        <SortHeader label="Brut" sortKey="gross" activeKey={sortKey} direction={direction} onSort={handleSort} title="Rents, avant Comm OTA" />
+                      )}
+                      {!hiddenColumns.has("cleaning") && (
+                        <SortHeader label="Ménage" sortKey="cleaning" activeKey={sortKey} direction={direction} onSort={handleSort} title="Prix ménage facturé au client (Guesty)" />
+                      )}
+                      {!hiddenColumns.has("sum") && (
+                        <SortHeader label="Commissionable Amount" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} title="Brut + Ménage" />
+                      )}
+                      {!hiddenColumns.has("platformCommission") && (
+                        <SortHeader
+                          label="Comm OTA"
+                          sortKey="platformCommission"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          title="Montant déjà connu côté VRPlatform (Channel Commissions)"
+                        />
+                      )}
+                      {!hiddenColumns.has("effectivePercent") && (
+                        <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Comm OTA / (Brut + Ménage)">
+                          % (Brut+Ménage)
+                        </th>
+                      )}
+                      {!hiddenColumns.has("percentOnGrossOnly") && (
+                        <SortHeader
+                          label="% Brut"
+                          sortKey="percentOnGrossOnly"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          title="Comm OTA / Brut"
+                        />
+                      )}
+                      {!hiddenColumns.has("commissionOnCleaning") && (
+                        <SortHeader
+                          label="Comm Ménage"
+                          sortKey="commissionOnCleaning"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          title="Part de la Comm OTA imputable au ménage — à rattraper sur le propriétaire"
+                        />
+                      )}
+                      {!hiddenColumns.has("commissionPercent") && (
+                        <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]" title="Taux de commission M.G.B. du bien">
+                          Comm Melvane
+                        </th>
+                      )}
+                      {!hiddenColumns.has("additionalCommission") && (
+                        <SortHeader
+                          label="Comm Supp"
+                          sortKey="additionalCommission"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          title="Comm Ménage × mon taux de commission, en négatif"
+                        />
+                      )}
+                      {!hiddenColumns.has("pnl") && (
+                        <SortHeader
+                          label="PNL"
+                          sortKey="pnl"
+                          activeKey={sortKey}
+                          direction={direction}
+                          onSort={handleSort}
+                          title="Comm Ménage − Comm Supp"
+                        />
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -620,93 +697,120 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                         }`}
                       >
-                        <td className="py-1.5 px-2">
-                          <button
-                            type="button"
-                            onClick={() => hideRow(r.reservationId)}
-                            title="Masquer cette ligne"
-                            className="text-[#c7c7cc] transition hover:text-red-600"
-                          >
-                            ✕
-                          </button>
-                        </td>
-                        <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
-                          {r.reference}
-                          {r.cleaningError && (
-                            <span title={`Guesty : ${r.cleaningError}`} className="ml-1.5 text-red-600">
-                              ⚠
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-1.5 px-2 text-[#6e6e73]">
-                          {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
-                          <div className="text-[10.5px] text-[#86868b]">
-                            {r.bookingPlatform ?? "Inconnu"}
-                            {r.guestName ? ` · ${r.guestName}` : ""}
-                          </div>
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          <Money cents={r.grossCents} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          <Money cents={r.cleaningFeeCents} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums font-medium text-[#1d1d1f]">
-                          <Money cents={r.sumCents} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          <Money cents={r.platformCommissionCents} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          <Percent value={r.effectivePercent} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          <Percent value={r.percentOnGrossOnly} />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#0071e3]">
-                          <Money cents={r.commissionOnCleaningCents} bold />
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                          {r.commissionPercent != null ? `${r.commissionPercent} %` : <span className="text-[#6e6e73]">—</span>}
-                        </td>
-                        <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-red-600">
-                          <Money cents={r.additionalCommissionCents} bold />
-                        </td>
-                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
-                          <SignedMoney cents={r.pnlCents} bold />
-                        </td>
+                        {!hiddenColumns.has("reference") && (
+                          <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
+                            {r.reference}
+                            {r.cleaningError && (
+                              <span title={`Guesty : ${r.cleaningError}`} className="ml-1.5 text-red-600">
+                                ⚠
+                              </span>
+                            )}
+                          </td>
+                        )}
+                        {!hiddenColumns.has("stay") && (
+                          <td className="py-1.5 px-2 text-[#6e6e73]">
+                            {formatDate(r.checkIn)} → {formatDate(r.checkOut)}
+                            <div className="text-[10.5px] text-[#86868b]">
+                              {r.bookingPlatform ?? "Inconnu"}
+                              {r.guestName ? ` · ${r.guestName}` : ""}
+                            </div>
+                          </td>
+                        )}
+                        {!hiddenColumns.has("gross") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <Money cents={r.grossCents} />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("cleaning") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <Money cents={r.cleaningFeeCents} />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("sum") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums font-medium text-[#1d1d1f]">
+                            <Money cents={r.sumCents} />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("platformCommission") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <Money cents={r.platformCommissionCents} />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("effectivePercent") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <Percent value={r.effectivePercent} />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("percentOnGrossOnly") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <Percent value={r.percentOnGrossOnly} />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("commissionOnCleaning") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-[#0071e3]">
+                            <Money cents={r.commissionOnCleaningCents} bold />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("commissionPercent") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            {r.commissionPercent != null ? `${r.commissionPercent} %` : <span className="text-[#6e6e73]">—</span>}
+                          </td>
+                        )}
+                        {!hiddenColumns.has("additionalCommission") && (
+                          <td className="py-1.5 px-2 text-right tabular-nums font-semibold text-red-600">
+                            <Money cents={r.additionalCommissionCents} bold />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("pnl") && (
+                          <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                            <SignedMoney cents={r.pnlCents} bold />
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                      <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 pl-3 pr-2">Total ({sortedRows.length})</td>
-                      <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 px-2 text-right tabular-nums">
-                        <Money cents={totals.grossCents} bold />
-                      </td>
-                      <td className="py-1.5 px-2 text-right tabular-nums">
-                        <Money cents={totals.cleaningFeeCents} bold />
-                      </td>
-                      <td className="py-1.5 px-2 text-right tabular-nums">
-                        <Money cents={totals.sumCents} bold />
-                      </td>
-                      <td className="py-1.5 px-2 text-right tabular-nums">
-                        <Money cents={totals.platformCommissionCents} bold />
-                      </td>
-                      <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 px-2 text-right tabular-nums text-[#0071e3]">
-                        <Money cents={totals.commissionOnCleaningCents} bold />
-                      </td>
-                      <td className="py-1.5 px-2"></td>
-                      <td className="py-1.5 px-2 text-right tabular-nums text-red-600">
-                        <Money cents={totals.additionalCommissionCents} bold />
-                      </td>
-                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
-                        <SignedMoney cents={totals.pnlCents} bold />
-                      </td>
+                      {!hiddenColumns.has("reference") && <td className="py-1.5 pl-3 pr-2">Total ({sortedRows.length})</td>}
+                      {!hiddenColumns.has("stay") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("gross") && (
+                        <td className="py-1.5 px-2 text-right tabular-nums">
+                          <Money cents={totals.grossCents} bold />
+                        </td>
+                      )}
+                      {!hiddenColumns.has("cleaning") && (
+                        <td className="py-1.5 px-2 text-right tabular-nums">
+                          <Money cents={totals.cleaningFeeCents} bold />
+                        </td>
+                      )}
+                      {!hiddenColumns.has("sum") && (
+                        <td className="py-1.5 px-2 text-right tabular-nums">
+                          <Money cents={totals.sumCents} bold />
+                        </td>
+                      )}
+                      {!hiddenColumns.has("platformCommission") && (
+                        <td className="py-1.5 px-2 text-right tabular-nums">
+                          <Money cents={totals.platformCommissionCents} bold />
+                        </td>
+                      )}
+                      {!hiddenColumns.has("effectivePercent") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("percentOnGrossOnly") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("commissionOnCleaning") && (
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#0071e3]">
+                          <Money cents={totals.commissionOnCleaningCents} bold />
+                        </td>
+                      )}
+                      {!hiddenColumns.has("commissionPercent") && <td className="py-1.5 px-2"></td>}
+                      {!hiddenColumns.has("additionalCommission") && (
+                        <td className="py-1.5 px-2 text-right tabular-nums text-red-600">
+                          <Money cents={totals.additionalCommissionCents} bold />
+                        </td>
+                      )}
+                      {!hiddenColumns.has("pnl") && (
+                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
+                          <SignedMoney cents={totals.pnlCents} bold />
+                        </td>
+                      )}
                     </tr>
                   </tfoot>
                 </table>
