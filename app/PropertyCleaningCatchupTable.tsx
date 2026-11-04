@@ -30,6 +30,9 @@ interface CatchupRow extends CatchupApiRow {
   /** % que représente la commission plateforme (déjà connue en euros) par
    * rapport à Brut + Ménage — null si le ménage n'est pas connu. */
   effectivePercent: number | null;
+  /** Commission plateforme / Brut seul (sans tenir compte du ménage) — null
+   * si Brut est nul. */
+  percentOnGrossOnly: number | null;
   /** Part de la commission plateforme imputable au Brut au prorata
    * Brut/(Brut+Ménage) — égale à platformCommissionCents si le ménage est
    * inconnu (tout reste imputé au brut, comme aujourd'hui). */
@@ -48,16 +51,18 @@ type SortKey =
   | "cleaning"
   | "sum"
   | "platformCommission"
+  | "percentOnGrossOnly"
   | "commissionOnGross"
   | "commissionOnCleaning";
 
 function toRow(r: CatchupApiRow): CatchupRow {
   const sumCents = r.cleaningFeeCents != null ? r.grossCents + r.cleaningFeeCents : null;
   const effectivePercent = sumCents != null && sumCents > 0 ? (r.platformCommissionCents / sumCents) * 100 : null;
+  const percentOnGrossOnly = r.grossCents > 0 ? (r.platformCommissionCents / r.grossCents) * 100 : null;
   const commissionOnGrossCents =
     sumCents != null && sumCents > 0 ? Math.round((r.platformCommissionCents * r.grossCents) / sumCents) : r.platformCommissionCents;
   const commissionOnCleaningCents = sumCents != null ? r.platformCommissionCents - commissionOnGrossCents : null;
-  return { ...r, sumCents, effectivePercent, commissionOnGrossCents, commissionOnCleaningCents };
+  return { ...r, sumCents, effectivePercent, percentOnGrossOnly, commissionOnGrossCents, commissionOnCleaningCents };
 }
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
@@ -255,6 +260,9 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
             break;
           case "platformCommission":
             cmp = a.platformCommissionCents - b.platformCommissionCents;
+            break;
+          case "percentOnGrossOnly":
+            cmp = (a.percentOnGrossOnly ?? 0) - (b.percentOnGrossOnly ?? 0);
             break;
           case "commissionOnGross":
             cmp = a.commissionOnGrossCents - b.commissionOnGrossCents;
@@ -513,6 +521,14 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         % (Brut+Ménage)
                       </th>
                       <SortHeader
+                        label="% sur Brut seul"
+                        sortKey="percentOnGrossOnly"
+                        activeKey={sortKey}
+                        direction={direction}
+                        onSort={handleSort}
+                        title="Commission plateforme / Brut"
+                      />
+                      <SortHeader
                         label="Comm. plateforme sur Brut seul"
                         sortKey="commissionOnGross"
                         activeKey={sortKey}
@@ -569,6 +585,9 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           <Percent value={r.effectivePercent} />
                         </td>
                         <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                          <Percent value={r.percentOnGrossOnly} />
+                        </td>
+                        <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                           <Money cents={r.commissionOnGrossCents} />
                         </td>
                         <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#0071e3]">
@@ -593,6 +612,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.platformCommissionCents} bold />
                       </td>
+                      <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2"></td>
                       <td className="py-1.5 px-2 text-right tabular-nums">
                         <Money cents={totals.commissionOnGrossCents} bold />
