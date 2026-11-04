@@ -164,6 +164,7 @@ function SortHeader({
   onSort,
   align = "right",
   title,
+  wrap = false,
 }: {
   label: string;
   sortKey: SortKey;
@@ -172,6 +173,8 @@ function SortHeader({
   onSort: (key: SortKey) => void;
   align?: "left" | "right";
   title?: string;
+  /** Force le libellé sur deux lignes au lieu d'élargir la colonne. */
+  wrap?: boolean;
 }) {
   const isActive = activeKey === sortKey;
   return (
@@ -183,7 +186,7 @@ function SortHeader({
           align === "right" ? "flex-row-reverse" : ""
         } ${isActive ? "text-[#1d1d1f]" : "text-[#86868b] hover:text-[#1d1d1f]"}`}
       >
-        {label}
+        <span className={wrap ? "max-w-[70px] whitespace-normal leading-tight" : undefined}>{label}</span>
         {isActive && <span aria-hidden>{direction === "asc" ? "↑" : "↓"}</span>}
       </button>
     </th>
@@ -636,7 +639,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         <SortHeader label="Ménage" sortKey="cleaning" activeKey={sortKey} direction={direction} onSort={handleSort} title="Prix ménage facturé au client (Guesty)" />
                       )}
                       {!hiddenColumns.has("sum") && (
-                        <SortHeader label="Commissionable Amount" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} title="Brut + Ménage" />
+                        <SortHeader label="Commissionable Amount" sortKey="sum" activeKey={sortKey} direction={direction} onSort={handleSort} title="Brut + Ménage" wrap />
                       )}
                       {!hiddenColumns.has("platformCommission") && (
                         <SortHeader
