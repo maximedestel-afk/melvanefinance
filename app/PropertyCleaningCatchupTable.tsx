@@ -24,6 +24,7 @@ interface CatchupApiRow {
   grossCents: number;
   platformCommissionCents: number;
   cleaningFeeCents: number | null;
+  cleaningProviderCostCents: number | null;
   cleaningError: string | null;
   /** Taux de commission M.G.B. du bien, ex: 20 pour 20 % — null si non
    * configuré. */
@@ -436,45 +437,86 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     }
   }
 
+  /** Même format d'import "Expenses" VRPlatform que le Convertisseur CSV
+   * (Issue Date/Payment Date/Description/Status/Bank-CC account/Contact/
+   * Bill ID/Currency/Listing/Reservation/Line Description/Expense account/
+   * Bill to Owner/Applied amount/Markup/Markup Tax), avec jusqu'à trois
+   * lignes par réservation sélectionnée, toutes Bill to Owner = TRUE :
+   * - Housekeeping, montant positif : remboursement au propriétaire du
+   *   rattrapage Comm Ménage.
+   * - Housekeeping, montant négatif : coût du ménage payé au prestataire,
+   *   retiré des comptes du propriétaire (profit pour lui, Melvane absorbe
+   *   ce coût).
+   * - Management Commission, montant positif (Comm Supp, signe inversé —
+   *   négatif dans le tableau car coût pour le propriétaire, positif ici
+   *   car crédité au manager) : commission M.G.B. supplémentaire. */
   function exportSelectedAsCsv() {
     if (!sortedRows || selectedReservationIds.size === 0) return;
     const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
     const header = [
-      "Bien",
-      "Séjour (check-out)",
-      "Plateforme",
-      "Référence",
-      "Brut",
-      "Ménage",
-      "Comm OTA",
-      "Comm Ménage (rattrapage)",
-      "Comm Melvane %",
-      "Comm Supp",
-      "PNL Owner",
+      "Issue Date",
+      "Payment Date",
+      "Description",
+      "Status",
+      "Bank/CC account",
+      "Contact",
+      "Bill ID",
+      "Currency",
+      "Listing",
+      "Reservation",
+      "Line Description",
+      "Expense account",
+      "Bill to Owner",
+      "Applied amount",
+      "Markup",
+      "Markup Tax",
     ];
-    const escapeCsvField = (value: string): string => (/[";\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
-    const rowsForCsv = [
-      header,
-      ...selectedRows.map((r) => [
-        r.reference,
+    const escapeCsvField = (value: string): string => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+    const csvRows: string[][] = [header];
+    const addLine = (
+      r: CatchupRow,
+      stayLabel: string,
+      description: string,
+      expenseAccount: string,
+      appliedAmountCents: number
+    ) => {
+      csvRows.push([
         r.checkOut,
-        r.bookingPlatform ?? "",
-        r.confirmationCode ?? "",
-        formatEuros(r.grossCents / 100),
-        r.cleaningFeeCents != null ? formatEuros(r.cleaningFeeCents / 100) : "",
-        formatEuros(r.platformCommissionCents / 100),
-        r.commissionOnCleaningCents != null ? formatEuros(r.commissionOnCleaningCents / 100) : "",
-        r.commissionPercent != null ? String(r.commissionPercent) : "",
-        r.additionalCommissionCents != null ? formatEuros(r.additionalCommissionCents / 100) : "",
-        r.pnlCents != null ? formatEuros(r.pnlCents / 100) : "",
-      ]),
-    ];
-    const csvContent = rowsForCsv.map((row) => row.map(escapeCsvField).join(";")).join("\r\n");
+        r.checkOut,
+        `${description} — ${stayLabel}`,
+        "Paid",
+        "Non-Trust Account",
+        "",
+        "",
+        "EUR",
+        r.reference,
+        "",
+        description,
+        expenseAccount,
+        "TRUE",
+        (appliedAmountCents / 100).toFixed(2),
+        "",
+        "",
+      ]);
+    };
+    for (const r of selectedRows) {
+      const stayLabel = `${r.confirmationCode ?? r.reservationId} (${r.checkOut})`;
+      if (r.commissionOnCleaningCents != null && r.commissionOnCleaningCents !== 0) {
+        addLine(r, stayLabel, "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
+      }
+      if (r.cleaningProviderCostCents != null && r.cleaningProviderCostCents !== 0) {
+        addLine(r, stayLabel, "Ménage", "Housekeeping", -r.cleaningProviderCostCents);
+      }
+      if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
+        addLine(r, stayLabel, "Commission ménage supplémentaire", "Management Commission", -r.additionalCommissionCents);
+      }
+    }
+    const csvContent = csvRows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `rattrapage_menage_${year}.csv`;
+    a.download = `rattrapage_menage_${year}_vrplatform.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
