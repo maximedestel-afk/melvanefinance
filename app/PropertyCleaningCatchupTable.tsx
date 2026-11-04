@@ -471,6 +471,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     const addLine = (
       r: CatchupRow,
       stayLabel: string,
+      billIdSuffix: string,
       description: string,
       expenseAccount: string,
       appliedAmountCents: number
@@ -482,7 +483,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         "Paid",
         "Non-Trust Account",
         "info@melvanebydesign.com",
-        r.confirmationCode ?? r.reservationId,
+        `${r.confirmationCode ?? r.reservationId}-${billIdSuffix}`,
         "EUR",
         r.reference,
         "",
@@ -497,10 +498,10 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     for (const r of selectedRows) {
       const stayLabel = `${r.confirmationCode ?? r.reservationId} (${r.checkOut})`;
       if (r.commissionOnCleaningCents != null && r.commissionOnCleaningCents !== 0) {
-        addLine(r, stayLabel, "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
+        addLine(r, stayLabel, "RM", "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
       }
       if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
-        addLine(r, stayLabel, "Commission ménage", "Payout Adjustments", -r.additionalCommissionCents);
+        addLine(r, stayLabel, "CS", "Commission ménage", "Payout Adjustments", -r.additionalCommissionCents);
       }
     }
     const csvContent = csvRows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
