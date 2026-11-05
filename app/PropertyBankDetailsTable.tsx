@@ -7,9 +7,16 @@ interface BankDetails {
   ownerFirstName: string;
   iban: string;
   accountName: string;
+  accountReference: string;
 }
 
-const EMPTY_DETAILS: BankDetails = { ownerLastName: "", ownerFirstName: "", iban: "", accountName: "" };
+const EMPTY_DETAILS: BankDetails = {
+  ownerLastName: "",
+  ownerFirstName: "",
+  iban: "",
+  accountName: "",
+  accountReference: "",
+};
 
 export function PropertyBankDetailsTable({
   properties,
@@ -39,12 +46,14 @@ export function PropertyBankDetailsTable({
           ownerFirstName: string | null;
           iban: string | null;
           accountName: string | null;
+          accountReference: string | null;
         }[]) {
           next[row.propertyId] = {
             ownerLastName: row.ownerLastName ?? "",
             ownerFirstName: row.ownerFirstName ?? "",
             iban: row.iban ?? "",
             accountName: row.accountName ?? "",
+            accountReference: row.accountReference ?? "",
           };
         }
         setDetailsByPropertyId(next);
@@ -105,7 +114,8 @@ export function PropertyBankDetailsTable({
                   <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire (Nom Prénom)</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">IBAN</th>
-                  <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
+                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
+                  <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Référence du compte</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,7 +163,7 @@ export function PropertyBankDetailsTable({
                           className="w-64 rounded-[8px] border border-black/10 bg-white px-2 py-1 font-mono text-[12px] uppercase text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
                         />
                       </td>
-                      <td className="py-1 pl-2 pr-3">
+                      <td className="py-1 px-2">
                         <input
                           type="text"
                           value={details.accountName}
@@ -162,6 +172,17 @@ export function PropertyBankDetailsTable({
                           placeholder="Nom du compte"
                           disabled={saving}
                           className="w-48 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
+                        />
+                      </td>
+                      <td className="py-1 pl-2 pr-3">
+                        <input
+                          type="text"
+                          value={details.accountReference}
+                          onChange={(e) => updateField(property.id, "accountReference", e.target.value)}
+                          onBlur={() => save(property.id)}
+                          placeholder="Référence du compte"
+                          disabled={saving}
+                          className="w-40 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
                         />
                       </td>
                     </tr>
