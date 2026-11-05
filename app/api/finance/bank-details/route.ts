@@ -16,10 +16,18 @@ export async function GET() {
   if (error) return error;
 
   const supabase = createAdminClient();
-  const { data, error: dbError } = await supabase
+  let { data, error: dbError } = await supabase
     .from("property_bank_details")
     .select("property_id, iban, account_name, account_reference, auto_payment_setup");
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
+  // Si une colonne récente (ex: auto_payment_setup) n'existe pas encore côté
+  // Supabase (migration pas encore appliquée), on retombe sur les colonnes de
+  // base plutôt que de faire échouer tout le chargement du tableau.
+  if (dbError) {
+    const fallback = await supabase.from("property_bank_details").select("property_id, iban, account_name, account_reference");
+    if (fallback.error) return NextResponse.json({ error: fallback.error.message }, { status: 500 });
+    data = fallback.data.map((row) => ({ ...row, auto_payment_setup: false }));
+    dbError = null;
+  }
 
   return NextResponse.json({
     details: (data ?? []).map((row) => ({
@@ -50,18 +58,23 @@ export async function PUT(request: Request) {
   const autoPaymentSetup = body.autoPaymentSetup === true;
 
   const supabase = createAdminClient();
-  const { error: dbError } = await supabase.from("property_bank_details").upsert(
-    {
-      property_id: propertyId,
-      iban: iban || null,
-      account_name: accountName || null,
-      account_reference: accountReference || null,
-      auto_payment_setup: autoPaymentSetup,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "property_id" }
-  );
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
+  const basePayload = {
+    property_id: propertyId,
+    iban: iban || null,
+    account_name: accountName || null,
+    account_reference: accountReference || null,
+    updated_at: new Date().toISOString(),
+  };
+  const { error: dbError } = await supabase
+    .from("property_bank_details")
+    .upsert({ ...basePayload, auto_payment_setup: autoPaymentSetup }, { onConflict: "property_id" });
+  if (dbError) {
+    // Ne jamais perdre l'IBAN/nom/référence déjà saisis si une colonne plus
+    // récente (ex: auto_payment_setup) n'existe pas encore côté Supabase —
+    // on retente sans elle plutôt que de faire échouer tout l'enregistrement.
+    const retry = await supabase.from("property_bank_details").upsert(basePayload, { onConflict: "property_id" });
+    if (retry.error) return NextResponse.json({ error: retry.error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }
