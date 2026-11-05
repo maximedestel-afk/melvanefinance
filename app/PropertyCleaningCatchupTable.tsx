@@ -50,8 +50,9 @@ interface CatchupRow extends CatchupApiRow {
    * (coût pour le propriétaire). Null si Comm Ménage ou le taux de
    * commission ne sont pas connus. */
   additionalCommissionCents: number | null;
-  /** PNL = Comm Ménage − Comm Supp (Comm Supp étant négatif, ça revient à
-   * additionner les deux) — null si l'un des deux n'est pas connu. */
+  /** PNL (côté propriétaire) = Comm Ménage + Comm Supp — Comm Supp est déjà
+   * négatif (coût pour le propriétaire), donc l'additionner revient à le
+   * soustraire du PNL. Null si l'un des deux n'est pas connu. */
   pnlCents: number | null;
 }
 
@@ -133,7 +134,7 @@ function toRow(r: CatchupApiRow): CatchupRow {
       : null;
   const pnlCents =
     commissionOnCleaningCents != null && additionalCommissionCents != null
-      ? commissionOnCleaningCents - additionalCommissionCents
+      ? commissionOnCleaningCents + additionalCommissionCents
       : null;
   return { ...r, sumCents, effectivePercent, percentOnGrossOnly, commissionOnCleaningCents, additionalCommissionCents, pnlCents };
 }
