@@ -13,6 +13,10 @@ interface VrRow {
    * VRPlatform (ex: "Card transaction ... issued by Supabase SINGAPORE"). */
   isExpense: boolean;
   expenseBillId: string;
+  /** Issue Date de la ligne de dépense — distincte de Payment Date (= date
+   * de la transaction WISE) : la date de la facture, modifiable, par
+   * défaut égale à la date de paiement. */
+  expenseIssueDate: string;
   expenseBank: string;
   expenseDescription: string;
   expenseListing: string;
@@ -222,15 +226,17 @@ export function BankStatementCsvTable() {
         const dataRows = parsed.slice(1);
         setRows(
           dataRows.map((r) => {
+            const date = convertWiseDate(r[dateIdx] ?? "");
             const description = (r[descriptionIdx] ?? "").trim();
             const wiseId = wiseIdIdx !== -1 ? (r[wiseIdIdx] ?? "").trim() : "";
             return {
-              date: convertWiseDate(r[dateIdx] ?? ""),
+              date,
               amount: (r[amountIdx] ?? "").trim(),
               description,
               wiseId,
               isExpense: false,
               expenseBillId: wiseId,
+              expenseIssueDate: date,
               expenseBank: "WISE",
               expenseDescription: description,
               expenseListing: "",
@@ -315,7 +321,15 @@ export function BankStatementCsvTable() {
 
   function updateExpenseField(
     index: number,
-    field: "expenseBillId" | "expenseBank" | "expenseDescription" | "expenseListing" | "expenseContact" | "expenseAccount" | "billToOwner",
+    field:
+      | "expenseBillId"
+      | "expenseIssueDate"
+      | "expenseBank"
+      | "expenseDescription"
+      | "expenseListing"
+      | "expenseContact"
+      | "expenseAccount"
+      | "billToOwner",
     value: string
   ) {
     setRows((prev) => (prev ? prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)) : prev));
@@ -329,7 +343,7 @@ export function BankStatementCsvTable() {
       EXPENSE_COLUMNS.join(","),
       ...expenseRows.map((r) =>
         [
-          r.date,
+          r.expenseIssueDate,
           r.date,
           r.expenseDescription,
           "Paid",
@@ -520,6 +534,28 @@ export function BankStatementCsvTable() {
                                   value={r.expenseBillId}
                                   onChange={(e) => updateExpenseField(i, "expenseBillId", e.target.value)}
                                   className="mt-0.5 block w-32 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]" title="Date de la facture — distincte de Payment Date (date de la transaction WISE)">
+                                  Issue Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={r.expenseIssueDate}
+                                  onChange={(e) => updateExpenseField(i, "expenseIssueDate", e.target.value)}
+                                  className="mt-0.5 block w-36 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]" title="Date de la transaction WISE (non modifiable)">
+                                  Payment Date
+                                </label>
+                                <input
+                                  type="text"
+                                  value={r.date}
+                                  disabled
+                                  className="mt-0.5 block w-28 rounded-[6px] border border-black/10 bg-black/[0.03] px-1.5 py-1 text-[12px] text-[#6e6e73]"
                                 />
                               </div>
                               <div>
