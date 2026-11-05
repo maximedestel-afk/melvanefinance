@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatEuros } from "@/lib/format";
+import type { RentType } from "@/lib/types";
 
 interface BankDetails {
   iban: string;
@@ -12,21 +13,79 @@ interface BankDetails {
 
 const EMPTY_DETAILS: BankDetails = { iban: "", accountName: "", accountReference: "", autoPaymentSetup: false };
 
+const RENT_TYPE_LABELS: Record<RentType, string> = {
+  fixe: "Fixe",
+  variable: "Variable",
+  fixe_variable: "Fixe + variable",
+};
+
 interface PropertyOption {
   id: string;
   reference: string;
   rentAmount: number | null;
+  rentType: RentType | null;
+  tags: string[];
   ownerLastName: string | null;
   ownerFirstName: string | null;
 }
 
-export function PropertyBankDetailsTable({ properties }: { properties: PropertyOption[] }) {
-  const sortedProperties = [...properties].sort((a, b) => a.reference.localeCompare(b.reference, "fr"));
+export function PropertyBankDetailsTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
+  const allProperties = useMemo(
+    () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
+    [unsortedProperties]
+  );
+  const allTags = useMemo(
+    () => Array.from(new Set(allProperties.flatMap((p) => p.tags))).sort((a, b) => a.localeCompare(b, "fr")),
+    [allProperties]
+  );
+
+  const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
+  const [showProperties, setShowProperties] = useState(false);
+  const [tagFilters, setTagFilters] = useState<Record<string, "include" | "exclude">>({});
+  const [selectedRentTypes, setSelectedRentTypes] = useState<RentType[]>([]);
 
   const [detailsByPropertyId, setDetailsByPropertyId] = useState<Record<string, BankDetails>>({});
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  function toggleProperty(id: string) {
+    setSelectedPropertyIds((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
+  }
+
+  // Cycle à trois états par tag : neutre → inclure → exclure → neutre.
+  function cycleTagFilter(tag: string) {
+    setTagFilters((prev) => {
+      const next = { ...prev };
+      if (next[tag] === "include") next[tag] = "exclude";
+      else if (next[tag] === "exclude") delete next[tag];
+      else next[tag] = "include";
+      return next;
+    });
+  }
+
+  function toggleRentType(rentType: RentType) {
+    setSelectedRentTypes((prev) => (prev.includes(rentType) ? prev.filter((t) => t !== rentType) : [...prev, rentType]));
+  }
+
+  const includedTags = useMemo(
+    () => Object.entries(tagFilters).filter(([, mode]) => mode === "include").map(([tag]) => tag),
+    [tagFilters]
+  );
+  const excludedTags = useMemo(
+    () => Object.entries(tagFilters).filter(([, mode]) => mode === "exclude").map(([tag]) => tag),
+    [tagFilters]
+  );
+
+  const matchingProperties = useMemo(() => {
+    return allProperties.filter((p) => {
+      const isSelected = selectedPropertyIds.includes(p.id);
+      const matchesIncluded = includedTags.length === 0 || p.tags.some((t) => includedTags.includes(t));
+      const matchesExcluded = excludedTags.length === 0 || !p.tags.some((t) => excludedTags.includes(t));
+      const matchesRentType = selectedRentTypes.length === 0 || (p.rentType != null && selectedRentTypes.includes(p.rentType));
+      return isSelected && matchesIncluded && matchesExcluded && matchesRentType;
+    });
+  }, [allProperties, selectedPropertyIds, includedTags, excludedTags, selectedRentTypes]);
 
   useEffect(() => {
     (async () => {
@@ -100,6 +159,15 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
     return [property.ownerLastName, property.ownerFirstName].filter((part) => part && part.trim() !== "").join(" ");
   }
 
+  const totals = useMemo(() => {
+    const totalRentAmount = matchingProperties.reduce((sum, p) => sum + (p.rentAmount ?? 0), 0);
+    const autoPaymentCount = matchingProperties.filter((p) => detailsByPropertyId[p.id]?.autoPaymentSetup).length;
+    return { totalRentAmount, autoPaymentCount };
+  }, [matchingProperties, detailsByPropertyId]);
+
+  const thClass =
+    "sticky top-0 z-10 border-b border-black/[0.08] bg-[#fafafc] py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]";
+
   return (
     <div className="space-y-3">
       <p className="text-[13px] text-[#6e6e73]">
@@ -109,27 +177,142 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
         saisi ou collé.
       </p>
 
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowProperties((v) => !v)}
+            className="flex items-center gap-2 rounded-[10px] border-2 border-[#0071e3] bg-white px-3 py-2 text-[13px] font-medium text-[#0071e3] transition hover:bg-[#0071e3]/5"
+          >
+            🏠 Choisir les biens ({selectedPropertyIds.length}/{allProperties.length})
+            <span aria-hidden className={`transition-transform ${showProperties ? "rotate-180" : ""}`}>
+              ▾
+            </span>
+          </button>
+          <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
+            {matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""} sélectionné
+            {matchingProperties.length !== 1 ? "s" : ""} (après filtres)
+          </span>
+        </div>
+        {showProperties && (
+          <>
+            <div className="mt-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPropertyIds(allProperties.map((p) => p.id))}
+                className="text-[12px] font-medium text-[#0071e3] hover:underline"
+              >
+                Tout sélectionner
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPropertyIds([])}
+                className="text-[12px] font-medium text-[#0071e3] hover:underline"
+              >
+                Tout désélectionner
+              </button>
+            </div>
+            <div className="mt-1 grid max-h-56 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto rounded-[10px] border border-black/10 bg-white p-3 sm:grid-cols-3 md:grid-cols-4">
+              {allProperties.map((p) => (
+                <label key={p.id} className="flex items-center gap-1.5 text-[13px] text-[#1d1d1f]">
+                  <input
+                    type="checkbox"
+                    checked={selectedPropertyIds.includes(p.id)}
+                    onChange={() => toggleProperty(p.id)}
+                    className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                  />
+                  {p.reference}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div>
+        <span className="field-label">Modèle de rémunération</span>
+        <div className="mt-1 flex flex-wrap gap-1">
+          {(Object.keys(RENT_TYPE_LABELS) as RentType[]).map((rentType) => {
+            const active = selectedRentTypes.includes(rentType);
+            return (
+              <button
+                key={rentType}
+                type="button"
+                onClick={() => toggleRentType(rentType)}
+                className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                  active
+                    ? "border-[#0071e3] bg-[#0071e3] text-white"
+                    : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                }`}
+              >
+                {RENT_TYPE_LABELS[rentType]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {allTags.length > 0 && (
+        <div>
+          <span className="field-label">Tags</span>
+          <p className="mt-0.5 text-[11px] text-[#86868b]">Clic : inclure · reclic : exclure · reclic : neutre</p>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {allTags.map((tag) => {
+              const mode = tagFilters[tag];
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => cycleTagFilter(tag)}
+                  title={
+                    mode === "include"
+                      ? "Inclus — clic pour exclure"
+                      : mode === "exclude"
+                        ? "Exclu — clic pour désactiver"
+                        : "Clic pour inclure"
+                  }
+                  className={`rounded-full border px-2.5 py-1 text-[13px] font-medium transition ${
+                    mode === "include"
+                      ? "border-[#0071e3] bg-[#0071e3] text-white"
+                      : mode === "exclude"
+                        ? "border-[#ff3b30] bg-[#ff3b30] text-white"
+                        : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
+                >
+                  {mode === "exclude" ? "− " : mode === "include" ? "+ " : ""}
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
       {loading && <p className="text-[13px] text-[#6e6e73]">Chargement…</p>}
 
-      {!loading && (
+      {!loading && matchingProperties.length === 0 && (
+        <p className="text-[13px] text-[#6e6e73]">Aucun bien ne correspond aux filtres.</p>
+      )}
+
+      {!loading && matchingProperties.length > 0 && (
         <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
-          <div className="overflow-x-auto">
+          <div className="max-h-[70vh] overflow-auto">
             <table className="w-full border-collapse text-[12px]">
               <thead>
-                <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                  <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">IBAN</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Référence du compte</th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer total</th>
-                  <th className="py-1.5 pl-2 pr-3 text-center text-[11px] font-medium text-[#86868b]">Paiement auto</th>
+                <tr>
+                  <th className={`${thClass} pl-3`}>Bien</th>
+                  <th className={thClass}>Nom du propriétaire</th>
+                  <th className={thClass}>IBAN</th>
+                  <th className={thClass}>Nom du compte</th>
+                  <th className={thClass}>Référence du compte</th>
+                  <th className={`${thClass} text-right`}>Loyer total</th>
+                  <th className={`${thClass} pr-3 text-center`}>Paiement auto</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedProperties.map((property, rowIndex) => {
+                {matchingProperties.map((property, rowIndex) => {
                   const details = detailsByPropertyId[property.id] ?? EMPTY_DETAILS;
                   const saving = savingIds.has(property.id);
                   const name = ownerName(property);
@@ -197,6 +380,16 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="sticky bottom-0 border-t border-black/[0.08] bg-[#fafafc] font-semibold text-[#1d1d1f]">
+                  <td className="py-1.5 pl-3 pr-2" colSpan={5}>
+                    Total ({matchingProperties.length} bien{matchingProperties.length !== 1 ? "s" : ""}) ·{" "}
+                    {totals.autoPaymentCount} paiement{totals.autoPaymentCount !== 1 ? "s" : ""} auto
+                  </td>
+                  <td className="py-1.5 px-2 text-right tabular-nums">{formatEuros(totals.totalRentAmount)}</td>
+                  <td className="py-1.5 pl-2 pr-3"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
