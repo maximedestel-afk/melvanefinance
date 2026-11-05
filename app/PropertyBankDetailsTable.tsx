@@ -6,9 +6,10 @@ interface BankDetails {
   iban: string;
   accountName: string;
   accountReference: string;
+  autoPaymentSetup: boolean;
 }
 
-const EMPTY_DETAILS: BankDetails = { iban: "", accountName: "", accountReference: "" };
+const EMPTY_DETAILS: BankDetails = { iban: "", accountName: "", accountReference: "", autoPaymentSetup: false };
 
 interface PropertyOption {
   id: string;
@@ -40,11 +41,13 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
           iban: string | null;
           accountName: string | null;
           accountReference: string | null;
+          autoPaymentSetup: boolean;
         }[]) {
           next[row.propertyId] = {
             iban: row.iban ?? "",
             accountName: row.accountName ?? "",
             accountReference: row.accountReference ?? "",
+            autoPaymentSetup: row.autoPaymentSetup ?? false,
           };
         }
         setDetailsByPropertyId(next);
@@ -63,14 +66,14 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
     }));
   }
 
-  async function save(propertyId: string) {
-    const details = detailsByPropertyId[propertyId] ?? EMPTY_DETAILS;
+  async function save(propertyId: string, details?: BankDetails) {
+    const toSave = details ?? detailsByPropertyId[propertyId] ?? EMPTY_DETAILS;
     setSavingIds((prev) => new Set(prev).add(propertyId));
     try {
       const res = await fetch("/api/finance/bank-details", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ propertyId, ...details }),
+        body: JSON.stringify({ propertyId, ...toSave }),
       });
       const data = await res.json();
       if (data.error) setError(data.error);
@@ -83,6 +86,12 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
         return next;
       });
     }
+  }
+
+  function toggleAutoPayment(propertyId: string, checked: boolean) {
+    const next = { ...(detailsByPropertyId[propertyId] ?? EMPTY_DETAILS), autoPaymentSetup: checked };
+    setDetailsByPropertyId((prev) => ({ ...prev, [propertyId]: next }));
+    save(propertyId, next);
   }
 
   function ownerName(property: PropertyOption): string {
@@ -112,7 +121,8 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">IBAN</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
-                  <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Référence du compte</th>
+                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Référence du compte</th>
+                  <th className="py-1.5 pl-2 pr-3 text-center text-[11px] font-medium text-[#86868b]">Paiement auto</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,7 +163,7 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
                           className="w-48 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
                         />
                       </td>
-                      <td className="py-1 pl-2 pr-3">
+                      <td className="py-1 px-2">
                         <input
                           type="text"
                           value={details.accountReference}
@@ -162,6 +172,15 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
                           placeholder="Référence du compte"
                           disabled={saving}
                           className="w-40 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
+                        />
+                      </td>
+                      <td className="py-1.5 pl-2 pr-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={details.autoPaymentSetup}
+                          disabled={saving}
+                          onChange={(e) => toggleAutoPayment(property.id, e.target.checked)}
+                          className="h-4 w-4 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
                         />
                       </td>
                     </tr>

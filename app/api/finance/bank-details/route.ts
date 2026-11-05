@@ -18,7 +18,7 @@ export async function GET() {
   const supabase = createAdminClient();
   const { data, error: dbError } = await supabase
     .from("property_bank_details")
-    .select("property_id, iban, account_name, account_reference");
+    .select("property_id, iban, account_name, account_reference, auto_payment_setup");
   if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
 
   return NextResponse.json({
@@ -27,6 +27,7 @@ export async function GET() {
       iban: row.iban,
       accountName: row.account_name,
       accountReference: row.account_reference,
+      autoPaymentSetup: row.auto_payment_setup ?? false,
     })),
   });
 }
@@ -46,6 +47,7 @@ export async function PUT(request: Request) {
   const iban = typeof body.iban === "string" ? body.iban.replace(/\s+/g, "").toUpperCase() : "";
   const accountName = typeof body.accountName === "string" ? body.accountName.trim() : "";
   const accountReference = typeof body.accountReference === "string" ? body.accountReference.trim() : "";
+  const autoPaymentSetup = body.autoPaymentSetup === true;
 
   const supabase = createAdminClient();
   const { error: dbError } = await supabase.from("property_bank_details").upsert(
@@ -54,6 +56,7 @@ export async function PUT(request: Request) {
       iban: iban || null,
       account_name: accountName || null,
       account_reference: accountReference || null,
+      auto_payment_setup: autoPaymentSetup,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "property_id" }
