@@ -148,6 +148,7 @@ export function BankStatementCsvTable() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [expenseAccounts, setExpenseAccounts] = useState<string[]>([]);
+  const [contacts, setContacts] = useState<string[]>([]);
 
   const [conversions, setConversions] = useState<Conversion[] | null>(null);
   const [loadingConversions, setLoadingConversions] = useState(false);
@@ -180,6 +181,15 @@ export function BankStatementCsvTable() {
         if (!data.error) setExpenseAccounts(data.accounts);
       } catch {
         // Ignoré — le champ "Expense account" reste un texte libre si la liste VRPlatform ne charge pas.
+      }
+    })();
+    (async () => {
+      try {
+        const res = await fetch("/api/finance/contacts");
+        const data = await res.json();
+        if (!data.error) setContacts(data.contacts);
+      } catch {
+        // Ignoré — le champ "Contact" reste un texte libre si la liste VRPlatform ne charge pas.
       }
     })();
   }, []);
@@ -543,6 +553,7 @@ export function BankStatementCsvTable() {
                                 <label className="text-[10.5px] text-[#86868b]">Contact</label>
                                 <input
                                   type="text"
+                                  list="bank-statement-contacts"
                                   value={r.expenseContact}
                                   onChange={(e) => updateExpenseField(i, "expenseContact", e.target.value)}
                                   className="mt-0.5 block w-40 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
@@ -580,6 +591,11 @@ export function BankStatementCsvTable() {
             <datalist id="bank-statement-expense-accounts">
               {expenseAccounts.map((name) => (
                 <option key={name} value={name} />
+              ))}
+            </datalist>
+            <datalist id="bank-statement-contacts">
+              {contacts.map((identifier) => (
+                <option key={identifier} value={identifier} />
               ))}
             </datalist>
           </div>

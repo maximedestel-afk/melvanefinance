@@ -59,6 +59,33 @@ export async function listExpenseAccountNames(): Promise<string[]> {
   return names.sort((a, b) => a.localeCompare(b, "fr"));
 }
 
+interface VrPlatformContactsResponse {
+  data: { id: string; name: string | null; email: string | null }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Identifiants (email si connu, sinon nom) des contacts VRPlatform —
+ * utilisé pour peupler le champ "Contact" des écritures de dépense
+ * (convertisseur CSV, relevé bancaire) plutôt que de faire deviner la
+ * bonne valeur à l'utilisateur. */
+export async function listContactIdentifiers(): Promise<string[]> {
+  const identifiers: string[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformContactsResponse>("/contacts", {
+      limit: "250",
+      page: String(page),
+    });
+    for (const contact of res.data) {
+      const identifier = contact.email ?? contact.name;
+      if (identifier) identifiers.push(identifier);
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return Array.from(new Set(identifiers)).sort((a, b) => a.localeCompare(b, "fr"));
+}
+
 interface VrPlatformListingsResponse {
   data: { id: string; name: string | null; title: string | null; uniqueRef: string | null }[];
   pagination: { page: number; totalPage: number };
