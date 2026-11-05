@@ -29,6 +29,11 @@ export interface PropertyFinanceInfo {
   /** Email du propriétaire (table `property_owner`), utilisé pour filtrer
    * par propriétaire dans l'onglet Owner. */
   ownerEmail: string | null;
+  /** Nom et prénom du propriétaire (`property_owner.last_name` /
+   * `first_name`, saisis côté M.G.B) — affichés tels quels dans l'onglet
+   * RIB, jamais resaisis dans cette app. */
+  ownerLastName: string | null;
+  ownerFirstName: string | null;
   /** Nom du prestataire de ménage assigné (table `cleaning_providers` de
    * M.G.B, liée via `property_data.cleaning_provider_id`). */
   cleaningProviderName: string | null;

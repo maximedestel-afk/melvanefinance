@@ -3,26 +3,21 @@
 import { useEffect, useState } from "react";
 
 interface BankDetails {
-  ownerLastName: string;
-  ownerFirstName: string;
   iban: string;
   accountName: string;
   accountReference: string;
 }
 
-const EMPTY_DETAILS: BankDetails = {
-  ownerLastName: "",
-  ownerFirstName: "",
-  iban: "",
-  accountName: "",
-  accountReference: "",
-};
+const EMPTY_DETAILS: BankDetails = { iban: "", accountName: "", accountReference: "" };
 
-export function PropertyBankDetailsTable({
-  properties,
-}: {
-  properties: { id: string; reference: string }[];
-}) {
+interface PropertyOption {
+  id: string;
+  reference: string;
+  ownerLastName: string | null;
+  ownerFirstName: string | null;
+}
+
+export function PropertyBankDetailsTable({ properties }: { properties: PropertyOption[] }) {
   const sortedProperties = [...properties].sort((a, b) => a.reference.localeCompare(b.reference, "fr"));
 
   const [detailsByPropertyId, setDetailsByPropertyId] = useState<Record<string, BankDetails>>({});
@@ -42,15 +37,11 @@ export function PropertyBankDetailsTable({
         const next: Record<string, BankDetails> = {};
         for (const row of data.details as {
           propertyId: string;
-          ownerLastName: string | null;
-          ownerFirstName: string | null;
           iban: string | null;
           accountName: string | null;
           accountReference: string | null;
         }[]) {
           next[row.propertyId] = {
-            ownerLastName: row.ownerLastName ?? "",
-            ownerFirstName: row.ownerFirstName ?? "",
             iban: row.iban ?? "",
             accountName: row.accountName ?? "",
             accountReference: row.accountReference ?? "",
@@ -94,11 +85,17 @@ export function PropertyBankDetailsTable({
     }
   }
 
+  function ownerName(property: PropertyOption): string {
+    return [property.ownerLastName, property.ownerFirstName].filter((part) => part && part.trim() !== "").join(" ");
+  }
+
   return (
     <div className="space-y-3">
       <p className="text-[13px] text-[#6e6e73]">
-        RIB (relevé d&apos;identité bancaire) de chaque bien — nom du propriétaire, IBAN et nom du compte.
-        L&apos;IBAN est enregistré sans espaces, quel que soit la façon dont il est saisi ou collé.
+        RIB (relevé d&apos;identité bancaire) de chaque bien. Le nom du propriétaire vient de Gestion des Biens
+        (non modifiable ici) ; l&apos;IBAN, le nom du compte et sa référence se saisissent et s&apos;enregistrent
+        directement dans cette app. L&apos;IBAN est enregistré sans espaces, quelle que soit la façon dont il est
+        saisi ou collé.
       </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
@@ -112,7 +109,7 @@ export function PropertyBankDetailsTable({
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                   <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire (Nom Prénom)</th>
+                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">IBAN</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
                   <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Référence du compte</th>
@@ -122,6 +119,7 @@ export function PropertyBankDetailsTable({
                 {sortedProperties.map((property, rowIndex) => {
                   const details = detailsByPropertyId[property.id] ?? EMPTY_DETAILS;
                   const saving = savingIds.has(property.id);
+                  const name = ownerName(property);
                   return (
                     <tr
                       key={property.id}
@@ -130,27 +128,8 @@ export function PropertyBankDetailsTable({
                       }`}
                     >
                       <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">{property.reference}</td>
-                      <td className="py-1 px-2">
-                        <div className="flex gap-1">
-                          <input
-                            type="text"
-                            value={details.ownerLastName}
-                            onChange={(e) => updateField(property.id, "ownerLastName", e.target.value)}
-                            onBlur={() => save(property.id)}
-                            placeholder="Nom"
-                            disabled={saving}
-                            className="w-24 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
-                          />
-                          <input
-                            type="text"
-                            value={details.ownerFirstName}
-                            onChange={(e) => updateField(property.id, "ownerFirstName", e.target.value)}
-                            onBlur={() => save(property.id)}
-                            placeholder="Prénom"
-                            disabled={saving}
-                            className="w-24 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
-                          />
-                        </div>
+                      <td className="py-1.5 px-2 text-[#1d1d1f]">
+                        {name || <span className="text-[#6e6e73]">— (non renseigné dans Gestion des Biens)</span>}
                       </td>
                       <td className="py-1 px-2">
                         <input

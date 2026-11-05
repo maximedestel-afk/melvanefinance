@@ -36,7 +36,7 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
     supabase
       .from("property_owner")
       .select(
-        "property_id, rent_type, rent_amount, charges_amount, commission_percent, email, lease_start_date, lease_rent_free_period"
+        "property_id, rent_type, rent_amount, charges_amount, commission_percent, email, last_name, first_name, lease_start_date, lease_rent_free_period"
       ),
     supabase.from("property_finance_settings").select("property_id, extra_vrplatform_references"),
     supabase.from("property_data").select("property_id, cleaning_provider_id, bonus_fd_percent, bonus_eci_percent"),
@@ -67,6 +67,8 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
       extraVrplatformReferences: setting?.extra_vrplatform_references ?? [],
       tags: property.tags ?? [],
       ownerEmail: typeof owner?.email === "string" && owner.email.trim() !== "" ? owner.email.trim().toLowerCase() : null,
+      ownerLastName: owner?.last_name ?? null,
+      ownerFirstName: owner?.first_name ?? null,
       cleaningProviderName: data?.cleaning_provider_id ? (providerNameById.get(data.cleaning_provider_id) ?? null) : null,
       bonusFdPercent: data?.bonus_fd_percent ?? null,
       bonusEciPercent: data?.bonus_eci_percent ?? null,
