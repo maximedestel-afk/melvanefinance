@@ -235,6 +235,10 @@ export function BankStatementCsvTable() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  function removeRow(index: number) {
+    setRows((prev) => (prev ? prev.filter((_, i) => i !== index) : prev));
+  }
+
   async function openFile(path: string) {
     setOpeningPath(path);
     try {
@@ -336,7 +340,8 @@ export function BankStatementCsvTable() {
                 <table className="w-full border-collapse text-[12px]">
                   <thead>
                     <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                      <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Date</th>
+                      <th className="py-1.5 pl-3 pr-1"></th>
+                      <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Date</th>
                       <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Amount</th>
                       <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Description</th>
                     </tr>
@@ -344,7 +349,17 @@ export function BankStatementCsvTable() {
                   <tbody>
                     {rows.map((r, i) => (
                       <tr key={i} className={`border-b border-black/[0.04] last:border-b-0 ${i % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"}`}>
-                        <td className="py-1 pl-3 pr-2 tabular-nums text-[#1d1d1f]">{r.date}</td>
+                        <td className="py-1 pl-3 pr-1">
+                          <button
+                            type="button"
+                            onClick={() => removeRow(i)}
+                            title="Retirer cette ligne"
+                            className="text-[#c7c7cc] transition hover:text-red-600"
+                          >
+                            ✕
+                          </button>
+                        </td>
+                        <td className="py-1 px-2 tabular-nums text-[#1d1d1f]">{r.date}</td>
                         <td className="py-1 px-2 text-right tabular-nums text-[#1d1d1f]">{r.amount}</td>
                         <td className="py-1 pl-2 pr-3 text-[#1d1d1f]">{r.description}</td>
                       </tr>
