@@ -17,6 +17,7 @@ import { CsvConverterTable } from "./CsvConverterTable";
 import { BankStatementCsvTable } from "./BankStatementCsvTable";
 import { CommSharingTable } from "./CommSharingTable";
 import { SupplierInvoicesTable } from "./SupplierInvoicesTable";
+import { PropertyBankDetailsTable } from "./PropertyBankDetailsTable";
 import type { RentType } from "@/lib/types";
 
 type Tab =
@@ -35,7 +36,8 @@ type Tab =
   | "csv-converter"
   | "bank-statements"
   | "comm-sharing"
-  | "invoices";
+  | "invoices"
+  | "bank-details";
 
 export function DashboardClient({
   properties,
@@ -217,6 +219,15 @@ export function DashboardClient({
         >
           Factures
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("bank-details")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "bank-details" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          RIB
+        </button>
       </div>
       </div>
 
@@ -302,6 +313,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "invoices" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Factures</h2>
         <SupplierInvoicesTable properties={properties} />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "bank-details" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">RIB</h2>
+        <PropertyBankDetailsTable properties={properties} />
       </section>
     </div>
   );
