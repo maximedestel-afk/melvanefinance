@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 interface VrRow {
   date: string;
   amount: string;
   description: string;
+  /** Identifiant WISE de la transaction ("TransferWise ID"), utilisé comme
+   * Bill ID par défaut (auto-généré) de la ligne de dépense. */
+  wiseId: string;
   /** Transaction marquée pour générer en plus une ligne de dépense
    * VRPlatform (ex: "Card transaction ... issued by Supabase SINGAPORE"). */
   isExpense: boolean;
+  expenseBillId: string;
+  expenseBank: string;
+  expenseDescription: string;
+  expenseListing: string;
+  expenseContact: string;
   expenseAccount: string;
   billToOwner: "TRUE" | "FALSE";
 }
@@ -50,6 +58,7 @@ interface Conversion {
 const DATE_HEADER = "Date";
 const AMOUNT_HEADER = "Amount";
 const DESCRIPTION_HEADER = "Description";
+const WISE_ID_HEADER = "TransferWise ID";
 
 /** Parseur CSV tolérant aux champs entre guillemets (virgules/retours à la
  * ligne échappés) — un export WISE contient des descriptions avec des
@@ -192,6 +201,7 @@ export function BankStatementCsvTable() {
         const dateIdx = header.indexOf(DATE_HEADER);
         const amountIdx = header.indexOf(AMOUNT_HEADER);
         const descriptionIdx = header.indexOf(DESCRIPTION_HEADER);
+        const wiseIdIdx = header.indexOf(WISE_ID_HEADER);
         if (dateIdx === -1 || amountIdx === -1 || descriptionIdx === -1) {
           setParseError(
             `Colonnes attendues introuvables (Date/Amount/Description) — colonnes trouvées : ${header.join(", ")}`
@@ -201,14 +211,24 @@ export function BankStatementCsvTable() {
         }
         const dataRows = parsed.slice(1);
         setRows(
-          dataRows.map((r) => ({
-            date: convertWiseDate(r[dateIdx] ?? ""),
-            amount: (r[amountIdx] ?? "").trim(),
-            description: (r[descriptionIdx] ?? "").trim(),
-            isExpense: false,
-            expenseAccount: "",
-            billToOwner: "FALSE" as const,
-          }))
+          dataRows.map((r) => {
+            const description = (r[descriptionIdx] ?? "").trim();
+            const wiseId = wiseIdIdx !== -1 ? (r[wiseIdIdx] ?? "").trim() : "";
+            return {
+              date: convertWiseDate(r[dateIdx] ?? ""),
+              amount: (r[amountIdx] ?? "").trim(),
+              description,
+              wiseId,
+              isExpense: false,
+              expenseBillId: wiseId,
+              expenseBank: "WISE",
+              expenseDescription: description,
+              expenseListing: "",
+              expenseContact: "",
+              expenseAccount: "",
+              billToOwner: "FALSE" as const,
+            };
+          })
         );
       })
       .catch(() => {
@@ -283,7 +303,11 @@ export function BankStatementCsvTable() {
     setRows((prev) => (prev ? prev.map((r, i) => (i === index ? { ...r, isExpense: !r.isExpense } : r)) : prev));
   }
 
-  function updateExpenseField(index: number, field: "expenseAccount" | "billToOwner", value: string) {
+  function updateExpenseField(
+    index: number,
+    field: "expenseBillId" | "expenseBank" | "expenseDescription" | "expenseListing" | "expenseContact" | "expenseAccount" | "billToOwner",
+    value: string
+  ) {
     setRows((prev) => (prev ? prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)) : prev));
   }
 
@@ -297,15 +321,15 @@ export function BankStatementCsvTable() {
         [
           r.date,
           r.date,
-          r.description,
+          r.expenseDescription,
           "Paid",
-          "WISE",
-          "",
-          "",
+          r.expenseBank,
+          r.expenseContact,
+          r.expenseBillId,
           "EUR",
+          r.expenseListing,
           "",
-          "",
-          r.description,
+          r.expenseDescription,
           r.expenseAccount,
           r.billToOwner,
           r.amount,
@@ -446,8 +470,8 @@ export function BankStatementCsvTable() {
                   </thead>
                   <tbody>
                     {rows.map((r, i) => (
+                      <Fragment key={i}>
                       <tr
-                        key={i}
                         className={`border-b border-black/[0.04] last:border-b-0 ${
                           r.isExpense ? "bg-amber-50/60" : i % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                         }`}
@@ -466,21 +490,75 @@ export function BankStatementCsvTable() {
                         <td className="py-1 px-2 text-right tabular-nums text-[#1d1d1f]">{r.amount}</td>
                         <td className="py-1 px-2 text-[#1d1d1f]">{r.description}</td>
                         <td className="py-1 pl-2 pr-3">
-                          {!r.isExpense ? (
-                            <button type="button" onClick={() => toggleExpense(i)} className="text-[12px] font-medium text-[#0071e3] hover:underline">
-                              + Dépense
-                            </button>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <input
-                                type="text"
-                                list="bank-statement-expense-accounts"
-                                value={r.expenseAccount}
-                                onChange={(e) => updateExpenseField(i, "expenseAccount", e.target.value)}
-                                placeholder="Expense account"
-                                className="w-40 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
-                              />
-                              <label className="flex items-center gap-1 text-[11px] text-[#6e6e73]">
+                          <button
+                            type="button"
+                            onClick={() => toggleExpense(i)}
+                            className={`text-[12px] font-medium ${r.isExpense ? "text-[#c7c7cc] hover:text-red-600" : "text-[#0071e3] hover:underline"}`}
+                          >
+                            {r.isExpense ? "✕ Annuler" : "+ Dépense"}
+                          </button>
+                        </td>
+                      </tr>
+                      {r.isExpense && (
+                        <tr className="border-b border-black/[0.04] bg-amber-50/30">
+                          <td colSpan={5} className="px-3 py-2">
+                            <div className="flex flex-wrap items-end gap-2">
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]">Bill ID</label>
+                                <input
+                                  type="text"
+                                  value={r.expenseBillId}
+                                  onChange={(e) => updateExpenseField(i, "expenseBillId", e.target.value)}
+                                  className="mt-0.5 block w-32 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]">Bank/CC account</label>
+                                <input
+                                  type="text"
+                                  value={r.expenseBank}
+                                  onChange={(e) => updateExpenseField(i, "expenseBank", e.target.value)}
+                                  className="mt-0.5 block w-28 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]">Description (= Line Description)</label>
+                                <input
+                                  type="text"
+                                  value={r.expenseDescription}
+                                  onChange={(e) => updateExpenseField(i, "expenseDescription", e.target.value)}
+                                  className="mt-0.5 block w-64 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]">Listing</label>
+                                <input
+                                  type="text"
+                                  value={r.expenseListing}
+                                  onChange={(e) => updateExpenseField(i, "expenseListing", e.target.value)}
+                                  className="mt-0.5 block w-28 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]">Contact</label>
+                                <input
+                                  type="text"
+                                  value={r.expenseContact}
+                                  onChange={(e) => updateExpenseField(i, "expenseContact", e.target.value)}
+                                  className="mt-0.5 block w-40 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[10.5px] text-[#86868b]">Expense account</label>
+                                <input
+                                  type="text"
+                                  list="bank-statement-expense-accounts"
+                                  value={r.expenseAccount}
+                                  onChange={(e) => updateExpenseField(i, "expenseAccount", e.target.value)}
+                                  className="mt-0.5 block w-40 rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                />
+                              </div>
+                              <label className="flex items-center gap-1.5 pb-1.5 text-[12px] text-[#1d1d1f]">
                                 <input
                                   type="checkbox"
                                   checked={r.billToOwner === "TRUE"}
@@ -489,18 +567,11 @@ export function BankStatementCsvTable() {
                                 />
                                 Bill to Owner
                               </label>
-                              <button
-                                type="button"
-                                onClick={() => toggleExpense(i)}
-                                title="Annuler la dépense"
-                                className="text-[#c7c7cc] transition hover:text-red-600"
-                              >
-                                ✕
-                              </button>
                             </div>
-                          )}
-                        </td>
-                      </tr>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
