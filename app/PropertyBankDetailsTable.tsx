@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 
 interface BankDetails {
-  ownerName: string;
+  ownerLastName: string;
+  ownerFirstName: string;
   iban: string;
   accountName: string;
 }
 
-const EMPTY_DETAILS: BankDetails = { ownerName: "", iban: "", accountName: "" };
+const EMPTY_DETAILS: BankDetails = { ownerLastName: "", ownerFirstName: "", iban: "", accountName: "" };
 
 export function PropertyBankDetailsTable({
   properties,
@@ -32,9 +33,16 @@ export function PropertyBankDetailsTable({
           return;
         }
         const next: Record<string, BankDetails> = {};
-        for (const row of data.details as { propertyId: string; ownerName: string | null; iban: string | null; accountName: string | null }[]) {
+        for (const row of data.details as {
+          propertyId: string;
+          ownerLastName: string | null;
+          ownerFirstName: string | null;
+          iban: string | null;
+          accountName: string | null;
+        }[]) {
           next[row.propertyId] = {
-            ownerName: row.ownerName ?? "",
+            ownerLastName: row.ownerLastName ?? "",
+            ownerFirstName: row.ownerFirstName ?? "",
             iban: row.iban ?? "",
             accountName: row.accountName ?? "",
           };
@@ -95,7 +103,7 @@ export function PropertyBankDetailsTable({
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                   <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire</th>
+                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du propriétaire (Nom Prénom)</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">IBAN</th>
                   <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
                 </tr>
@@ -113,15 +121,26 @@ export function PropertyBankDetailsTable({
                     >
                       <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">{property.reference}</td>
                       <td className="py-1 px-2">
-                        <input
-                          type="text"
-                          value={details.ownerName}
-                          onChange={(e) => updateField(property.id, "ownerName", e.target.value)}
-                          onBlur={() => save(property.id)}
-                          placeholder="Nom du propriétaire"
-                          disabled={saving}
-                          className="w-48 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
-                        />
+                        <div className="flex gap-1">
+                          <input
+                            type="text"
+                            value={details.ownerLastName}
+                            onChange={(e) => updateField(property.id, "ownerLastName", e.target.value)}
+                            onBlur={() => save(property.id)}
+                            placeholder="Nom"
+                            disabled={saving}
+                            className="w-24 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
+                          />
+                          <input
+                            type="text"
+                            value={details.ownerFirstName}
+                            onChange={(e) => updateField(property.id, "ownerFirstName", e.target.value)}
+                            onBlur={() => save(property.id)}
+                            placeholder="Prénom"
+                            disabled={saving}
+                            className="w-24 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
+                          />
+                        </div>
                       </td>
                       <td className="py-1 px-2">
                         <input
