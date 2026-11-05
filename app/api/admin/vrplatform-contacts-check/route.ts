@@ -5,11 +5,12 @@ import { isVrPlatformConfigured } from "@/lib/vrplatform";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// TEMPORAIRE — /api/finance/contacts renvoie une liste vide : on suppose
-// {data: [{id, name, email}], pagination} par analogie avec /accounts, mais
-// le vrai format n'a jamais été vérifié en direct (sandbox sans accès
-// réseau VRPlatform). Ce diagnostic renvoie la réponse brute de /contacts
-// (et quelques variantes de paramètres) pour voir la vraie forme.
+// TEMPORAIRE — le format exact de /contacts (noms de champs, et surtout un
+// champ type/category distinguant les "Vendors" des autres contacts
+// propriétaires/invités) n'a jamais été vérifié en direct (sandbox sans
+// accès réseau VRPlatform). Ce diagnostic renvoie la réponse brute de
+// /contacts avec quelques variantes de filtre pour trouver le bon champ et
+// la bonne valeur à utiliser pour ne garder que les Vendors.
 const API_BASE_URL = "https://api.vrplatform.app";
 
 async function vrPlatformFetchRaw(path: string, query: Record<string, string> = {}): Promise<{ status: number; body: unknown }> {
@@ -33,9 +34,10 @@ export async function GET() {
 
   const attempts: Record<string, unknown> = {};
   const candidates: [string, string, Record<string, string>][] = [
-    ["contacts_no_params", "/contacts", {}],
-    ["contacts_limit", "/contacts", { limit: "5" }],
-    ["contacts_limit_page", "/contacts", { limit: "5", page: "1" }],
+    ["contacts_sample", "/contacts", { limit: "20" }],
+    ["contacts_type_vendor", "/contacts", { limit: "5", type: "vendor" }],
+    ["contacts_category_vendor", "/contacts", { limit: "5", category: "vendor" }],
+    ["contacts_role_vendor", "/contacts", { limit: "5", role: "vendor" }],
   ];
   for (const [key, path, query] of candidates) {
     try {
@@ -45,5 +47,18 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ attempts }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+  // Liste tous les noms de champs distincts vus sur le premier contact de
+  // contacts_sample, pour repérer d'un coup d'œil où se trouve un éventuel
+  // type/catégorie (ex: "type", "category", "isVendor", "role"...).
+  const sample = attempts.contacts_sample as { status: number; body: unknown } | undefined;
+  const firstContact =
+    sample && typeof sample.body === "object" && sample.body !== null && "data" in sample.body
+      ? (sample.body as { data: unknown[] }).data?.[0]
+      : null;
+  const firstContactFieldNames = firstContact && typeof firstContact === "object" ? Object.keys(firstContact) : [];
+
+  return NextResponse.json(
+    { firstContactFieldNames, attempts },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
