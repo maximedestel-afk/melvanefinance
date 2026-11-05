@@ -64,15 +64,17 @@ interface VrPlatformContactsResponse {
   pagination: { page: number; totalPage: number };
 }
 
-/** Identifiants (email si connu, sinon nom) des contacts VRPlatform —
- * utilisé pour peupler le champ "Contact" des écritures de dépense
- * (convertisseur CSV, relevé bancaire) plutôt que de faire deviner la
- * bonne valeur à l'utilisateur. */
+/** Identifiants (email si connu, sinon nom) des contacts VRPlatform de type
+ * "vendor" (fournisseurs — Amazon, Booking.com, prestataires...), à
+ * l'exclusion des contacts "owner" — utilisé pour peupler le champ
+ * "Contact" des écritures de dépense (convertisseur CSV, relevé bancaire)
+ * plutôt que de faire deviner la bonne valeur à l'utilisateur. */
 export async function listContactIdentifiers(): Promise<string[]> {
   const identifiers: string[] = [];
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformContactsResponse>("/contacts", {
+      type: "vendor",
       limit: "250",
       page: String(page),
     });
