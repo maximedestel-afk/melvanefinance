@@ -5,6 +5,7 @@ import { fillRateBadgeStyle, formatEuros, formatPercent, MONTH_LABELS_SHORT } fr
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { GuestyMonthlyFinanceCents } from "@/lib/guesty";
 import type { RentType } from "@/lib/types";
+import { computeFixedRentForMonthCents } from "@/lib/bail";
 
 interface MoretListingFinance {
   name: string;
@@ -72,6 +73,7 @@ function toRow(
   property: PropertyMonthlyResult,
   rentType: RentType | null,
   selectedMonths: number[],
+  year: number,
   cleaning?: CleaningApiResult,
   moretByReference?: Map<string, GuestyMonthlyFinanceCents[]> | null
 ): FinanceRow {
@@ -112,9 +114,25 @@ function toRow(
     cleaningExcludedForMoret = true;
   }
 
+  // Loyer fixe : plein par défaut, mais réduit (loyer seul proratisé +
+  // charges en plein, voire charges seules si le mois est entièrement
+  // couvert) pour les mois concernés par la franchise de bail du bien.
   const fixedRentCents =
     property.isFixedRent && property.fixedRentAmountCents != null
-      ? property.fixedRentAmountCents * selectedMonths.length
+      ? selectedMonths.reduce(
+          (sum, month) =>
+            sum +
+            (computeFixedRentForMonthCents(
+              property.leaseStartDate,
+              property.leaseRentFreePeriodText,
+              property.rentAmountEuros,
+              property.chargesAmountEuros,
+              property.fixedRentAmountCents,
+              year,
+              month
+            ) ?? property.fixedRentAmountCents!),
+          0
+        )
       : null;
   const checkoutCount = cleaning?.checkoutDates.length ?? 0;
   const cleaningProductGuesty = cleaning?.cleaningFeeGuesty != null ? checkoutCount * cleaning.cleaningFeeGuesty : null;
@@ -331,7 +349,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     results
       ?.filter((r) => !removedRowIds.has(r.propertyId))
       .map((r) =>
-        toRow(r, rentTypeByPropertyId.get(r.propertyId) ?? null, selectedMonths, cleaningByPropertyId.get(r.propertyId), moretByReference)
+        toRow(
+          r,
+          rentTypeByPropertyId.get(r.propertyId) ?? null,
+          selectedMonths,
+          year,
+          cleaningByPropertyId.get(r.propertyId),
+          moretByReference
+        )
       ) ?? null;
 
   function removeRow(propertyId: string) {

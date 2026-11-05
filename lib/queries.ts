@@ -33,7 +33,11 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
     { data: cleaningProviders, error: cleaningProvidersError },
   ] = await Promise.all([
     supabase.from("properties").select("id, reference, name, tags").order("reference", { ascending: true }),
-    supabase.from("property_owner").select("property_id, rent_type, rent_amount, charges_amount, commission_percent, email"),
+    supabase
+      .from("property_owner")
+      .select(
+        "property_id, rent_type, rent_amount, charges_amount, commission_percent, email, lease_start_date, lease_rent_free_period"
+      ),
     supabase.from("property_finance_settings").select("property_id, extra_vrplatform_references"),
     supabase.from("property_data").select("property_id, cleaning_provider_id, bonus_fd_percent, bonus_eci_percent"),
     supabase.from("cleaning_providers").select("id, name"),
@@ -66,6 +70,10 @@ export async function listPropertiesForFinance(): Promise<PropertyFinanceInfo[]>
       cleaningProviderName: data?.cleaning_provider_id ? (providerNameById.get(data.cleaning_provider_id) ?? null) : null,
       bonusFdPercent: data?.bonus_fd_percent ?? null,
       bonusEciPercent: data?.bonus_eci_percent ?? null,
+      rentAmountEuros: owner?.rent_amount ?? null,
+      chargesAmountEuros: owner?.charges_amount ?? null,
+      leaseStartDate: owner?.lease_start_date ?? null,
+      leaseRentFreePeriodText: owner?.lease_rent_free_period ?? null,
     };
   });
 }

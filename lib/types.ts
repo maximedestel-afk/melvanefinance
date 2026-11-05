@@ -39,4 +39,14 @@ export interface PropertyFinanceInfo {
    * utilisé pour calculer la somme due sur les lignes "Early Check-ins" de
    * l'onglet Comm Sharing (Prix Monday × ce %). */
   bonusEciPercent: number | null;
+  /** Loyer seul (hors charges) et charges seules, en euros (`property_owner`),
+   * utilisés avec `leaseStartDate`/`leaseRentFreePeriodText` pour calculer le
+   * loyer réduit par la franchise de bail dans l'onglet Revenus. */
+  rentAmountEuros: number | null;
+  chargesAmountEuros: number | null;
+  /** Date de début de bail et texte libre de franchise de loyer
+   * (`property_owner.lease_start_date` / `lease_rent_free_period`), voir
+   * `lib/bail.ts`. */
+  leaseStartDate: string | null;
+  leaseRentFreePeriodText: string | null;
 }

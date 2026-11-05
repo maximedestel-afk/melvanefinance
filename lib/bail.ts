@@ -76,3 +76,31 @@ export function computeBailProrata(
 
   return { franchiseEndIso, franchiseRecognized: true, daysRemainingInMonth, daysInMonth, loyerProrataCents };
 }
+
+/** Loyer fixe dû pour un mois donné (1-12) d'une année civile donnée, compte
+ * tenu d'une éventuelle franchise de loyer : loyer plein avant/après la
+ * franchise, loyer-seul proratisé + charges en plein pour le mois où elle se
+ * termine, et charges seules (loyer nul) pour les mois entièrement couverts
+ * par la franchise. Retourne `fullRentCents` tel quel si la franchise n'est
+ * pas reconnue (pas de bail ou texte de franchise non reconnu). */
+export function computeFixedRentForMonthCents(
+  leaseStartIso: string | null,
+  franchiseText: string | null,
+  rentAmountEuros: number | null,
+  chargesAmountEuros: number | null,
+  fullRentCents: number | null,
+  year: number,
+  month: number
+): number | null {
+  const prorata = computeBailProrata(leaseStartIso, franchiseText, rentAmountEuros);
+  if (!prorata.franchiseRecognized || !prorata.franchiseEndIso) return fullRentCents;
+
+  const chargesCents = chargesAmountEuros != null ? Math.round(chargesAmountEuros * 100) : 0;
+  const franchiseEnd = new Date(`${prorata.franchiseEndIso}T00:00:00Z`);
+  const endYear = franchiseEnd.getUTCFullYear();
+  const endMonth = franchiseEnd.getUTCMonth() + 1;
+
+  if (year < endYear || (year === endYear && month < endMonth)) return chargesCents;
+  if (year === endYear && month === endMonth) return (prorata.loyerProrataCents ?? 0) + chargesCents;
+  return fullRentCents;
+}

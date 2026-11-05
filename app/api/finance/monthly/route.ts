@@ -39,6 +39,10 @@ export async function GET(request: Request) {
         rentAmount: p.rentAmount,
         commissionPercent: p.commissionPercent,
         extraVrplatformReferences: p.extraVrplatformReferences,
+        rentAmountEuros: p.rentAmountEuros,
+        chargesAmountEuros: p.chargesAmountEuros,
+        leaseStartDate: p.leaseStartDate,
+        leaseRentFreePeriodText: p.leaseRentFreePeriodText,
       })),
       year,
       { includeExpenses }

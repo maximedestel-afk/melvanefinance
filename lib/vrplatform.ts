@@ -1393,6 +1393,13 @@ export interface PortfolioProperty {
   rentAmount: number | null;
   commissionPercent: number | null;
   extraVrplatformReferences: string[];
+  /** Loyer seul / charges seules (euros) et données de franchise de bail,
+   * utilisés pour réduire le loyer fixe affiché le mois où la franchise se
+   * termine (voir `lib/bail.ts`). Optionnels : absents côté onglet Owner. */
+  rentAmountEuros?: number | null;
+  chargesAmountEuros?: number | null;
+  leaseStartDate?: string | null;
+  leaseRentFreePeriodText?: string | null;
 }
 
 /** Résout, pour un bien, les listings VRPlatform qui lui correspondent (sa
@@ -1438,6 +1445,10 @@ export interface PropertyMonthlyResult {
   commissionPercent: number | null;
   months: MonthlyFinance[];
   notFoundReferences: string[];
+  rentAmountEuros: number | null;
+  chargesAmountEuros: number | null;
+  leaseStartDate: string | null;
+  leaseRentFreePeriodText: string | null;
 }
 
 /** Rents, Channel Fees, Net Commissionable Revenue et taux de remplissage de
@@ -1485,6 +1496,10 @@ export async function getPortfolioMonthlyFinancials(
         commissionPercent: property.commissionPercent,
         months: finalizeMonths(months),
         notFoundReferences,
+        rentAmountEuros: property.rentAmountEuros ?? null,
+        chargesAmountEuros: property.chargesAmountEuros ?? null,
+        leaseStartDate: property.leaseStartDate ?? null,
+        leaseRentFreePeriodText: property.leaseRentFreePeriodText ?? null,
       };
     })
   );
