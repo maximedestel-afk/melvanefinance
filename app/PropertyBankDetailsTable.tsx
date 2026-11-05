@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatEuros } from "@/lib/format";
 
 interface BankDetails {
   iban: string;
@@ -14,6 +15,7 @@ const EMPTY_DETAILS: BankDetails = { iban: "", accountName: "", accountReference
 interface PropertyOption {
   id: string;
   reference: string;
+  rentAmount: number | null;
   ownerLastName: string | null;
   ownerFirstName: string | null;
 }
@@ -122,6 +124,7 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">IBAN</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Nom du compte</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Référence du compte</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer total</th>
                   <th className="py-1.5 pl-2 pr-3 text-center text-[11px] font-medium text-[#86868b]">Paiement auto</th>
                 </tr>
               </thead>
@@ -173,6 +176,13 @@ export function PropertyBankDetailsTable({ properties }: { properties: PropertyO
                           disabled={saving}
                           className="w-40 rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[2px] focus:ring-[#0071e3]/15"
                         />
+                      </td>
+                      <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                        {property.rentAmount != null ? (
+                          formatEuros(property.rentAmount)
+                        ) : (
+                          <span className="text-[#6e6e73]">—</span>
+                        )}
                       </td>
                       <td className="py-1.5 pl-2 pr-3 text-center">
                         <input

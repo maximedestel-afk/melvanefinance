@@ -48,6 +48,7 @@ export function DashboardClient({
     name: string | null;
     tags: string[];
     rentType: RentType | null;
+    rentAmount: number | null;
     ownerEmail: string | null;
     ownerLastName: string | null;
     ownerFirstName: string | null;

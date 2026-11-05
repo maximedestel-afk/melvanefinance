@@ -46,6 +46,7 @@ export default async function DashboardPage() {
           name: p.name,
           tags: p.tags,
           rentType: p.rentType,
+          rentAmount: p.rentAmount,
           ownerEmail: p.ownerEmail,
           ownerLastName: p.ownerLastName,
           ownerFirstName: p.ownerFirstName,
