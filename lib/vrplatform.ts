@@ -59,28 +59,6 @@ export async function listExpenseAccountNames(): Promise<string[]> {
   return names.sort((a, b) => a.localeCompare(b, "fr"));
 }
 
-/** IDs de TOUS les comptes actifs de l'équipe, sans filtre de classification
- * ni de type — ni EXPENSE_ACCOUNT_IDS (sous-ensemble curé à la main pour la
- * réconciliation owner statement) ni classification="expense" (qui exclut
- * par exemple Housekeeping) ne couvrent fiablement tous les comptes de
- * dépense réels ; l'onglet Dépenses manager a donc besoin de tout voir sans
- * présupposer une classification particulière. */
-async function listAllAccountIds(): Promise<string[]> {
-  const ids: string[] = [];
-  let page = 1;
-  for (;;) {
-    const res = await vrPlatformFetch<VrPlatformAccountsResponse>("/accounts", {
-      status: "active",
-      limit: "250",
-      page: String(page),
-    });
-    for (const account of res.data) ids.push(account.id);
-    if (page >= res.pagination.totalPage) break;
-    page++;
-  }
-  return ids;
-}
-
 interface VrPlatformContactsResponse {
   data: { id: string; name: string | null; email: string | null }[];
   pagination: { page: number; totalPage: number };
@@ -367,33 +345,31 @@ interface VrPlatformExpenseJournalEntriesResponse {
   pagination: { page: number; totalPage: number };
 }
 
-/** Toutes les écritures "owners" des comptes EXPENSE_ACCOUNT_IDS pour un
- * listing sur un filtre de date VRPlatform (`"2026"` pour une année,
- * `"2026-09-28...2026-10-27"` pour une plage) — voir le commentaire sur
- * `party` ci-dessus pour pourquoi le filtre sur "owners" est indispensable. */
 /** Écritures des comptes de dépense pour un filtre de date, optionnellement
  * restreintes à un listing — sans listingId, interroge tout le portefeuille
  * (y compris les écritures qui ne sont rattachées à aucun listing du tout,
  * ex: frais généraux côté manager). `accountIds` par défaut EXPENSE_ACCOUNT_IDS
- * (sous-ensemble curé pour la réconciliation owner statement) ; passer la
- * liste complète des comptes de dépense actifs pour tout voir côté manager. */
+ * (sous-ensemble curé pour la réconciliation owner statement) ; passer `null`
+ * pour omettre entièrement ce filtre et voir tous les comptes côté manager —
+ * une liste de tous les IDs de comptes dans l'URL (plusieurs centaines de
+ * caractères chacun) risquerait de dépasser la longueur d'URL maximale. */
 async function getExpenseJournalEntries(
   dateFilter: string,
   party: "owners" | "manager",
   listingId?: string,
-  accountIds: string[] = EXPENSE_ACCOUNT_IDS
+  accountIds: string[] | null = EXPENSE_ACCOUNT_IDS
 ): Promise<VrPlatformExpenseJournalEntry[]> {
   const entries: VrPlatformExpenseJournalEntry[] = [];
   try {
     let page = 1;
     for (;;) {
       const query: Record<string, string> = {
-        accountIds: accountIds.join(","),
         date: dateFilter,
         status: "active",
         limit: "250",
         page: String(page),
       };
+      if (accountIds) query.accountIds = accountIds.join(",");
       if (listingId) query.listingIds = listingId;
       const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", query);
       for (const entry of res.data) {
@@ -569,7 +545,7 @@ export async function getPortfolioManagerExpenseEntries(
   year: number,
   months: number[]
 ): Promise<ManagerExpenseEntry[]> {
-  const [listings, accountIds] = await Promise.all([listVrPlatformListings(), listAllAccountIds()]);
+  const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   const referenceByListingId = new Map<string, string>();
@@ -580,7 +556,7 @@ export async function getPortfolioManagerExpenseEntries(
   }
 
   const rows: ManagerExpenseEntry[] = [];
-  for (const entry of await getExpenseJournalEntries(String(year), "manager", undefined, accountIds)) {
+  for (const entry of await getExpenseJournalEntries(String(year), "manager", undefined, null)) {
     const month = Number(entry.txnAt.slice(5, 7));
     if (!months.includes(month)) continue;
     // Seules les vraies dépenses (montant positif) — les contreparties

@@ -26,27 +26,11 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const year = searchParams.get("year") ?? String(new Date().getFullYear());
 
-  // D'abord les IDs de TOUS les comptes actifs, sans filtre de classification
-  // ni de type — classification="expense" exclut par exemple Housekeeping,
-  // donc on ne peut pas présupposer une classification particulière ici.
-  const accountIds: string[] = [];
-  {
-    let page = 1;
-    for (;;) {
-      const url = new URL("/accounts", API_BASE_URL);
-      url.searchParams.set("status", "active");
-      url.searchParams.set("limit", "250");
-      url.searchParams.set("page", String(page));
-      const res = await fetch(url, { headers: { "x-api-key": apiKey, "x-team-id": teamId }, cache: "no-store" });
-      const body = await res.json();
-      for (const a of body.data ?? []) accountIds.push(a.id);
-      if (page >= (body.pagination?.totalPage ?? 1)) break;
-      page++;
-    }
-  }
-
+  // Pas de filtre accountIds du tout — ni EXPENSE_ACCOUNT_IDS ni
+  // classification="expense" (qui exclut Housekeeping) ne couvrent
+  // fiablement tous les comptes, et une liste de tous les IDs de comptes
+  // dans l'URL risquerait de dépasser la longueur d'URL maximale.
   const url = new URL("/reports/journal-entries", API_BASE_URL);
-  url.searchParams.set("accountIds", accountIds.join(","));
   url.searchParams.set("date", year);
   url.searchParams.set("status", "active");
   url.searchParams.set("limit", "250");
@@ -60,7 +44,6 @@ export async function GET(request: Request) {
 
   return NextResponse.json(
     {
-      accountIdsCount: accountIds.length,
       status: response.status,
       totalEntries: allEntries.length,
       managerEntriesCount: managerEntries.length,
