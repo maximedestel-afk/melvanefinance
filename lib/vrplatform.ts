@@ -59,6 +59,36 @@ export async function listExpenseAccountNames(): Promise<string[]> {
   return names.sort((a, b) => a.localeCompare(b, "fr"));
 }
 
+interface VrPlatformAccountIdsResponse {
+  data: { id: string }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** IDs de TOUS les comptes actifs de l'équipe, sans filtre de classification
+ * ni de type — ni EXPENSE_ACCOUNT_IDS (sous-ensemble curé à la main pour la
+ * réconciliation owner statement) ni classification="expense" (qui exclut
+ * par exemple Housekeeping) ne couvrent fiablement tous les comptes de
+ * dépense réels. Cette seule requête ne pose pas de problème de volume (les
+ * comptes eux-mêmes se comptent en dizaines, pas en milliers) — c'est
+ * interroger /reports/journal-entries avec tous ces IDs à la fois qui pose
+ * problème (URL trop longue), d'où le découpage en lots dans
+ * getExpenseJournalEntriesAllAccounts. */
+async function listAllAccountIds(): Promise<string[]> {
+  const ids: string[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformAccountIdsResponse>("/accounts", {
+      status: "active",
+      limit: "250",
+      page: String(page),
+    });
+    for (const account of res.data) ids.push(account.id);
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return ids;
+}
+
 interface VrPlatformContactsResponse {
   data: { id: string; name: string | null; email: string | null }[];
   pagination: { page: number; totalPage: number };
@@ -388,6 +418,32 @@ async function getExpenseJournalEntries(
   return entries;
 }
 
+// Nombre d'IDs de comptes par requête /reports/journal-entries — assez petit
+// pour que l'URL générée reste largement sous les limites usuelles (une
+// liste de TOUS les comptes d'un coup produisait une URL trop longue), assez
+// grand pour ne pas multiplier excessivement le nombre de requêtes.
+const ACCOUNT_ID_CHUNK_SIZE = 25;
+
+/** Mêmes écritures que getExpenseJournalEntries, mais sur TOUS les comptes
+ * actifs de l'équipe (pas EXPENSE_ACCOUNT_IDS ni un sous-ensemble par
+ * classification) — interroge /accounts une fois puis /reports/journal-entries
+ * par lots de comptes en parallèle, pour rester sous la longueur d'URL
+ * maximale tout en limitant le nombre d'allers-retours. */
+async function getExpenseJournalEntriesAllAccounts(
+  dateFilter: string,
+  party: "owners" | "manager"
+): Promise<VrPlatformExpenseJournalEntry[]> {
+  const accountIds = await listAllAccountIds();
+  const chunks: string[][] = [];
+  for (let i = 0; i < accountIds.length; i += ACCOUNT_ID_CHUNK_SIZE) {
+    chunks.push(accountIds.slice(i, i + ACCOUNT_ID_CHUNK_SIZE));
+  }
+  const perChunk = await Promise.all(
+    chunks.map((chunk) => getExpenseJournalEntries(dateFilter, party, undefined, chunk))
+  );
+  return perChunk.flat();
+}
+
 async function getListingExpenseEntries(
   listingId: string,
   dateFilter: string,
@@ -556,7 +612,7 @@ export async function getPortfolioManagerExpenseEntries(
   }
 
   const rows: ManagerExpenseEntry[] = [];
-  for (const entry of await getExpenseJournalEntries(String(year), "manager", undefined, null)) {
+  for (const entry of await getExpenseJournalEntriesAllAccounts(String(year), "manager")) {
     const month = Number(entry.txnAt.slice(5, 7));
     if (!months.includes(month)) continue;
     // Seules les vraies dépenses (montant positif) — les contreparties
