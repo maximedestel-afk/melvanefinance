@@ -345,7 +345,11 @@ interface VrPlatformExpenseJournalEntriesResponse {
  * listing sur un filtre de date VRPlatform (`"2026"` pour une année,
  * `"2026-09-28...2026-10-27"` pour une plage) — voir le commentaire sur
  * `party` ci-dessus pour pourquoi le filtre sur "owners" est indispensable. */
-async function getListingExpenseEntries(listingId: string, dateFilter: string): Promise<VrPlatformExpenseJournalEntry[]> {
+async function getListingExpenseEntries(
+  listingId: string,
+  dateFilter: string,
+  party: "owners" | "manager" = "owners"
+): Promise<VrPlatformExpenseJournalEntry[]> {
   const entries: VrPlatformExpenseJournalEntry[] = [];
   try {
     let page = 1;
@@ -359,7 +363,11 @@ async function getListingExpenseEntries(listingId: string, dateFilter: string): 
         page: String(page),
       });
       for (const entry of res.data) {
-        if (entry.party == null || entry.party === "owners") entries.push(entry);
+        if (party === "owners") {
+          if (entry.party == null || entry.party === "owners") entries.push(entry);
+        } else if (entry.party === "manager") {
+          entries.push(entry);
+        }
       }
       if (page >= res.pagination.totalPage) break;
       page++;
@@ -475,6 +483,57 @@ export async function getPortfolioExpenseEntriesByVendor(
           const month = Number(entry.txnAt.slice(5, 7));
           if (!months.includes(month)) continue;
           if (needle !== "" && !(entry.description ?? "").toLowerCase().includes(needle)) continue;
+          rows.push({
+            propertyId: property.propertyId,
+            reference: property.reference,
+            date: entry.txnAt.slice(0, 10),
+            accountName: entry.account?.name ?? "Autre",
+            description: entry.description ?? null,
+            cents: entry.centTotal,
+            transactionId: entry.transactionId ?? null,
+            txnCode: entry.txnCode ?? null,
+          });
+        }
+      }
+      return rows;
+    })
+  );
+
+  return perProperty.flat().sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference));
+}
+
+export interface ManagerExpenseEntry {
+  propertyId: string;
+  reference: string;
+  date: string;
+  accountName: string;
+  description: string | null;
+  cents: number;
+  transactionId: string | null;
+  txnCode: string | null;
+}
+
+/** Toutes les écritures côté "manager" (party = "manager", voir le
+ * commentaire sur VrPlatformExpenseJournalEntry.party) des comptes de
+ * dépense, sur le portefeuille entier, pour des mois donnés d'une année —
+ * les dépenses facturées au manager (M.G.B.) plutôt qu'au propriétaire. */
+export async function getPortfolioManagerExpenseEntries(
+  properties: PortfolioProperty[],
+  year: number,
+  months: number[]
+): Promise<ManagerExpenseEntry[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+
+  const perProperty = await Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds } = resolveListingIds(references, listingsByName);
+      const rows: ManagerExpenseEntry[] = [];
+      for (const listingId of listingIds) {
+        for (const entry of await getListingExpenseEntries(listingId, String(year), "manager")) {
+          const month = Number(entry.txnAt.slice(5, 7));
+          if (!months.includes(month)) continue;
           rows.push({
             propertyId: property.propertyId,
             reference: property.reference,
