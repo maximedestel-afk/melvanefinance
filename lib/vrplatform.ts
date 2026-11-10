@@ -60,29 +60,32 @@ export async function listExpenseAccountNames(): Promise<string[]> {
 }
 
 interface VrPlatformAccountIdsResponse {
-  data: { id: string }[];
+  // "classification" n'est pas un champ racine mais imbriqué sous
+  // category.classification (confirmé en direct via /api/admin/
+  // vrplatform-accounts-check) — le filtre `classification=expense` en
+  // paramètre de requête ne donnait pas le bon résultat (excluait
+  // Housekeeping), d'où le filtrage ici sur category.classification plutôt
+  // que de faire confiance à ce paramètre.
+  data: { id: string; category?: { classification?: string } }[];
   pagination: { page: number; totalPage: number };
 }
 
-/** IDs de tous les comptes de classification "expense" actifs de l'équipe —
- * sans filtre de type cette fois (classification="expense" + type="ledger"
- * excluait Housekeeping, probablement parce que son type n'est pas
- * "ledger") ; sans filtre de classification du tout, on récupère aussi des
- * comptes hors dépenses (ex: Accounts Payable, qui est une liability). Pas
- * encore vérifié en direct lequel des deux filtres (classification seule,
- * ou autre chose) donne exactement Housekeeping/Tech/Staff sans
- * Accounts Payable — voir le diagnostic vrplatform-accounts-check. */
+/** IDs de tous les comptes dont category.classification = "expense",
+ * actifs de l'équipe — plus fiable que le paramètre de requête
+ * `classification` (qui excluait Housekeeping) ou qu'EXPENSE_ACCOUNT_IDS
+ * (sous-ensemble curé à la main, incomplet : ni Tech ni Staff). */
 async function listAllAccountIds(): Promise<string[]> {
   const ids: string[] = [];
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformAccountIdsResponse>("/accounts", {
-      classification: "expense",
       status: "active",
       limit: "250",
       page: String(page),
     });
-    for (const account of res.data) ids.push(account.id);
+    for (const account of res.data) {
+      if (account.category?.classification === "expense") ids.push(account.id);
+    }
     if (page >= res.pagination.totalPage) break;
     page++;
   }

@@ -41,14 +41,19 @@ export async function GET() {
   return NextResponse.json(
     {
       count: accounts.length,
-      // Juste id/name/classification/type pour que ce soit lisible — le
-      // reste des champs bruts d'un seul compte à titre d'exemple.
-      accounts: accounts.map((a) => ({
-        id: a.id,
-        name: a.name,
-        classification: a.classification,
-        type: a.type,
-      })),
+      // classification est en fait imbriqué sous category.classification
+      // (pas un champ racine) — vu sur firstAccountFullFields au premier
+      // essai (SALETO → category.classification = "asset").
+      accounts: accounts.map((a) => {
+        const category = a.category as { name?: string; classification?: string } | undefined;
+        return {
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          categoryName: category?.name ?? null,
+          classification: category?.classification ?? null,
+        };
+      }),
       firstAccountFullFields: accounts[0] ?? null,
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } }
