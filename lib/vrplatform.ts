@@ -59,17 +59,17 @@ export async function listExpenseAccountNames(): Promise<string[]> {
   return names.sort((a, b) => a.localeCompare(b, "fr"));
 }
 
-/** IDs de tous les comptes de dépense (classification "expense", type
- * "ledger") actifs de l'équipe — plus complet que le EXPENSE_ACCOUNT_IDS
- * curé à la main (ex: Tech, Staff... n'y figurent pas), utilisé pour
- * l'onglet Dépenses manager plutôt que la réconciliation owner statement. */
-async function listExpenseAccountIds(): Promise<string[]> {
+/** IDs de TOUS les comptes actifs de l'équipe, sans filtre de classification
+ * ni de type — ni EXPENSE_ACCOUNT_IDS (sous-ensemble curé à la main pour la
+ * réconciliation owner statement) ni classification="expense" (qui exclut
+ * par exemple Housekeeping) ne couvrent fiablement tous les comptes de
+ * dépense réels ; l'onglet Dépenses manager a donc besoin de tout voir sans
+ * présupposer une classification particulière. */
+async function listAllAccountIds(): Promise<string[]> {
   const ids: string[] = [];
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformAccountsResponse>("/accounts", {
-      classification: "expense",
-      type: "ledger",
       status: "active",
       limit: "250",
       page: String(page),
@@ -569,7 +569,7 @@ export async function getPortfolioManagerExpenseEntries(
   year: number,
   months: number[]
 ): Promise<ManagerExpenseEntry[]> {
-  const [listings, accountIds] = await Promise.all([listVrPlatformListings(), listExpenseAccountIds()]);
+  const [listings, accountIds] = await Promise.all([listVrPlatformListings(), listAllAccountIds()]);
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   const referenceByListingId = new Map<string, string>();

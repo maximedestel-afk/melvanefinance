@@ -26,15 +26,14 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
   const year = searchParams.get("year") ?? String(new Date().getFullYear());
 
-  // D'abord les IDs de tous les comptes de dépense actifs (pour inclure
-  // Tech/Staff etc., pas seulement le sous-ensemble curé EXPENSE_ACCOUNT_IDS).
+  // D'abord les IDs de TOUS les comptes actifs, sans filtre de classification
+  // ni de type — classification="expense" exclut par exemple Housekeeping,
+  // donc on ne peut pas présupposer une classification particulière ici.
   const accountIds: string[] = [];
   {
     let page = 1;
     for (;;) {
       const url = new URL("/accounts", API_BASE_URL);
-      url.searchParams.set("classification", "expense");
-      url.searchParams.set("type", "ledger");
       url.searchParams.set("status", "active");
       url.searchParams.set("limit", "250");
       url.searchParams.set("page", String(page));
