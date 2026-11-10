@@ -64,20 +64,20 @@ interface VrPlatformAccountIdsResponse {
   pagination: { page: number; totalPage: number };
 }
 
-/** IDs de TOUS les comptes actifs de l'équipe, sans filtre de classification
- * ni de type — ni EXPENSE_ACCOUNT_IDS (sous-ensemble curé à la main pour la
- * réconciliation owner statement) ni classification="expense" (qui exclut
- * par exemple Housekeeping) ne couvrent fiablement tous les comptes de
- * dépense réels. Cette seule requête ne pose pas de problème de volume (les
- * comptes eux-mêmes se comptent en dizaines, pas en milliers) — c'est
- * interroger /reports/journal-entries avec tous ces IDs à la fois qui pose
- * problème (URL trop longue), d'où le découpage en lots dans
- * getExpenseJournalEntriesAllAccounts. */
+/** IDs de tous les comptes de classification "expense" actifs de l'équipe —
+ * sans filtre de type cette fois (classification="expense" + type="ledger"
+ * excluait Housekeeping, probablement parce que son type n'est pas
+ * "ledger") ; sans filtre de classification du tout, on récupère aussi des
+ * comptes hors dépenses (ex: Accounts Payable, qui est une liability). Pas
+ * encore vérifié en direct lequel des deux filtres (classification seule,
+ * ou autre chose) donne exactement Housekeeping/Tech/Staff sans
+ * Accounts Payable — voir le diagnostic vrplatform-accounts-check. */
 async function listAllAccountIds(): Promise<string[]> {
   const ids: string[] = [];
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformAccountIdsResponse>("/accounts", {
+      classification: "expense",
       status: "active",
       limit: "250",
       page: String(page),
