@@ -165,12 +165,14 @@ export function PropertyManagerExpensesTable() {
               <tbody>
                 {rows.map((row, rowIndex) => (
                   <tr
-                    key={`${row.propertyId}-${row.date}-${rowIndex}`}
+                    key={`${row.reference ?? "none"}-${row.date}-${rowIndex}`}
                     className={`border-b border-black/[0.04] last:border-b-0 ${
                       rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                     }`}
                   >
-                    <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">{row.reference}</td>
+                    <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
+                      {row.reference || <span className="text-[#6e6e73]">—</span>}
+                    </td>
                     <td className="py-1.5 px-2 text-[#1d1d1f]">{formatDate(row.date)}</td>
                     <td className="py-1.5 px-2 text-[#1d1d1f]">{row.accountName}</td>
                     <td className="py-1.5 px-2 text-[#1d1d1f]">{row.description || <span className="text-[#6e6e73]">—</span>}</td>

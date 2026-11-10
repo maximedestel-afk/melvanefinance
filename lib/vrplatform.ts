@@ -335,6 +335,10 @@ interface VrPlatformExpenseJournalEntry {
    * par montant total de paiement plutôt que ligne par ligne. */
   transactionId?: string;
   txnCode?: string;
+  /** Listing rattaché à l'écriture, quand il y en a un — certaines dépenses
+   * manager (frais généraux, ajustements non liés à un bien précis) n'en
+   * ont pas du tout. */
+  listing?: { id: string; name: string } | null;
 }
 interface VrPlatformExpenseJournalEntriesResponse {
   data: VrPlatformExpenseJournalEntry[];
@@ -345,23 +349,28 @@ interface VrPlatformExpenseJournalEntriesResponse {
  * listing sur un filtre de date VRPlatform (`"2026"` pour une année,
  * `"2026-09-28...2026-10-27"` pour une plage) — voir le commentaire sur
  * `party` ci-dessus pour pourquoi le filtre sur "owners" est indispensable. */
-async function getListingExpenseEntries(
-  listingId: string,
+/** Écritures des comptes de dépense pour un filtre de date, optionnellement
+ * restreintes à un listing — sans listingId, interroge tout le portefeuille
+ * (y compris les écritures qui ne sont rattachées à aucun listing du tout,
+ * ex: frais généraux côté manager). */
+async function getExpenseJournalEntries(
   dateFilter: string,
-  party: "owners" | "manager" = "owners"
+  party: "owners" | "manager",
+  listingId?: string
 ): Promise<VrPlatformExpenseJournalEntry[]> {
   const entries: VrPlatformExpenseJournalEntry[] = [];
   try {
     let page = 1;
     for (;;) {
-      const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
+      const query: Record<string, string> = {
         accountIds: EXPENSE_ACCOUNT_IDS.join(","),
-        listingIds: listingId,
         date: dateFilter,
         status: "active",
         limit: "250",
         page: String(page),
-      });
+      };
+      if (listingId) query.listingIds = listingId;
+      const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", query);
       for (const entry of res.data) {
         if (party === "owners") {
           if (entry.party == null || entry.party === "owners") entries.push(entry);
@@ -376,6 +385,14 @@ async function getListingExpenseEntries(
     // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
   }
   return entries;
+}
+
+async function getListingExpenseEntries(
+  listingId: string,
+  dateFilter: string,
+  party: "owners" | "manager" = "owners"
+): Promise<VrPlatformExpenseJournalEntry[]> {
+  return getExpenseJournalEntries(dateFilter, party, listingId);
 }
 
 async function getListingExpenseCentsByMonth(listingId: string, year: number): Promise<number[]> {
@@ -503,8 +520,11 @@ export async function getPortfolioExpenseEntriesByVendor(
 }
 
 export interface ManagerExpenseEntry {
-  propertyId: string;
-  reference: string;
+  /** Référence du bien M.G.B si l'écriture est rattachée à un listing connu,
+   * le nom du listing VRPlatform tel quel si rattaché à un listing qui ne
+   * correspond à aucun bien connu, ou null si l'écriture n'est rattachée à
+   * aucun listing du tout (frais généraux côté manager). */
+  reference: string | null;
   date: string;
   accountName: string;
   description: string | null;
@@ -516,7 +536,9 @@ export interface ManagerExpenseEntry {
 /** Toutes les écritures côté "manager" (party = "manager", voir le
  * commentaire sur VrPlatformExpenseJournalEntry.party) des comptes de
  * dépense, sur le portefeuille entier, pour des mois donnés d'une année —
- * les dépenses facturées au manager (M.G.B.) plutôt qu'au propriétaire. */
+ * les dépenses facturées au manager (M.G.B.) plutôt qu'au propriétaire.
+ * Interroge tout le compte VRPlatform en une fois (pas bien par bien), pour
+ * inclure aussi les écritures qui ne sont rattachées à aucun listing. */
 export async function getPortfolioManagerExpenseEntries(
   properties: PortfolioProperty[],
   year: number,
@@ -525,36 +547,34 @@ export async function getPortfolioManagerExpenseEntries(
   const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
-  const perProperty = await Promise.all(
-    properties.map(async (property) => {
-      const references = [property.reference, ...property.extraVrplatformReferences];
-      const { listingIds } = resolveListingIds(references, listingsByName);
-      const rows: ManagerExpenseEntry[] = [];
-      for (const listingId of listingIds) {
-        for (const entry of await getListingExpenseEntries(listingId, String(year), "manager")) {
-          const month = Number(entry.txnAt.slice(5, 7));
-          if (!months.includes(month)) continue;
-          // Seules les vraies dépenses (montant positif) — les contreparties
-          // négatives de la paire miroir (voir le commentaire sur party) ne
-          // sont pas des dépenses facturées au manager.
-          if (entry.centTotal <= 0) continue;
-          rows.push({
-            propertyId: property.propertyId,
-            reference: property.reference,
-            date: entry.txnAt.slice(0, 10),
-            accountName: entry.account?.name ?? "Autre",
-            description: entry.description ?? null,
-            cents: entry.centTotal,
-            transactionId: entry.transactionId ?? null,
-            txnCode: entry.txnCode ?? null,
-          });
-        }
-      }
-      return rows;
-    })
-  );
+  const referenceByListingId = new Map<string, string>();
+  for (const property of properties) {
+    const references = [property.reference, ...property.extraVrplatformReferences];
+    const { listingIds } = resolveListingIds(references, listingsByName);
+    for (const listingId of listingIds) referenceByListingId.set(listingId, property.reference);
+  }
 
-  return perProperty.flat().sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference));
+  const rows: ManagerExpenseEntry[] = [];
+  for (const entry of await getExpenseJournalEntries(String(year), "manager")) {
+    const month = Number(entry.txnAt.slice(5, 7));
+    if (!months.includes(month)) continue;
+    // Seules les vraies dépenses (montant positif) — les contreparties
+    // négatives de la paire miroir (voir le commentaire sur party) ne sont
+    // pas des dépenses facturées au manager.
+    if (entry.centTotal <= 0) continue;
+    const listingId = entry.listing?.id ?? null;
+    rows.push({
+      reference: (listingId && referenceByListingId.get(listingId)) || (entry.listing?.name ?? null),
+      date: entry.txnAt.slice(0, 10),
+      accountName: entry.account?.name ?? "Autre",
+      description: entry.description ?? null,
+      cents: entry.centTotal,
+      transactionId: entry.transactionId ?? null,
+      txnCode: entry.txnCode ?? null,
+    });
+  }
+
+  return rows.sort((a, b) => a.date.localeCompare(b.date) || (a.reference ?? "").localeCompare(b.reference ?? ""));
 }
 
 interface VrPlatformBankRecordListItem {
