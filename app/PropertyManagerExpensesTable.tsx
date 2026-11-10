@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
 import type { ManagerExpenseEntry } from "@/lib/vrplatform";
 
@@ -24,6 +24,16 @@ export function PropertyManagerExpensesTable() {
   const [rows, setRows] = useState<ManagerExpenseEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+
+  function toggleAccount(accountName: string) {
+    setExpandedAccounts((prev) => {
+      const next = new Set(prev);
+      if (next.has(accountName)) next.delete(accountName);
+      else next.add(accountName);
+      return next;
+    });
+  }
 
   function toggleMonth(month: number) {
     setSelectedMonths((prev) =>
@@ -47,6 +57,7 @@ export function PropertyManagerExpensesTable() {
         setRows(null);
       } else {
         setRows(data.rows);
+        setExpandedAccounts(new Set());
       }
     } catch {
       setError("Impossible de charger les dépenses.");
@@ -56,6 +67,23 @@ export function PropertyManagerExpensesTable() {
   }
 
   const totalCents = rows ? rows.reduce((sum, r) => sum + r.cents, 0) : 0;
+
+  const groupsByAccount = useMemo(() => {
+    if (!rows) return [];
+    const byAccount = new Map<string, ManagerExpenseEntry[]>();
+    for (const row of rows) {
+      const list = byAccount.get(row.accountName) ?? [];
+      list.push(row);
+      byAccount.set(row.accountName, list);
+    }
+    return Array.from(byAccount.entries())
+      .map(([accountName, entries]) => ({
+        accountName,
+        entries: [...entries].sort((a, b) => a.date.localeCompare(b.date)),
+        totalCents: entries.reduce((sum, e) => sum + e.cents, 0),
+      }))
+      .sort((a, b) => Math.abs(b.totalCents) - Math.abs(a.totalCents));
+  }, [rows]);
 
   const periodSummary =
     selectedMonths.length === 0
@@ -155,37 +183,67 @@ export function PropertyManagerExpensesTable() {
             <table className="w-full border-collapse text-[12px]">
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                  <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
+                  <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Compte</th>
+                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Date</th>
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Compte</th>
                   <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Description</th>
                   <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Montant</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, rowIndex) => (
-                  <tr
-                    key={`${row.reference ?? "none"}-${row.date}-${rowIndex}`}
-                    className={`border-b border-black/[0.04] last:border-b-0 ${
-                      rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
-                    }`}
-                  >
-                    <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
-                      {row.reference || <span className="text-[#6e6e73]">—</span>}
-                    </td>
-                    <td className="py-1.5 px-2 text-[#1d1d1f]">{formatDate(row.date)}</td>
-                    <td className="py-1.5 px-2 text-[#1d1d1f]">{row.accountName}</td>
-                    <td className="py-1.5 px-2 text-[#1d1d1f]">{row.description || <span className="text-[#6e6e73]">—</span>}</td>
-                    <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
-                      <Money cents={row.cents} />
-                    </td>
-                  </tr>
-                ))}
+                {groupsByAccount.map((group) => {
+                  const expanded = expandedAccounts.has(group.accountName);
+                  return (
+                    <Fragment key={group.accountName}>
+                      <tr
+                        className="cursor-pointer border-b border-black/[0.04] bg-[#f5f5f7] transition hover:bg-[#ebebed]"
+                        onClick={() => toggleAccount(group.accountName)}
+                      >
+                        <td className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">
+                          <span aria-hidden className={`mr-1.5 inline-block transition-transform ${expanded ? "rotate-90" : ""}`}>
+                            ▸
+                          </span>
+                          {group.accountName}
+                        </td>
+                        <td className="py-1.5 px-2 text-[#6e6e73]">
+                          {group.entries.length} écriture{group.entries.length !== 1 ? "s" : ""}
+                        </td>
+                        <td className="py-1.5 px-2"></td>
+                        <td className="py-1.5 px-2"></td>
+                        <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                          <Money cents={group.totalCents} bold />
+                        </td>
+                      </tr>
+                      {expanded &&
+                        group.entries.map((row, rowIndex) => (
+                          <tr
+                            key={`${row.reference ?? "none"}-${row.date}-${rowIndex}`}
+                            className={`border-b border-black/[0.04] last:border-b-0 ${
+                              rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                            }`}
+                          >
+                            <td className="py-1.5 pl-3 pr-2"></td>
+                            <td className="py-1.5 px-2 font-medium text-[#1d1d1f]">
+                              {row.reference || <span className="text-[#6e6e73]">—</span>}
+                            </td>
+                            <td className="py-1.5 px-2 text-[#1d1d1f]">{formatDate(row.date)}</td>
+                            <td className="py-1.5 px-2 text-[#1d1d1f]">
+                              {row.description || <span className="text-[#6e6e73]">—</span>}
+                            </td>
+                            <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                              <Money cents={row.cents} />
+                            </td>
+                          </tr>
+                        ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                   <td className="py-1.5 pl-3 pr-2" colSpan={4}>
-                    Total ({rows.length} écriture{rows.length !== 1 ? "s" : ""})
+                    Total ({rows.length} écriture{rows.length !== 1 ? "s" : ""} sur {groupsByAccount.length} compte
+                    {groupsByAccount.length !== 1 ? "s" : ""})
                   </td>
                   <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">
                     <Money cents={totalCents} bold />
