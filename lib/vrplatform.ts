@@ -59,6 +59,28 @@ export async function listExpenseAccountNames(): Promise<string[]> {
   return names.sort((a, b) => a.localeCompare(b, "fr"));
 }
 
+/** IDs de tous les comptes de dépense (classification "expense", type
+ * "ledger") actifs de l'équipe — plus complet que le EXPENSE_ACCOUNT_IDS
+ * curé à la main (ex: Tech, Staff... n'y figurent pas), utilisé pour
+ * l'onglet Dépenses manager plutôt que la réconciliation owner statement. */
+async function listExpenseAccountIds(): Promise<string[]> {
+  const ids: string[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformAccountsResponse>("/accounts", {
+      classification: "expense",
+      type: "ledger",
+      status: "active",
+      limit: "250",
+      page: String(page),
+    });
+    for (const account of res.data) ids.push(account.id);
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return ids;
+}
+
 interface VrPlatformContactsResponse {
   data: { id: string; name: string | null; email: string | null }[];
   pagination: { page: number; totalPage: number };
@@ -352,18 +374,21 @@ interface VrPlatformExpenseJournalEntriesResponse {
 /** Écritures des comptes de dépense pour un filtre de date, optionnellement
  * restreintes à un listing — sans listingId, interroge tout le portefeuille
  * (y compris les écritures qui ne sont rattachées à aucun listing du tout,
- * ex: frais généraux côté manager). */
+ * ex: frais généraux côté manager). `accountIds` par défaut EXPENSE_ACCOUNT_IDS
+ * (sous-ensemble curé pour la réconciliation owner statement) ; passer la
+ * liste complète des comptes de dépense actifs pour tout voir côté manager. */
 async function getExpenseJournalEntries(
   dateFilter: string,
   party: "owners" | "manager",
-  listingId?: string
+  listingId?: string,
+  accountIds: string[] = EXPENSE_ACCOUNT_IDS
 ): Promise<VrPlatformExpenseJournalEntry[]> {
   const entries: VrPlatformExpenseJournalEntry[] = [];
   try {
     let page = 1;
     for (;;) {
       const query: Record<string, string> = {
-        accountIds: EXPENSE_ACCOUNT_IDS.join(","),
+        accountIds: accountIds.join(","),
         date: dateFilter,
         status: "active",
         limit: "250",
@@ -544,7 +569,7 @@ export async function getPortfolioManagerExpenseEntries(
   year: number,
   months: number[]
 ): Promise<ManagerExpenseEntry[]> {
-  const listings = await listVrPlatformListings();
+  const [listings, accountIds] = await Promise.all([listVrPlatformListings(), listExpenseAccountIds()]);
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
   const referenceByListingId = new Map<string, string>();
@@ -555,7 +580,7 @@ export async function getPortfolioManagerExpenseEntries(
   }
 
   const rows: ManagerExpenseEntry[] = [];
-  for (const entry of await getExpenseJournalEntries(String(year), "manager")) {
+  for (const entry of await getExpenseJournalEntries(String(year), "manager", undefined, accountIds)) {
     const month = Number(entry.txnAt.slice(5, 7));
     if (!months.includes(month)) continue;
     // Seules les vraies dépenses (montant positif) — les contreparties
