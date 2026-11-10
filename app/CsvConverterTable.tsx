@@ -167,7 +167,7 @@ function normalizeDate(raw: string): string {
   return trimmed;
 }
 
-const DEFAULT_STATUS = "Paid";
+const DEFAULT_STATUS = "Unpaid";
 const DEFAULT_BANK_ACCOUNT = "Non-Trust Account";
 const DEFAULT_CURRENCY = "EUR";
 const BANK_ACCOUNT_OPTIONS = ["Non-Trust Account", "WISE"] as const;
