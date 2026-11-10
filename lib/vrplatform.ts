@@ -70,12 +70,14 @@ interface VrPlatformAccountIdsResponse {
   pagination: { page: number; totalPage: number };
 }
 
-/** IDs de tous les comptes dont category.classification = "expense",
- * actifs de l'équipe — plus fiable que le paramètre de requête
- * `classification` (qui excluait Housekeeping) ou qu'EXPENSE_ACCOUNT_IDS
- * (sous-ensemble curé à la main, incomplet : ni Tech ni Staff). */
+/** IDs de tous les comptes dont category.classification = "expense", actifs
+ * de l'équipe, UNIS à EXPENSE_ACCOUNT_IDS — category.classification="expense"
+ * seul manque certains comptes pourtant bien des dépenses (ex: Housekeeping,
+ * dont la classification VRPlatform n'est apparemment pas "expense" malgré
+ * son usage réel), d'où l'union avec le sous-ensemble curé à la main plutôt
+ * que de ne garder que l'un ou l'autre. */
 async function listAllAccountIds(): Promise<string[]> {
-  const ids: string[] = [];
+  const ids = new Set<string>(EXPENSE_ACCOUNT_IDS);
   let page = 1;
   for (;;) {
     const res = await vrPlatformFetch<VrPlatformAccountIdsResponse>("/accounts", {
@@ -84,12 +86,12 @@ async function listAllAccountIds(): Promise<string[]> {
       page: String(page),
     });
     for (const account of res.data) {
-      if (account.category?.classification === "expense") ids.push(account.id);
+      if (account.category?.classification === "expense") ids.add(account.id);
     }
     if (page >= res.pagination.totalPage) break;
     page++;
   }
-  return ids;
+  return Array.from(ids);
 }
 
 interface VrPlatformContactsResponse {
