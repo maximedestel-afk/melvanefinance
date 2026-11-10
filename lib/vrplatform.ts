@@ -534,6 +534,10 @@ export async function getPortfolioManagerExpenseEntries(
         for (const entry of await getListingExpenseEntries(listingId, String(year), "manager")) {
           const month = Number(entry.txnAt.slice(5, 7));
           if (!months.includes(month)) continue;
+          // Seules les vraies dépenses (montant positif) — les contreparties
+          // négatives de la paire miroir (voir le commentaire sur party) ne
+          // sont pas des dépenses facturées au manager.
+          if (entry.centTotal <= 0) continue;
           rows.push({
             propertyId: property.propertyId,
             reference: property.reference,
