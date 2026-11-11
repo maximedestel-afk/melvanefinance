@@ -210,12 +210,15 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
     for (const r of eciRows) {
       const ref = r.reservationRef ?? r.flat ?? r.id;
       const dateLabel = formatDate(r.date);
+      // Le texte de la colonne Date Monday peut inclure une heure (ex:
+      // "2026-11-05 00:00:00") — VRPlatform attend juste "AAAA-MM-JJ".
+      const isoDate = r.date ? r.date.slice(0, 10) : "";
       const billIdBase = `${r.flat ?? r.id}-ECI-${ref}`;
 
       const revenueDescription = `ECI Manager — ${ref} — ${dateLabel}`;
       csvRows.push([
-        r.date ?? "",
-        r.date ?? "",
+        isoDate,
+        isoDate,
         revenueDescription,
         "Unpaid",
         "",
@@ -234,8 +237,8 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
 
       const expenseDescription = `ECI Prestataire — ${ref} — ${dateLabel}`;
       csvRows.push([
-        r.date ?? "",
-        r.date ?? "",
+        isoDate,
+        isoDate,
         expenseDescription,
         "Unpaid",
         "",
