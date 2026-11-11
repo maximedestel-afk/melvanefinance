@@ -168,9 +168,9 @@ function normalizeDate(raw: string): string {
 }
 
 const DEFAULT_STATUS = "Unpaid";
-const DEFAULT_BANK_ACCOUNT = "Non-Trust Account";
+const DEFAULT_BANK_ACCOUNT = "";
 const DEFAULT_CURRENCY = "EUR";
-const BANK_ACCOUNT_OPTIONS = ["Non-Trust Account", "WISE"] as const;
+const BANK_ACCOUNT_OPTIONS = ["", "Non-Trust Account", "WISE"] as const;
 
 /** Inverse le signe d'un montant texte ("50" ↔ "-50") — laisse la valeur
  * telle quelle si elle n'est pas un nombre valide. */
@@ -480,7 +480,7 @@ export function CsvConverterTable() {
             >
               {BANK_ACCOUNT_OPTIONS.map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {name || "—"}
                 </option>
               ))}
             </select>
@@ -599,7 +599,7 @@ export function CsvConverterTable() {
                             >
                               {BANK_ACCOUNT_OPTIONS.map((name) => (
                                 <option key={name} value={name}>
-                                  {name}
+                                  {name || "—"}
                                 </option>
                               ))}
                             </select>
