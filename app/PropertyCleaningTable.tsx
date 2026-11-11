@@ -530,7 +530,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
           "",
           description,
           "Housekeeping",
-          "TRUE",
+          "FALSE",
           row.cleaningFeeCustomField.toFixed(2),
           "",
           "",
