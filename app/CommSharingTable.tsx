@@ -174,6 +174,94 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   const total = sortedRows?.reduce((sum, r) => sum + (r.price ?? 0), 0) ?? 0;
   const totalDue = sortedRows?.reduce((sum, r) => sum + (r.amountDue ?? 0), 0) ?? 0;
 
+  function escapeExpenseCsvField(value: string): string {
+    return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  }
+
+  /** Export VRPlatform "Expenses" — deux lignes par ligne Early Check-in
+   * (Price et Montant dû connus) : le Price est le revenu du manager
+   * (Management Commission Revenue, Bill to Owner FALSE — c'est une
+   * transaction manager/prestataire, le propriétaire n'est pas concerné),
+   * le Montant dû (Bonus ECI) est la dépense payée au prestataire
+   * (Housekeeping, Bill to Owner FALSE, Contact = prestataire). */
+  function exportExpensesCsv() {
+    if (!sortedRows) return;
+    const eciRows = sortedRows.filter((r) => r.amountDue != null && r.price != null);
+    if (eciRows.length === 0) return;
+    const header = [
+      "Issue Date",
+      "Payment Date",
+      "Description",
+      "Status",
+      "Bank/CC account",
+      "Contact",
+      "Bill ID",
+      "Currency",
+      "Listing",
+      "Reservation",
+      "Line Description",
+      "Expense account",
+      "Bill to Owner",
+      "Applied amount",
+      "Markup",
+      "Markup Tax",
+    ];
+    const csvRows: string[][] = [header];
+    for (const r of eciRows) {
+      const ref = r.reservationRef ?? r.flat ?? r.id;
+      const dateLabel = formatDate(r.date);
+      const billIdBase = `${r.flat ?? r.id}-ECI-${ref}`;
+
+      const revenueDescription = `ECI Manager — ${ref} — ${dateLabel}`;
+      csvRows.push([
+        r.date ?? "",
+        r.date ?? "",
+        revenueDescription,
+        "Unpaid",
+        "",
+        "",
+        `${billIdBase}-REV`,
+        "EUR",
+        r.flat ?? "",
+        r.reservationRef ?? "",
+        revenueDescription,
+        "Management Commission Revenue",
+        "FALSE",
+        r.price!.toFixed(2),
+        "",
+        "",
+      ]);
+
+      const expenseDescription = `ECI Prestataire — ${ref} — ${dateLabel}`;
+      csvRows.push([
+        r.date ?? "",
+        r.date ?? "",
+        expenseDescription,
+        "Unpaid",
+        "",
+        r.prestataire ?? "",
+        `${billIdBase}-EXP`,
+        "EUR",
+        r.flat ?? "",
+        r.reservationRef ?? "",
+        expenseDescription,
+        "Housekeeping",
+        "FALSE",
+        r.amountDue!.toFixed(2),
+        "",
+        "",
+      ]);
+    }
+    const csvContent = csvRows.map((row) => row.map(escapeExpenseCsvField).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `eci_expenses_${year}_${String(month).padStart(2, "0")}_vrplatform.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-[12px] text-[#6e6e73]">
@@ -255,10 +343,20 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
 
       {sortedRows && sortedRows.length > 0 && !loading && !error && (
         <div className="space-y-2">
-          <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
-            {sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""} · {formatEuros(total)} · {formatEuros(totalDue)}{" "}
-            dû (Bonus ECI)
-          </span>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
+              {sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""} · {formatEuros(total)} · {formatEuros(totalDue)}{" "}
+              dû (Bonus ECI)
+            </span>
+            <button
+              type="button"
+              onClick={exportExpensesCsv}
+              title="Deux lignes par Early Check-in : Price en revenu manager (Management Commission Revenue), Montant dû en dépense prestataire (Housekeeping), Bill to Owner FALSE"
+              className="btn-secondary btn-sm"
+            >
+              Exporter Expense (CSV)
+            </button>
+          </div>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[12px]">
