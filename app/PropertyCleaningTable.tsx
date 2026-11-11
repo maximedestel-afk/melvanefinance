@@ -499,10 +499,10 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       const description = `Ménage — ${row.reference} — ${formatShortBillDate(expenseCsvDate)}`;
       csvRows.push([
         expenseCsvDate,
-        expenseCsvDate,
+        "",
         description,
         "Unpaid",
-        "Non-Trust Account",
+        "",
         cleaningProviderByPropertyId.get(row.propertyId) ?? "",
         `${row.reference}-MENAGE-${billIdPeriod}`,
         "EUR",
