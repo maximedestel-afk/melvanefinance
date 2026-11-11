@@ -7,6 +7,26 @@ import type { RentType } from "@/lib/types";
 type SortKey = "reference" | "count" | "customField" | "guesty" | "productCustom" | "productGuesty" | "diff";
 type ColumnKey = "reference" | "count" | "dates" | "customField" | "guesty" | "productCustom" | "productGuesty" | "diff";
 
+/** Ignore espaces/ponctuation pour comparer (ex: "SWEEPIT" local doit
+ * matcher "Sweep It" côté VRPlatform, "FATIHA" doit matcher "Fatiha,
+ * Fatiha"). */
+function normalizeVendorName(s: string): string {
+  return s.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Résout le nom local d'un prestataire de ménage (table cleaning_providers)
+ * vers son contact VRPlatform exact — email si connu, sinon nom — en
+ * cherchant le nom local comme sous-chaîne normalisée du nom VRPlatform
+ * plutôt qu'une égalité stricte (les deux n'ont pas forcément le même
+ * formatage). Retombe sur le nom local si aucun contact ne correspond. */
+function resolveVendorContact(providerName: string, contacts: { name: string | null; email: string | null }[]): string {
+  const needle = normalizeVendorName(providerName);
+  if (!needle) return providerName;
+  const match = contacts.find((c) => c.name && normalizeVendorName(c.name).includes(needle));
+  if (!match) return providerName;
+  return match.email ?? match.name ?? providerName;
+}
+
 const RENT_TYPE_LABELS: Record<RentType, string> = {
   fixe: "Fixe",
   variable: "Variable",
@@ -229,10 +249,12 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [excludeAlreadyRecorded, setExcludeAlreadyRecorded] = useState(true);
   const [vendorContacts, setVendorContacts] = useState<{ name: string | null; email: string | null }[]>([]);
 
-  // Contacts VRPlatform (vendor) — utilisé pour résoudre le nom du
-  // prestataire de ménage (table interne cleaning_providers) vers son email
-  // VRPlatform exact quand il existe, avant de le mettre dans le champ
-  // Contact de l'export Expense.
+  // Contacts VRPlatform (vendor) — certains ont un email (ex: "Fatiha,
+  // Fatiha" → fatiha@fatiha.com), d'autres non. Le nom local du prestataire
+  // (table cleaning_providers, ex: "FATIHA") ne correspond pas forcément
+  // exactement au nom VRPlatform (ex: "Fatiha, Fatiha") — on cherche donc le
+  // nom local comme sous-chaîne du nom VRPlatform plutôt qu'une égalité
+  // stricte, et on préfère l'email du contact trouvé quand il existe.
   useEffect(() => {
     (async () => {
       try {
@@ -245,13 +267,6 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     })();
   }, []);
 
-  const vendorEmailByLowerName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of vendorContacts) {
-      if (c.name && c.email) map.set(c.name.trim().toLowerCase(), c.email);
-    }
-    return map;
-  }, [vendorContacts]);
 
   const cleaningProviderByPropertyId = useMemo(
     () => new Map(allProperties.map((p) => [p.id, p.cleaningProviderName])),
@@ -536,7 +551,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     for (const row of sortedRows) {
       if (row.cleaningFeeCustomField == null || row.cleaningFeeCustomField === 0) continue;
       const providerName = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
-      const contact = vendorEmailByLowerName.get(providerName.trim().toLowerCase()) ?? providerName;
+      const contact = resolveVendorContact(providerName, vendorContacts);
       const alreadyRecordedIds = new Set(row.alreadyRecordedReservationIds);
       for (const checkout of row.checkouts) {
         const refResa = checkout.confirmationCode ?? row.reference;
@@ -554,7 +569,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       }
     }
     return result;
-  }, [sortedRows, cleaningProviderByPropertyId, vendorEmailByLowerName]);
+  }, [sortedRows, cleaningProviderByPropertyId, vendorContacts]);
 
   const alreadyRecordedCount = expenseRows.filter((r) => r.alreadyRecorded).length;
   const expenseRowsToExport = excludeAlreadyRecorded ? expenseRows.filter((r) => !r.alreadyRecorded) : expenseRows;
