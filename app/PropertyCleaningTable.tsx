@@ -461,6 +461,17 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     return `${d.getUTCDate()} ${MONTH_LABELS_SHORT[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(-2)}`;
   }
 
+  /** Date au format YYMMDD (ex: "261107" pour le 7 novembre 2026) — utilisé
+   * dans le Bill ID de l'export Expense Ménage. */
+  function formatYyMmDd(iso: string): string {
+    const d = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(d.getTime())) return iso;
+    const yy = String(d.getUTCFullYear()).slice(-2);
+    const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(d.getUTCDate()).padStart(2, "0");
+    return `${yy}${mm}${dd}`;
+  }
+
   /** Export VRPlatform "Expenses" — une ligne par bien, le montant total à
    * payer au prestataire de ménage sur la période (checkoutCount × prix
    * ménage custom field, la colonne "Produit (custom field)" déjà affichée
@@ -492,7 +503,6 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     // (qui sert seulement à l'export Excel "lisible" de exportCsv()).
     const escapeExpenseCsvField = (value: string): string =>
       /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-    const billIdPeriod = `${year}${selectedMonths.map((m) => String(m).padStart(2, "0")).join("")}`;
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
       if (row.productCustom == null || row.productCustom === 0) continue;
@@ -504,7 +514,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         "Unpaid",
         "",
         cleaningProviderByPropertyId.get(row.propertyId) ?? "",
-        `${row.reference}-MENAGE-${billIdPeriod}`,
+        `${row.reference}-Menage-${formatYyMmDd(expenseCsvDate)}`,
         "EUR",
         row.reference,
         "",
@@ -521,7 +531,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `menage_expenses_${billIdPeriod}_vrplatform.csv`;
+    a.download = `menage_expenses_${formatYyMmDd(expenseCsvDate)}_vrplatform.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
