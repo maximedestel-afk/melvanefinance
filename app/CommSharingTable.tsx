@@ -179,11 +179,11 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   }
 
   /** Export VRPlatform "Expenses" — deux lignes par ligne Early Check-in
-   * (Price et Montant dû connus) : le Price est le revenu du manager
-   * (Early Check-ins, Bill to Owner FALSE — c'est une transaction
-   * manager/prestataire, le propriétaire n'est pas concerné), le Montant dû
-   * (Bonus ECI) est la dépense payée au prestataire (Housekeeping, négatif,
-   * Bill to Owner FALSE, Contact = prestataire). */
+   * (Price et Montant dû connus), toutes deux sur le compte Early Check-ins,
+   * Bill to Owner FALSE (transaction manager/prestataire, le propriétaire
+   * n'est pas concerné) : le Price est le revenu du manager, le Montant dû
+   * (Bonus ECI) est la dépense payée au prestataire (négatif, Contact =
+   * prestataire). */
   function exportExpensesCsv() {
     if (!sortedRows) return;
     const eciRows = sortedRows.filter((r) => r.amountDue != null && r.price != null);
@@ -248,7 +248,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         r.flat ?? "",
         r.reservationRef ?? "",
         expenseDescription,
-        "Housekeeping",
+        "Early Check-ins",
         "FALSE",
         (-r.amountDue!).toFixed(2),
         "",
@@ -354,7 +354,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
             <button
               type="button"
               onClick={exportExpensesCsv}
-              title="Deux lignes par Early Check-in : Price en revenu manager (Early Check-ins), Montant dû en dépense prestataire (Housekeeping, négatif), Bill to Owner FALSE"
+              title="Deux lignes par Early Check-in, compte Early Check-ins : Price en revenu manager, Montant dû en dépense prestataire (négatif), Bill to Owner FALSE"
               className="btn-secondary btn-sm"
             >
               Exporter Expense (CSV)
