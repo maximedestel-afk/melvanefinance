@@ -453,6 +453,14 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         ? `Année complète ${year}`
         : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
 
+  /** Date au format court "7 Nov 26" (jour sans zéro, mois abrégé, année sur
+   * 2 chiffres) — utilisé dans la description de l'export Expense Ménage. */
+  function formatShortBillDate(iso: string): string {
+    const d = new Date(`${iso}T00:00:00Z`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return `${d.getUTCDate()} ${MONTH_LABELS_SHORT[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(-2)}`;
+  }
+
   /** Export VRPlatform "Expenses" — une ligne par bien, le montant total à
    * payer au prestataire de ménage sur la période (checkoutCount × prix
    * ménage custom field, la colonne "Produit (custom field)" déjà affichée
@@ -488,7 +496,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
       if (row.productCustom == null || row.productCustom === 0) continue;
-      const description = `Ménage — ${row.reference} (${periodSummary})`;
+      const description = `Ménage — ${row.reference} — ${formatShortBillDate(expenseCsvDate)}`;
       csvRows.push([
         expenseCsvDate,
         expenseCsvDate,
