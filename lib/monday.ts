@@ -94,15 +94,20 @@ const COLUMN_IDS = [
   "dropdown_mm82vtph",
   "pulse_id_mm82zajn",
   "dropdown_mm82az3r",
+  "text_mkz7e6e8",
 ];
 
 function toRow(item: { id: string; name: string; column_values: ColumnValue[] }): CommSharingRow {
   const byId = new Map(item.column_values.map((c) => [c.id, c.text]));
   const priceText = byId.get("numeric_mkyk8m24");
   const price = priceText ? Number.parseFloat(priceText.replace(",", ".")) : null;
+  // L'item.name seul ne dit rien (juste "ECI" ou "ECI Refund") — la colonne
+  // "Text" (text_mkz7e6e8) porte la vraie référence de réservation/arrivée.
+  const text = byId.get("text_mkz7e6e8");
+  const name = text ? `${item.name} — ${text}` : item.name;
   return {
     id: item.id,
-    name: item.name,
+    name,
     date: byId.get("date4") ?? null,
     flat: byId.get("dropdown_mkykc1jr") ?? null,
     price: price != null && Number.isFinite(price) ? price : null,
