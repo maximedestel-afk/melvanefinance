@@ -77,7 +77,7 @@ interface CleaningApiResult {
   /** IDs de réservation ayant déjà une écriture Housekeeping côté
    * VRPlatform — pour recouper l'export Expense et repérer les check-out
    * déjà enregistrés (éviter les doublons). */
-  alreadyRecordedReservationIds: string[];
+  alreadyRecordedDescriptions: string[];
   notFoundReferences: string[];
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
@@ -105,7 +105,7 @@ interface CleaningRow {
   guestyError: string | null;
   checkoutDates: string[];
   checkouts: PropertyCheckout[];
-  alreadyRecordedReservationIds: string[];
+  alreadyRecordedDescriptions: string[];
   checkoutCount: number;
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
@@ -126,7 +126,7 @@ function toRow(r: CleaningApiResult): CleaningRow {
     guestyError: r.guestyError,
     checkoutDates: r.checkoutDates,
     checkouts: r.checkouts,
-    alreadyRecordedReservationIds: r.alreadyRecordedReservationIds,
+    alreadyRecordedDescriptions: r.alreadyRecordedDescriptions,
     checkoutCount,
     cleaningFeeCustomField: r.cleaningFeeCustomField,
     cleaningFeeGuesty: r.cleaningFeeGuesty,
@@ -551,6 +551,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     propertyId: string;
     reference: string;
     refResa: string;
+    confirmationCode: string | null;
     checkoutDate: string;
     description: string;
     billId: string;
@@ -562,7 +563,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   /** Une ligne par check-out (pas agrégée par bien) : montant = prix ménage
    * unitaire (custom field), Ref Resa = confirmation code VRPlatform (ou la
    * référence du bien à défaut), recoupé avec les écritures Housekeeping déjà
-   * postées côté VRPlatform (alreadyRecordedReservationIds) pour repérer les
+   * postées côté VRPlatform (alreadyRecordedDescriptions) pour repérer les
    * doublons potentiels avant export. */
   const expenseRows: ExpenseRow[] = useMemo(() => {
     if (!sortedRows) return [];
@@ -571,19 +572,21 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       if (row.cleaningFeeCustomField == null || row.cleaningFeeCustomField === 0) continue;
       const providerName = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
       const contact = resolveVendorContact(providerName, vendorContacts);
-      const alreadyRecordedIds = new Set(row.alreadyRecordedReservationIds);
+      const alreadyRecordedDescriptions = new Set(row.alreadyRecordedDescriptions);
       for (const checkout of row.checkouts) {
         const refResa = checkout.confirmationCode ?? row.reference;
+        const description = `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`;
         result.push({
           propertyId: row.propertyId,
           reference: row.reference,
           refResa,
+          confirmationCode: checkout.confirmationCode,
           checkoutDate: checkout.date,
-          description: `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`,
+          description,
           billId: `${row.reference}-Menage-${checkout.confirmationCode ?? formatYyMmDd(checkout.date)}`,
           contact,
           amount: row.cleaningFeeCustomField,
-          alreadyRecorded: alreadyRecordedIds.has(checkout.reservationId),
+          alreadyRecorded: alreadyRecordedDescriptions.has(description),
         });
       }
     }
@@ -633,7 +636,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         r.billId,
         "EUR",
         r.reference,
-        "",
+        r.confirmationCode ?? "",
         r.description,
         "Housekeeping",
         "FALSE",

@@ -1940,7 +1940,7 @@ export interface PropertyCheckout {
   confirmationCode: string | null;
   /** ID VRPlatform (UUID) de la réservation — sert à recouper avec les
    * écritures déjà postées sur le compte Housekeeping (voir
-   * getRecordedHousekeepingReservationIds), pas affiché tel quel. */
+   * getRecordedHousekeepingDescriptions), pas affiché tel quel. */
   reservationId: string;
 }
 
@@ -1977,13 +1977,16 @@ async function getListingCheckoutsForMonth(listingId: string, year: number, mont
 
 const HOUSEKEEPING_ACCOUNT_ID = "4c2860e2-0acc-4b22-b665-38005b8cd610";
 
-/** IDs de réservation (VRPlatform) ayant déjà une écriture sur le compte
- * Housekeeping sur un filtre de date VRPlatform donné — sert à recouper
- * l'export Expense Ménage avec VRPlatform pour repérer les check-out déjà
- * enregistrés (et éviter les doublons), sans tenir compte du côté
- * owners/manager (peu importe lequel pour cette vérification). */
-async function getRecordedHousekeepingReservationIds(listingIds: string[], dateFilter: string): Promise<Set<string>> {
-  const ids = new Set<string>();
+/** Descriptions des écritures déjà postées sur le compte Housekeeping sur un
+ * filtre de date VRPlatform donné — sert à recouper l'export Expense Ménage
+ * avec VRPlatform pour repérer les check-out déjà enregistrés (et éviter
+ * les doublons). Matché sur la description plutôt que reservationId : les
+ * lignes importées via CSV ne sont pas forcément rattachées à une
+ * réservation (colonne "Reservation" du CSV), alors que la description est
+ * toujours présente et reconstructible à l'identique côté app (voir
+ * PropertyCleaningTable.tsx, format "Ménage — {Ref Resa} — {date}"). */
+async function getRecordedHousekeepingDescriptions(listingIds: string[], dateFilter: string): Promise<Set<string>> {
+  const descriptions = new Set<string>();
   for (const listingId of listingIds) {
     try {
       let page = 1;
@@ -1997,7 +2000,7 @@ async function getRecordedHousekeepingReservationIds(listingIds: string[], dateF
           page: String(page),
         });
         for (const entry of res.data) {
-          if (entry.reservationId) ids.add(entry.reservationId);
+          if (entry.description) descriptions.add(entry.description.trim());
         }
         if (page >= res.pagination.totalPage) break;
         page++;
@@ -2006,7 +2009,7 @@ async function getRecordedHousekeepingReservationIds(listingIds: string[], dateF
       // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
     }
   }
-  return ids;
+  return descriptions;
 }
 
 export interface PropertyCheckoutsResult {
@@ -2023,7 +2026,7 @@ export interface PropertyCheckoutsResult {
   /** IDs de réservation ayant déjà une écriture Housekeeping — même
    * disponibilité que `checkouts` (getPropertyCheckoutsForMonths
    * seulement). */
-  alreadyRecordedReservationIds?: string[];
+  alreadyRecordedDescriptions?: string[];
   notFoundReferences: string[];
 }
 
@@ -2050,7 +2053,7 @@ export async function getPropertyCheckoutsForMonths(
             return perMonth.flat();
           })
         ),
-        getRecordedHousekeepingReservationIds(listingIds, String(year)),
+        getRecordedHousekeepingDescriptions(listingIds, String(year)),
       ]);
 
       const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
@@ -2062,7 +2065,7 @@ export async function getPropertyCheckoutsForMonths(
         guestyListingId: primaryListing?.uniqueRef ?? null,
         checkoutDates: checkouts.map((c) => c.date),
         checkouts,
-        alreadyRecordedReservationIds: Array.from(alreadyRecordedIds),
+        alreadyRecordedDescriptions: Array.from(alreadyRecordedIds),
         notFoundReferences,
       };
     })
@@ -2116,7 +2119,7 @@ export async function getPropertyCheckoutsForDateRangeDetailed(
 
       const [perListingCheckouts, alreadyRecordedIds] = await Promise.all([
         Promise.all(listingIds.map((listingId) => getListingCheckoutsForDateRange(listingId, startDate, endDate))),
-        getRecordedHousekeepingReservationIds(listingIds, `${startDate}...${endDate}`),
+        getRecordedHousekeepingDescriptions(listingIds, `${startDate}...${endDate}`),
       ]);
 
       const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
@@ -2128,7 +2131,7 @@ export async function getPropertyCheckoutsForDateRangeDetailed(
         guestyListingId: primaryListing?.uniqueRef ?? null,
         checkoutDates: checkouts.map((c) => c.date),
         checkouts,
-        alreadyRecordedReservationIds: Array.from(alreadyRecordedIds),
+        alreadyRecordedDescriptions: Array.from(alreadyRecordedIds),
         notFoundReferences,
       };
     })
