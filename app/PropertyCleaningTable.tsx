@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
+import { formatEuros, MONTH_LABELS_SHORT, todayIso } from "@/lib/format";
 import type { RentType } from "@/lib/types";
 
 type SortKey = "reference" | "count" | "customField" | "guesty" | "productCustom" | "productGuesty" | "diff";
@@ -210,6 +210,12 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [currentRemovedRowIds, setCurrentRemovedRowIds] = useState<Set<string>>(new Set());
   const [currentSortKey, setCurrentSortKey] = useState<CurrentSortKey>("reference");
   const [currentDirection, setCurrentDirection] = useState<"asc" | "desc">("asc");
+  const [expenseCsvDate, setExpenseCsvDate] = useState(todayIso());
+
+  const cleaningProviderByPropertyId = useMemo(
+    () => new Map(allProperties.map((p) => [p.id, p.cleaningProviderName])),
+    [allProperties]
+  );
 
   const includedTags = useMemo(
     () => Object.entries(tagFilters).filter(([, mode]) => mode === "include").map(([tag]) => tag),
@@ -446,6 +452,65 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       : selectedMonths.length === 12
         ? `Année complète ${year}`
         : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
+
+  /** Export VRPlatform "Expenses" — une ligne par bien, le montant total à
+   * payer au prestataire de ménage sur la période (checkoutCount × prix
+   * ménage custom field, la colonne "Produit (custom field)" déjà affichée
+   * dans le tableau) — par opposition à exportCsv() qui exporte juste les
+   * données affichées, pas un format d'import VRPlatform. */
+  function exportExpensesCsv() {
+    if (!sortedRows || sortedRows.length === 0) return;
+    const header = [
+      "Issue Date",
+      "Payment Date",
+      "Description",
+      "Status",
+      "Bank/CC account",
+      "Contact",
+      "Bill ID",
+      "Currency",
+      "Listing",
+      "Reservation",
+      "Line Description",
+      "Expense account",
+      "Bill to Owner",
+      "Applied amount",
+      "Markup",
+      "Markup Tax",
+    ];
+    const billIdPeriod = `${year}${selectedMonths.map((m) => String(m).padStart(2, "0")).join("")}`;
+    const csvRows: string[][] = [header];
+    for (const row of sortedRows) {
+      if (row.productCustom == null || row.productCustom === 0) continue;
+      const description = `Ménage — ${row.reference} (${periodSummary})`;
+      csvRows.push([
+        expenseCsvDate,
+        expenseCsvDate,
+        description,
+        "Unpaid",
+        "Non-Trust Account",
+        cleaningProviderByPropertyId.get(row.propertyId) ?? "",
+        `${row.reference}-MENAGE-${billIdPeriod}`,
+        "EUR",
+        row.reference,
+        "",
+        description,
+        "Housekeeping",
+        "TRUE",
+        row.productCustom.toFixed(2),
+        "",
+        "",
+      ]);
+    }
+    const csvContent = csvRows.map((r) => r.map(escapeCsvField).join(";")).join("\r\n");
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `menage_expenses_${billIdPeriod}_vrplatform.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-4">
@@ -732,9 +797,30 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
             ) : (
               <span />
             )}
-            <button type="button" onClick={exportCsv} className="btn-secondary btn-sm">
-              Exporter (CSV)
-            </button>
+            <div className="flex items-center gap-2">
+              <label className="text-[12px] text-[#6e6e73]" htmlFor="menage-expense-csv-date">
+                Date
+              </label>
+              <input
+                id="menage-expense-csv-date"
+                type="date"
+                value={expenseCsvDate}
+                onChange={(e) => setExpenseCsvDate(e.target.value)}
+                className="rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={exportExpensesCsv}
+                disabled={!expenseCsvDate}
+                title="Une ligne par bien — montant total ménage de la période (Produit (custom field)), compte Housekeeping, Bill to Owner"
+                className="btn-secondary btn-sm"
+              >
+                Exporter Expense (CSV)
+              </button>
+              <button type="button" onClick={exportCsv} className="btn-secondary btn-sm">
+                Exporter (CSV)
+              </button>
+            </div>
           </div>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
