@@ -3,11 +3,12 @@
 import { useMemo, useState } from "react";
 import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
 
-type SortKey = "name" | "date" | "flat" | "price" | "label" | "prestataire" | "billToOwner" | "amountDue";
+type SortKey = "name" | "reservationRef" | "date" | "flat" | "price" | "label" | "prestataire" | "billToOwner" | "amountDue";
 
 interface CommSharingRow {
   id: string;
   name: string;
+  reservationRef: string | null;
   date: string | null;
   flat: string | null;
   price: number | null;
@@ -129,7 +130,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
     return needle === ""
       ? rowsWithBonus
       : rowsWithBonus.filter((r) =>
-          [r.name, r.flat, r.label, r.prestataire].some((v) => v?.toLowerCase().includes(needle))
+          [r.name, r.reservationRef, r.flat, r.label, r.prestataire].some((v) => v?.toLowerCase().includes(needle))
         );
   }, [rowsWithBonus, search]);
 
@@ -140,6 +141,9 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       switch (sortKey) {
         case "name":
           cmp = a.name.localeCompare(b.name, "fr");
+          break;
+        case "reservationRef":
+          cmp = (a.reservationRef ?? "").localeCompare(b.reservationRef ?? "", "fr");
           break;
         case "date":
           cmp = (a.date ?? "").localeCompare(b.date ?? "");
@@ -230,7 +234,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       {rows && (
         <div>
           <label className="field-label" htmlFor="comm-sharing-search">
-            Recherche (bien, prestataire, label)
+            Recherche (bien, ref resa, prestataire, label)
           </label>
           <input
             id="comm-sharing-search"
@@ -261,6 +265,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                 <thead>
                   <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                     <SortHeader label="Name" k="name" sortKey={sortKey} direction={direction} onSort={handleSort} />
+                    <SortHeader label="Ref Resa" k="reservationRef" sortKey={sortKey} direction={direction} onSort={handleSort} />
                     <SortHeader label="Date" k="date" sortKey={sortKey} direction={direction} onSort={handleSort} align="right" />
                     <SortHeader label="Flat" k="flat" sortKey={sortKey} direction={direction} onSort={handleSort} />
                     <SortHeader label="Label" k="label" sortKey={sortKey} direction={direction} onSort={handleSort} />
@@ -294,6 +299,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                       }`}
                     >
                       <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">{row.name}</td>
+                      <td className="py-1.5 px-2 text-[#1d1d1f]">{row.reservationRef ?? "—"}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{formatDate(row.date)}</td>
                       <td className="py-1.5 px-2 text-[#1d1d1f]">{row.flat ?? "—"}</td>
                       <td className="py-1.5 px-2 text-[#1d1d1f]">{row.label ?? "—"}</td>
@@ -313,7 +319,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                    <td className="py-1.5 pl-3 pr-2" colSpan={5}>
+                    <td className="py-1.5 pl-3 pr-2" colSpan={6}>
                       Total ({sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""})
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">{formatEuros(total)}</td>

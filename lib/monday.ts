@@ -64,6 +64,9 @@ async function findCommSharingBoardId(year: number, month: number): Promise<stri
 export interface CommSharingRow {
   id: string;
   name: string;
+  /** Référence de réservation extraite de la colonne "Text" Monday (ex:
+   * "BC-6yOYYYY8l" dans "Résa BC-6yOYYYY8l · Stripe ... · arrivée ..."). */
+  reservationRef: string | null;
   date: string | null;
   flat: string | null;
   price: number | null;
@@ -72,6 +75,8 @@ export interface CommSharingRow {
   billId: string | null;
   billToOwner: string | null;
 }
+
+const RESA_REF_PATTERN = /Résa\s+(\S+)/i;
 
 interface ColumnValue {
   id: string;
@@ -105,9 +110,11 @@ function toRow(item: { id: string; name: string; column_values: ColumnValue[] })
   // "Text" (text_mkz7e6e8) porte la vraie référence de réservation/arrivée.
   const text = byId.get("text_mkz7e6e8");
   const name = text ? `${item.name} — ${text}` : item.name;
+  const reservationRef = text ? (text.match(RESA_REF_PATTERN)?.[1] ?? null) : null;
   return {
     id: item.id,
     name,
+    reservationRef,
     date: byId.get("date4") ?? null,
     flat: byId.get("dropdown_mkykc1jr") ?? null,
     price: price != null && Number.isFinite(price) ? price : null,
