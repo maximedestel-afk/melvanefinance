@@ -114,13 +114,16 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   const rowsWithBonus = useMemo(() => {
     if (!rows) return null;
     return rows.map((r) => {
+      const is8mor = r.flat?.trim().toLowerCase() === "8mor";
       // 8MOR n'a pas (ou plus) de bonus_eci_percent configuré côté M.G.B —
       // toujours 50% pour ce bien, quoi que dise Supabase.
-      const bonusEciPercent =
-        r.flat?.trim().toLowerCase() === "8mor" ? 50 : r.flat ? (bonusEciByReference.get(r.flat.trim().toLowerCase()) ?? null) : null;
+      const bonusEciPercent = is8mor ? 50 : r.flat ? (bonusEciByReference.get(r.flat.trim().toLowerCase()) ?? null) : null;
       const isEci = r.label != null && ECI_LABEL_PATTERN.test(r.label);
       const amountDue = isEci && r.price != null && bonusEciPercent != null ? (r.price * bonusEciPercent) / 100 : null;
-      return { ...r, bonusEciPercent, amountDue };
+      // La colonne Text Monday de 8MOR ne contient pas une vraie référence
+      // de réservation — ne pas l'afficher/exporter pour ce bien.
+      const reservationRef = is8mor ? null : r.reservationRef;
+      return { ...r, reservationRef, bonusEciPercent, amountDue };
     });
   }, [rows, bonusEciByReference]);
 
