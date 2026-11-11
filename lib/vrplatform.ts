@@ -1907,14 +1907,22 @@ export async function getPropertyOccupancyForMonths(
   );
 }
 
-/** Dates de check-out (format ISO "AAAA-MM-JJ") d'un listing tombant dans un
- * mois donné. */
-async function getListingCheckoutsForMonth(listingId: string, year: number, month: number): Promise<string[]> {
+export interface PropertyCheckout {
+  date: string;
+  /** Référence de réservation (confirmation code VRPlatform) — null si non
+   * renseignée côté VRPlatform. Utilisé pour l'export Expense Ménage (une
+   * ligne par check-out plutôt qu'agrégée par bien). */
+  confirmationCode: string | null;
+}
+
+/** Check-outs (date + confirmation code) d'un listing tombant dans un mois
+ * donné. */
+async function getListingCheckoutsForMonth(listingId: string, year: number, month: number): Promise<PropertyCheckout[]> {
   const dateParam = `${year}-${String(month).padStart(2, "0")}`;
-  const checkoutDates: string[] = [];
+  const checkouts: PropertyCheckout[] = [];
   let page = 1;
   for (;;) {
-    const res = await vrPlatformFetch<VrPlatformReservationsResponse>("/reservations", {
+    const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
       listingId,
       date: dateParam,
       dateField: "intersection",
@@ -1924,12 +1932,14 @@ async function getListingCheckoutsForMonth(listingId: string, year: number, mont
     });
     for (const reservation of res.data) {
       if (!reservation.checkOut) continue;
-      if (reservation.checkOut.slice(0, 7) === dateParam) checkoutDates.push(reservation.checkOut.slice(0, 10));
+      if (reservation.checkOut.slice(0, 7) === dateParam) {
+        checkouts.push({ date: reservation.checkOut.slice(0, 10), confirmationCode: reservation.confirmationCode });
+      }
     }
     if (page >= res.pagination.totalPage) break;
     page++;
   }
-  return checkoutDates;
+  return checkouts;
 }
 
 export interface PropertyCheckoutsResult {
@@ -1939,6 +1949,10 @@ export interface PropertyCheckoutsResult {
    * références supplémentaires) — null si non résolu côté VRPlatform. */
   guestyListingId: string | null;
   checkoutDates: string[];
+  /** Détail check-out + confirmation code — seulement rempli par
+   * getPropertyCheckoutsForMonths (onglet Ménage, export Expense), absent
+   * (undefined) depuis getPropertyCheckoutsForDateRange. */
+  checkouts?: PropertyCheckout[];
   notFoundReferences: string[];
 }
 
@@ -1966,12 +1980,14 @@ export async function getPropertyCheckoutsForMonths(
       );
 
       const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
+      const checkouts = perListingCheckouts.flat().sort((a, b) => a.date.localeCompare(b.date));
 
       return {
         propertyId: property.propertyId,
         reference: property.reference,
         guestyListingId: primaryListing?.uniqueRef ?? null,
-        checkoutDates: perListingCheckouts.flat().sort(),
+        checkoutDates: checkouts.map((c) => c.date),
+        checkouts,
         notFoundReferences,
       };
     })

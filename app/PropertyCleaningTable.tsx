@@ -43,10 +43,16 @@ interface PropertyOption {
   cleaningProviderName: string | null;
 }
 
+interface PropertyCheckout {
+  date: string;
+  confirmationCode: string | null;
+}
+
 interface CleaningApiResult {
   propertyId: string;
   reference: string;
   checkoutDates: string[];
+  checkouts: PropertyCheckout[];
   notFoundReferences: string[];
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
@@ -73,6 +79,7 @@ interface CleaningRow {
   notFoundReferences: string[];
   guestyError: string | null;
   checkoutDates: string[];
+  checkouts: PropertyCheckout[];
   checkoutCount: number;
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
@@ -92,6 +99,7 @@ function toRow(r: CleaningApiResult): CleaningRow {
     notFoundReferences: r.notFoundReferences,
     guestyError: r.guestyError,
     checkoutDates: r.checkoutDates,
+    checkouts: r.checkouts,
     checkoutCount,
     cleaningFeeCustomField: r.cleaningFeeCustomField,
     cleaningFeeGuesty: r.cleaningFeeGuesty,
@@ -472,11 +480,10 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     return `${yy}${mm}${dd}`;
   }
 
-  /** Export VRPlatform "Expenses" — une ligne par bien, le montant total à
-   * payer au prestataire de ménage sur la période (checkoutCount × prix
-   * ménage custom field, la colonne "Produit (custom field)" déjà affichée
-   * dans le tableau) — par opposition à exportCsv() qui exporte juste les
-   * données affichées, pas un format d'import VRPlatform. */
+  /** Export VRPlatform "Expenses" — une ligne par check-out (pas agrégée par
+   * bien) : montant = prix ménage unitaire (custom field), Ref Resa = le
+   * confirmation code VRPlatform de la réservation, date dans la
+   * description = la date du check-out lui-même, pas la date d'export. */
   function exportExpensesCsv() {
     if (!sortedRows || sortedRows.length === 0) return;
     const header = [
@@ -505,26 +512,30 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
-      if (row.productCustom == null || row.productCustom === 0) continue;
-      const description = `Ménage — ${row.reference} — ${formatShortBillDate(expenseCsvDate)}`;
-      csvRows.push([
-        expenseCsvDate,
-        "",
-        description,
-        "Unpaid",
-        "",
-        cleaningProviderByPropertyId.get(row.propertyId) ?? "",
-        `${row.reference}-Menage-${formatYyMmDd(expenseCsvDate)}`,
-        "EUR",
-        row.reference,
-        "",
-        description,
-        "Housekeeping",
-        "TRUE",
-        row.productCustom.toFixed(2),
-        "",
-        "",
-      ]);
+      if (row.cleaningFeeCustomField == null || row.cleaningFeeCustomField === 0) continue;
+      const contact = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
+      for (const checkout of row.checkouts) {
+        const refResa = checkout.confirmationCode ?? row.reference;
+        const description = `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`;
+        csvRows.push([
+          expenseCsvDate,
+          "",
+          description,
+          "Unpaid",
+          "",
+          contact,
+          `${row.reference}-Menage-${checkout.confirmationCode ?? formatYyMmDd(checkout.date)}`,
+          "EUR",
+          row.reference,
+          "",
+          description,
+          "Housekeeping",
+          "TRUE",
+          row.cleaningFeeCustomField.toFixed(2),
+          "",
+          "",
+        ]);
+      }
     }
     const csvContent = csvRows.map((r) => r.map(escapeExpenseCsvField).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
