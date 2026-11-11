@@ -46,6 +46,7 @@ interface PropertyOption {
 interface PropertyCheckout {
   date: string;
   confirmationCode: string | null;
+  reservationId: string;
 }
 
 interface CleaningApiResult {
@@ -53,6 +54,10 @@ interface CleaningApiResult {
   reference: string;
   checkoutDates: string[];
   checkouts: PropertyCheckout[];
+  /** IDs de réservation ayant déjà une écriture Housekeeping côté
+   * VRPlatform — pour recouper l'export Expense et repérer les check-out
+   * déjà enregistrés (éviter les doublons). */
+  alreadyRecordedReservationIds: string[];
   notFoundReferences: string[];
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
@@ -80,6 +85,7 @@ interface CleaningRow {
   guestyError: string | null;
   checkoutDates: string[];
   checkouts: PropertyCheckout[];
+  alreadyRecordedReservationIds: string[];
   checkoutCount: number;
   cleaningFeeCustomField: number | null;
   cleaningFeeGuesty: number | null;
@@ -100,6 +106,7 @@ function toRow(r: CleaningApiResult): CleaningRow {
     guestyError: r.guestyError,
     checkoutDates: r.checkoutDates,
     checkouts: r.checkouts,
+    alreadyRecordedReservationIds: r.alreadyRecordedReservationIds,
     checkoutCount,
     cleaningFeeCustomField: r.cleaningFeeCustomField,
     cleaningFeeGuesty: r.cleaningFeeGuesty,
@@ -219,6 +226,8 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [currentSortKey, setCurrentSortKey] = useState<CurrentSortKey>("reference");
   const [currentDirection, setCurrentDirection] = useState<"asc" | "desc">("asc");
   const [expenseCsvDate, setExpenseCsvDate] = useState(todayIso());
+  const [showExpensePreview, setShowExpensePreview] = useState(false);
+  const [excludeAlreadyRecorded, setExcludeAlreadyRecorded] = useState(true);
 
   const cleaningProviderByPropertyId = useMemo(
     () => new Map(allProperties.map((p) => [p.id, p.cleaningProviderName])),
@@ -480,12 +489,55 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     return `${yy}${mm}${dd}`;
   }
 
-  /** Export VRPlatform "Expenses" — une ligne par check-out (pas agrégée par
-   * bien) : montant = prix ménage unitaire (custom field), Ref Resa = le
-   * confirmation code VRPlatform de la réservation, date dans la
-   * description = la date du check-out lui-même, pas la date d'export. */
+  interface ExpenseRow {
+    propertyId: string;
+    reference: string;
+    refResa: string;
+    checkoutDate: string;
+    description: string;
+    billId: string;
+    contact: string;
+    amount: number;
+    alreadyRecorded: boolean;
+  }
+
+  /** Une ligne par check-out (pas agrégée par bien) : montant = prix ménage
+   * unitaire (custom field), Ref Resa = confirmation code VRPlatform (ou la
+   * référence du bien à défaut), recoupé avec les écritures Housekeeping déjà
+   * postées côté VRPlatform (alreadyRecordedReservationIds) pour repérer les
+   * doublons potentiels avant export. */
+  const expenseRows: ExpenseRow[] = useMemo(() => {
+    if (!sortedRows) return [];
+    const result: ExpenseRow[] = [];
+    for (const row of sortedRows) {
+      if (row.cleaningFeeCustomField == null || row.cleaningFeeCustomField === 0) continue;
+      const contact = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
+      const alreadyRecordedIds = new Set(row.alreadyRecordedReservationIds);
+      for (const checkout of row.checkouts) {
+        const refResa = checkout.confirmationCode ?? row.reference;
+        result.push({
+          propertyId: row.propertyId,
+          reference: row.reference,
+          refResa,
+          checkoutDate: checkout.date,
+          description: `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`,
+          billId: `${row.reference}-Menage-${checkout.confirmationCode ?? formatYyMmDd(checkout.date)}`,
+          contact,
+          amount: row.cleaningFeeCustomField,
+          alreadyRecorded: alreadyRecordedIds.has(checkout.reservationId),
+        });
+      }
+    }
+    return result;
+  }, [sortedRows, cleaningProviderByPropertyId]);
+
+  const alreadyRecordedCount = expenseRows.filter((r) => r.alreadyRecorded).length;
+  const expenseRowsToExport = excludeAlreadyRecorded ? expenseRows.filter((r) => !r.alreadyRecorded) : expenseRows;
+
+  /** Export VRPlatform "Expenses" à partir de expenseRowsToExport (déjà
+   * filtrées selon excludeAlreadyRecorded). */
   function exportExpensesCsv() {
-    if (!sortedRows || sortedRows.length === 0) return;
+    if (expenseRowsToExport.length === 0) return;
     const header = [
       "Issue Date",
       "Payment Date",
@@ -511,31 +563,25 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const escapeExpenseCsvField = (value: string): string =>
       /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
     const csvRows: string[][] = [header];
-    for (const row of sortedRows) {
-      if (row.cleaningFeeCustomField == null || row.cleaningFeeCustomField === 0) continue;
-      const contact = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
-      for (const checkout of row.checkouts) {
-        const refResa = checkout.confirmationCode ?? row.reference;
-        const description = `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`;
-        csvRows.push([
-          expenseCsvDate,
-          "",
-          description,
-          "Unpaid",
-          "",
-          contact,
-          `${row.reference}-Menage-${checkout.confirmationCode ?? formatYyMmDd(checkout.date)}`,
-          "EUR",
-          row.reference,
-          "",
-          description,
-          "Housekeeping",
-          "FALSE",
-          row.cleaningFeeCustomField.toFixed(2),
-          "",
-          "",
-        ]);
-      }
+    for (const r of expenseRowsToExport) {
+      csvRows.push([
+        expenseCsvDate,
+        "",
+        r.description,
+        "Unpaid",
+        "",
+        r.contact,
+        r.billId,
+        "EUR",
+        r.reference,
+        "",
+        r.description,
+        "Housekeeping",
+        "FALSE",
+        r.amount.toFixed(2),
+        "",
+        "",
+      ]);
     }
     const csvContent = csvRows.map((r) => r.map(escapeExpenseCsvField).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
@@ -845,9 +891,16 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
               />
               <button
                 type="button"
+                onClick={() => setShowExpensePreview((v) => !v)}
+                className="btn-secondary btn-sm"
+              >
+                {showExpensePreview ? "Masquer l'aperçu" : "Aperçu Expense"}
+              </button>
+              <button
+                type="button"
                 onClick={exportExpensesCsv}
-                disabled={!expenseCsvDate}
-                title="Une ligne par bien — montant total ménage de la période (Produit (custom field)), compte Housekeeping, Bill to Owner"
+                disabled={!expenseCsvDate || expenseRowsToExport.length === 0}
+                title="Une ligne par check-out — prix ménage unitaire (custom field), compte Housekeeping, Bill to Owner FALSE"
                 className="btn-secondary btn-sm"
               >
                 Exporter Expense (CSV)
@@ -857,6 +910,68 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
               </button>
             </div>
           </div>
+
+          {showExpensePreview && (
+            <div className="space-y-2 rounded-[10px] border border-black/10 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[13px] text-[#1d1d1f]">
+                  {expenseRows.length} ligne{expenseRows.length !== 1 ? "s" : ""} ménage
+                  {alreadyRecordedCount > 0 && (
+                    <span className="text-amber-600">
+                      {" "}
+                      — {alreadyRecordedCount} déjà enregistrée{alreadyRecordedCount !== 1 ? "s" : ""} côté VRPlatform
+                      (compte Housekeeping)
+                    </span>
+                  )}
+                </p>
+                <label className="flex items-center gap-1.5 text-[12px] text-[#1d1d1f]">
+                  <input
+                    type="checkbox"
+                    checked={excludeAlreadyRecorded}
+                    onChange={(e) => setExcludeAlreadyRecorded(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-black/20 text-[#0071e3] focus:ring-[#0071e3]/40"
+                  />
+                  Exclure les ménages déjà enregistrés de l&apos;export
+                </label>
+              </div>
+              <div className="max-h-80 overflow-auto rounded-[8px] border border-black/[0.06]">
+                <table className="w-full border-collapse text-[12px]">
+                  <thead>
+                    <tr className="sticky top-0 border-b border-black/[0.08] bg-[#fafafc]">
+                      <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
+                      <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Ref Resa</th>
+                      <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Date check-out</th>
+                      <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Montant</th>
+                      <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenseRows.map((r, i) => (
+                      <tr
+                        key={`${r.billId}-${i}`}
+                        className={`border-b border-black/[0.04] last:border-b-0 ${
+                          r.alreadyRecorded ? "bg-amber-50" : i % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                        }`}
+                      >
+                        <td className="py-1 pl-3 pr-2 font-medium text-[#1d1d1f]">{r.reference}</td>
+                        <td className="py-1 px-2 text-[#1d1d1f]">{r.refResa}</td>
+                        <td className="py-1 px-2 text-[#1d1d1f]">{formatShortBillDate(r.checkoutDate)}</td>
+                        <td className="py-1 px-2 text-right tabular-nums text-[#1d1d1f]">{formatEuros(r.amount)}</td>
+                        <td className="py-1 pl-2 pr-3">
+                          {r.alreadyRecorded ? (
+                            <span className="font-medium text-amber-600">✓ Déjà enregistré</span>
+                          ) : (
+                            <span className="text-emerald-600">Nouveau</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[12px]">

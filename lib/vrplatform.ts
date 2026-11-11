@@ -1913,10 +1913,14 @@ export interface PropertyCheckout {
    * renseignée côté VRPlatform. Utilisé pour l'export Expense Ménage (une
    * ligne par check-out plutôt qu'agrégée par bien). */
   confirmationCode: string | null;
+  /** ID VRPlatform (UUID) de la réservation — sert à recouper avec les
+   * écritures déjà postées sur le compte Housekeeping (voir
+   * getRecordedHousekeepingReservationIds), pas affiché tel quel. */
+  reservationId: string;
 }
 
-/** Check-outs (date + confirmation code) d'un listing tombant dans un mois
- * donné. */
+/** Check-outs (date + confirmation code + ID réservation) d'un listing
+ * tombant dans un mois donné. */
 async function getListingCheckoutsForMonth(listingId: string, year: number, month: number): Promise<PropertyCheckout[]> {
   const dateParam = `${year}-${String(month).padStart(2, "0")}`;
   const checkouts: PropertyCheckout[] = [];
@@ -1933,13 +1937,51 @@ async function getListingCheckoutsForMonth(listingId: string, year: number, mont
     for (const reservation of res.data) {
       if (!reservation.checkOut) continue;
       if (reservation.checkOut.slice(0, 7) === dateParam) {
-        checkouts.push({ date: reservation.checkOut.slice(0, 10), confirmationCode: reservation.confirmationCode });
+        checkouts.push({
+          date: reservation.checkOut.slice(0, 10),
+          confirmationCode: reservation.confirmationCode,
+          reservationId: reservation.id,
+        });
       }
     }
     if (page >= res.pagination.totalPage) break;
     page++;
   }
   return checkouts;
+}
+
+const HOUSEKEEPING_ACCOUNT_ID = "4c2860e2-0acc-4b22-b665-38005b8cd610";
+
+/** IDs de réservation (VRPlatform) ayant déjà une écriture sur le compte
+ * Housekeeping sur un filtre de date VRPlatform donné — sert à recouper
+ * l'export Expense Ménage avec VRPlatform pour repérer les check-out déjà
+ * enregistrés (et éviter les doublons), sans tenir compte du côté
+ * owners/manager (peu importe lequel pour cette vérification). */
+async function getRecordedHousekeepingReservationIds(listingIds: string[], dateFilter: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  for (const listingId of listingIds) {
+    try {
+      let page = 1;
+      for (;;) {
+        const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
+          accountIds: HOUSEKEEPING_ACCOUNT_ID,
+          listingIds: listingId,
+          date: dateFilter,
+          status: "active",
+          limit: "250",
+          page: String(page),
+        });
+        for (const entry of res.data) {
+          if (entry.reservationId) ids.add(entry.reservationId);
+        }
+        if (page >= res.pagination.totalPage) break;
+        page++;
+      }
+    } catch {
+      // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+    }
+  }
+  return ids;
 }
 
 export interface PropertyCheckoutsResult {
@@ -1953,6 +1995,10 @@ export interface PropertyCheckoutsResult {
    * getPropertyCheckoutsForMonths (onglet Ménage, export Expense), absent
    * (undefined) depuis getPropertyCheckoutsForDateRange. */
   checkouts?: PropertyCheckout[];
+  /** IDs de réservation ayant déjà une écriture Housekeeping — même
+   * disponibilité que `checkouts` (getPropertyCheckoutsForMonths
+   * seulement). */
+  alreadyRecordedReservationIds?: string[];
   notFoundReferences: string[];
 }
 
@@ -1972,12 +2018,15 @@ export async function getPropertyCheckoutsForMonths(
       const references = [property.reference, ...property.extraVrplatformReferences];
       const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
 
-      const perListingCheckouts = await Promise.all(
-        listingIds.map(async (listingId) => {
-          const perMonth = await Promise.all(months.map((month) => getListingCheckoutsForMonth(listingId, year, month)));
-          return perMonth.flat();
-        })
-      );
+      const [perListingCheckouts, alreadyRecordedIds] = await Promise.all([
+        Promise.all(
+          listingIds.map(async (listingId) => {
+            const perMonth = await Promise.all(months.map((month) => getListingCheckoutsForMonth(listingId, year, month)));
+            return perMonth.flat();
+          })
+        ),
+        getRecordedHousekeepingReservationIds(listingIds, String(year)),
+      ]);
 
       const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
       const checkouts = perListingCheckouts.flat().sort((a, b) => a.date.localeCompare(b.date));
@@ -1988,6 +2037,7 @@ export async function getPropertyCheckoutsForMonths(
         guestyListingId: primaryListing?.uniqueRef ?? null,
         checkoutDates: checkouts.map((c) => c.date),
         checkouts,
+        alreadyRecordedReservationIds: Array.from(alreadyRecordedIds),
         notFoundReferences,
       };
     })
