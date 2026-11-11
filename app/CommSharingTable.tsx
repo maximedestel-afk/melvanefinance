@@ -216,7 +216,11 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       // Le texte de la colonne Date Monday peut inclure une heure (ex:
       // "2026-11-05 00:00:00") — VRPlatform attend juste "AAAA-MM-JJ".
       const isoDate = r.date ? r.date.slice(0, 10) : "";
-      const billIdBase = `${r.flat ?? r.id}-ECI-${ref}`;
+      // r.id (ID de l'item Monday) plutôt que ref pour garantir un Bill ID
+      // unique par ligne — plusieurs ECI du même bien sans Ref Resa (8MOR)
+      // partageraient sinon le même Bill ID, et VRPlatform fusionne alors
+      // les lignes en une seule "bill" (erreur "fields must agree").
+      const billIdBase = `${r.flat ?? r.id}-ECI-${r.id}`;
 
       const revenueDescription = `ECI Manager — ${ref} — ${dateLabel}`;
       csvRows.push([
