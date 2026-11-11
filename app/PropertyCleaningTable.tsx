@@ -225,7 +225,6 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [currentRemovedRowIds, setCurrentRemovedRowIds] = useState<Set<string>>(new Set());
   const [currentSortKey, setCurrentSortKey] = useState<CurrentSortKey>("reference");
   const [currentDirection, setCurrentDirection] = useState<"asc" | "desc">("asc");
-  const [expenseCsvDate, setExpenseCsvDate] = useState(todayIso());
   const [showExpensePreview, setShowExpensePreview] = useState(false);
   const [excludeAlreadyRecorded, setExcludeAlreadyRecorded] = useState(true);
 
@@ -565,7 +564,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const csvRows: string[][] = [header];
     for (const r of expenseRowsToExport) {
       csvRows.push([
-        expenseCsvDate,
+        r.checkoutDate,
         "",
         r.description,
         "Unpaid",
@@ -588,7 +587,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `menage_expenses_${formatYyMmDd(expenseCsvDate)}_vrplatform.csv`;
+    a.download = `menage_expenses_${formatYyMmDd(todayIso())}_vrplatform.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -879,16 +878,6 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
               <span />
             )}
             <div className="flex items-center gap-2">
-              <label className="text-[12px] text-[#6e6e73]" htmlFor="menage-expense-csv-date">
-                Date
-              </label>
-              <input
-                id="menage-expense-csv-date"
-                type="date"
-                value={expenseCsvDate}
-                onChange={(e) => setExpenseCsvDate(e.target.value)}
-                className="rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[12px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
-              />
               <button
                 type="button"
                 onClick={() => setShowExpensePreview((v) => !v)}
@@ -899,8 +888,8 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
               <button
                 type="button"
                 onClick={exportExpensesCsv}
-                disabled={!expenseCsvDate || expenseRowsToExport.length === 0}
-                title="Une ligne par check-out — prix ménage unitaire (custom field), compte Housekeeping, Bill to Owner FALSE"
+                disabled={expenseRowsToExport.length === 0}
+                title="Une ligne par check-out — Issue Date = date du check-out, prix ménage unitaire (custom field), compte Housekeeping, Bill to Owner FALSE"
                 className="btn-secondary btn-sm"
               >
                 Exporter Expense (CSV)
