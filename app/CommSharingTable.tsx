@@ -250,7 +250,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         expenseDescription,
         "Housekeeping",
         "FALSE",
-        r.amountDue!.toFixed(2),
+        (-r.amountDue!).toFixed(2),
         "",
         "",
       ]);
