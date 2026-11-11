@@ -225,7 +225,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         revenueDescription,
         "Unpaid",
         "",
-        "",
+        "info@melvanebydesign.com",
         `${billIdBase}-REV`,
         "EUR",
         r.flat ?? "",
