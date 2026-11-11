@@ -106,14 +106,15 @@ function toRow(item: { id: string; name: string; column_values: ColumnValue[] })
   const byId = new Map(item.column_values.map((c) => [c.id, c.text]));
   const priceText = byId.get("numeric_mkyk8m24");
   const price = priceText ? Number.parseFloat(priceText.replace(",", ".")) : null;
-  // L'item.name seul ne dit rien (juste "ECI" ou "ECI Refund") — la colonne
-  // "Text" (text_mkz7e6e8) porte la vraie référence de réservation/arrivée.
+  // La référence de réservation (ex: "BC-6yOYYYY8l") est extraite de la
+  // colonne "Text" (text_mkz7e6e8, "Résa BC-6yOYYYY8l · Stripe ... ·
+  // arrivée ...") dans sa propre colonne Ref Resa — Name reste l'item.name
+  // tel quel ("ECI"/"ECI Refund").
   const text = byId.get("text_mkz7e6e8");
-  const name = text ? `${item.name} — ${text}` : item.name;
   const reservationRef = text ? (text.match(RESA_REF_PATTERN)?.[1] ?? null) : null;
   return {
     id: item.id,
-    name,
+    name: item.name,
     reservationRef,
     date: byId.get("date4") ?? null,
     flat: byId.get("dropdown_mkykc1jr") ?? null,
