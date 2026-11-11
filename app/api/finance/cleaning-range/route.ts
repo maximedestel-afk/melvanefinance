@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
-import { getPropertyCheckoutsForDateRange, isVrPlatformConfigured } from "@/lib/vrplatform";
+import { getPropertyCheckoutsForDateRangeDetailed, isVrPlatformConfigured } from "@/lib/vrplatform";
 import { getGuestyCleaningPrices, isGuestyConfigured, mapWithGuestyConcurrency } from "@/lib/guesty";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Aucun bien ne correspond aux filtres." }, { status: 404 });
     }
 
-    const checkoutResults = await getPropertyCheckoutsForDateRange(
+    const checkoutResults = await getPropertyCheckoutsForDateRangeDetailed(
       properties.map((p) => ({
         propertyId: p.id,
         reference: p.reference,
@@ -59,6 +59,8 @@ export async function GET(request: Request) {
           propertyId: r.propertyId,
           reference: r.reference,
           checkoutDates: r.checkoutDates,
+          checkouts: r.checkouts ?? [],
+          alreadyRecordedReservationIds: r.alreadyRecordedReservationIds ?? [],
           notFoundReferences: r.notFoundReferences,
           cleaningFeeCustomField: null,
           cleaningFeeGuesty: null,
@@ -71,6 +73,8 @@ export async function GET(request: Request) {
           propertyId: r.propertyId,
           reference: r.reference,
           checkoutDates: r.checkoutDates,
+          checkouts: r.checkouts ?? [],
+          alreadyRecordedReservationIds: r.alreadyRecordedReservationIds ?? [],
           notFoundReferences: r.notFoundReferences,
           cleaningFeeCustomField: prices.customField,
           cleaningFeeGuesty: prices.standard,
@@ -81,6 +85,8 @@ export async function GET(request: Request) {
           propertyId: r.propertyId,
           reference: r.reference,
           checkoutDates: r.checkoutDates,
+          checkouts: r.checkouts ?? [],
+          alreadyRecordedReservationIds: r.alreadyRecordedReservationIds ?? [],
           notFoundReferences: r.notFoundReferences,
           cleaningFeeCustomField: null,
           cleaningFeeGuesty: null,

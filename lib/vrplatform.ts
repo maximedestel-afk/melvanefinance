@@ -2069,6 +2069,72 @@ export async function getPropertyCheckoutsForMonths(
   );
 }
 
+/** Check-outs (date + confirmation code + ID réservation) d'un listing dans
+ * un filtre de date VRPlatform [startDate, endDate] (inclus, YYYY-MM-DD) —
+ * version "plage de dates" de getListingCheckoutsForMonth. */
+async function getListingCheckoutsForDateRange(listingId: string, startDate: string, endDate: string): Promise<PropertyCheckout[]> {
+  const checkouts: PropertyCheckout[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformReservationsDetailedResponse>("/reservations", {
+      listingId,
+      date: `${startDate}...${endDate}`,
+      dateField: "checkOut",
+      status: "booked",
+      limit: "250",
+      page: String(page),
+    });
+    for (const reservation of res.data) {
+      if (!reservation.checkOut) continue;
+      checkouts.push({
+        date: reservation.checkOut.slice(0, 10),
+        confirmationCode: reservation.confirmationCode,
+        reservationId: reservation.id,
+      });
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return checkouts;
+}
+
+/** Version "plage de dates" de getPropertyCheckoutsForMonths (checkouts +
+ * confirmation code + recoupement Housekeeping déjà enregistré) — utilisé
+ * par l'onglet Ménage en mode plage de dates (export Expense). */
+export async function getPropertyCheckoutsForDateRangeDetailed(
+  properties: PortfolioProperty[],
+  startDate: string,
+  endDate: string
+): Promise<PropertyCheckoutsResult[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+
+  return Promise.all(
+    properties.map(async (property) => {
+      const references = [property.reference, ...property.extraVrplatformReferences];
+      const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
+
+      const [perListingCheckouts, alreadyRecordedIds] = await Promise.all([
+        Promise.all(listingIds.map((listingId) => getListingCheckoutsForDateRange(listingId, startDate, endDate))),
+        getRecordedHousekeepingReservationIds(listingIds, `${startDate}...${endDate}`),
+      ]);
+
+      const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
+      const checkouts = perListingCheckouts.flat().sort((a, b) => a.date.localeCompare(b.date));
+
+      return {
+        propertyId: property.propertyId,
+        reference: property.reference,
+        guestyListingId: primaryListing?.uniqueRef ?? null,
+        checkoutDates: checkouts.map((c) => c.date),
+        checkouts,
+        alreadyRecordedReservationIds: Array.from(alreadyRecordedIds),
+        notFoundReferences,
+      };
+    })
+  );
+}
+
 /** Version "plage de dates" de getPropertyCheckoutsForMonths — filtre
  * directement côté serveur (dateField=checkOut) sur [startDate, endDate]
  * (inclus, YYYY-MM-DD). Utilisé par l'onglet Analyse en mode plage de

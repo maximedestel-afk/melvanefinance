@@ -226,8 +226,11 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   );
 
   const [mode, setMode] = useState<"period" | "current">("period");
+  const [dateSelectionMode, setDateSelectionMode] = useState<"months" | "range">("months");
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
+  const [startDate, setStartDate] = useState(todayIso());
+  const [endDate, setEndDate] = useState(todayIso());
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>(() => allProperties.map((p) => p.id));
   const [showProperties, setShowProperties] = useState(false);
@@ -342,8 +345,12 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       setError("Aucun bien ne correspond aux filtres.");
       return;
     }
-    if (mode === "period" && selectedMonths.length === 0) {
+    if (mode === "period" && dateSelectionMode === "months" && selectedMonths.length === 0) {
       setError("Sélectionne au moins un mois.");
+      return;
+    }
+    if (mode === "period" && dateSelectionMode === "range" && (!startDate || !endDate || startDate > endDate)) {
+      setError("Plage de dates invalide.");
       return;
     }
     setLoading(true);
@@ -362,12 +369,20 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         }
         return;
       }
-      const params = new URLSearchParams({
-        year: String(year),
-        months: selectedMonths.join(","),
-        propertyIds: matchingProperties.map((p) => p.id).join(","),
-      });
-      const res = await fetch(`/api/finance/cleaning?${params.toString()}`);
+      const params =
+        dateSelectionMode === "range"
+          ? new URLSearchParams({
+              startDate,
+              endDate,
+              propertyIds: matchingProperties.map((p) => p.id).join(","),
+            })
+          : new URLSearchParams({
+              year: String(year),
+              months: selectedMonths.join(","),
+              propertyIds: matchingProperties.map((p) => p.id).join(","),
+            });
+      const endpoint = dateSelectionMode === "range" ? "/api/finance/cleaning-range" : "/api/finance/cleaning";
+      const res = await fetch(`${endpoint}?${params.toString()}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -497,17 +512,21 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `menage_${year}.csv`;
+    a.download = dateSelectionMode === "range" ? `menage_${startDate}_${endDate}.csv` : `menage_${year}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
   const periodSummary =
-    selectedMonths.length === 0
-      ? "Aucun mois"
-      : selectedMonths.length === 12
-        ? `Année complète ${year}`
-        : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
+    dateSelectionMode === "range"
+      ? startDate && endDate
+        ? `${formatShortBillDate(startDate)} → ${formatShortBillDate(endDate)}`
+        : "Plage de dates"
+      : selectedMonths.length === 0
+        ? "Aucun mois"
+        : selectedMonths.length === 12
+          ? `Année complète ${year}`
+          : `${selectedMonths.map((m) => MONTH_LABELS_SHORT[m - 1]).join(", ")} ${year}`;
 
   /** Date au format court "7 Nov 26" (jour sans zéro, mois abrégé, année sur
    * 2 chiffres) — utilisé dans la description de l'export Expense Ménage. */
@@ -675,47 +694,99 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
           </button>
           {showPeriodPicker && (
             <div className="absolute left-0 top-full z-10 mt-1.5 w-max rounded-[12px] border border-black/10 bg-white p-3.5 shadow-[0_8px_24px_rgba(0,0,0,0.12)]">
-              <div>
-                <label className="field-label" htmlFor="cleaning-year">
-                  Année
-                </label>
-                <select
-                  id="cleaning-year"
-                  value={year}
-                  onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
-                  className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+              <div className="flex overflow-hidden rounded-[8px] border border-black/10">
+                <button
+                  type="button"
+                  onClick={() => setDateSelectionMode("months")}
+                  className={`flex-1 px-3 py-1.5 text-[13px] font-medium transition ${
+                    dateSelectionMode === "months" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
                 >
-                  {years.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
-                    </option>
-                  ))}
-                </select>
+                  Par mois
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDateSelectionMode("range")}
+                  className={`flex-1 px-3 py-1.5 text-[13px] font-medium transition ${
+                    dateSelectionMode === "range" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                  }`}
+                >
+                  Plage de dates
+                </button>
               </div>
 
-              <div className="mt-3">
-                <span className="field-label">Mois</span>
-                <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
-                  {MONTH_LABELS_SHORT.map((label, i) => {
-                    const month = i + 1;
-                    const active = selectedMonths.includes(month);
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => toggleMonth(month)}
-                        className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
-                          active
-                            ? "border-[#0071e3] bg-[#0071e3] text-white"
-                            : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
+              {dateSelectionMode === "months" ? (
+                <>
+                  <div className="mt-3">
+                    <label className="field-label" htmlFor="cleaning-year">
+                      Année
+                    </label>
+                    <select
+                      id="cleaning-year"
+                      value={year}
+                      onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    >
+                      {years.map((y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mt-3">
+                    <span className="field-label">Mois</span>
+                    <div className="mt-1 flex flex-wrap gap-1 max-w-[280px]">
+                      {MONTH_LABELS_SHORT.map((label, i) => {
+                        const month = i + 1;
+                        const active = selectedMonths.includes(month);
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => toggleMonth(month)}
+                            className={`rounded-[8px] border px-2.5 py-1.5 text-[13px] font-medium transition ${
+                              active
+                                ? "border-[#0071e3] bg-[#0071e3] text-white"
+                                : "border-black/10 bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-3 flex items-end gap-2">
+                  <div>
+                    <label className="field-label" htmlFor="cleaning-start-date">
+                      Du
+                    </label>
+                    <input
+                      id="cleaning-start-date"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="cleaning-end-date">
+                      Au
+                    </label>
+                    <input
+                      id="cleaning-end-date"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="mt-1 rounded-[10px] border border-black/10 bg-white px-3 py-2 text-[14px] text-[#1d1d1f] shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 type="button"
@@ -1272,7 +1343,9 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         <p className="text-[13px] text-[#6e6e73]">
           {mode === "current"
             ? "Filtre par bien/tag/prestataire si besoin, puis charge les données."
-            : "Choisis une année, un ou plusieurs mois, filtre par bien/tag si besoin, puis charge les données."}
+            : dateSelectionMode === "range"
+              ? "Choisis une plage de dates, filtre par bien/tag si besoin, puis charge les données."
+              : "Choisis une année, un ou plusieurs mois, filtre par bien/tag si besoin, puis charge les données."}
         </p>
       )}
     </div>
