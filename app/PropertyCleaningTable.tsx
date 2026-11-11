@@ -478,6 +478,12 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       "Markup",
       "Markup Tax",
     ];
+    // Format d'import VRPlatform — séparateur virgule, comme les autres
+    // exports Expenses de l'app (Rattrapage Ménage, Convertisseur CSV,
+    // Relevé Bancaire), PAS le point-virgule d'escapeCsvField ci-dessus
+    // (qui sert seulement à l'export Excel "lisible" de exportCsv()).
+    const escapeExpenseCsvField = (value: string): string =>
+      /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
     const billIdPeriod = `${year}${selectedMonths.map((m) => String(m).padStart(2, "0")).join("")}`;
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
@@ -502,7 +508,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         "",
       ]);
     }
-    const csvContent = csvRows.map((r) => r.map(escapeCsvField).join(";")).join("\r\n");
+    const csvContent = csvRows.map((r) => r.map(escapeExpenseCsvField).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
