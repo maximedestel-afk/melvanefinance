@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatEuros, MONTH_LABELS_SHORT, todayIso } from "@/lib/format";
 import type { RentType } from "@/lib/types";
 
@@ -227,6 +227,31 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   const [currentDirection, setCurrentDirection] = useState<"asc" | "desc">("asc");
   const [showExpensePreview, setShowExpensePreview] = useState(false);
   const [excludeAlreadyRecorded, setExcludeAlreadyRecorded] = useState(true);
+  const [vendorContacts, setVendorContacts] = useState<{ name: string | null; email: string | null }[]>([]);
+
+  // Contacts VRPlatform (vendor) — utilisé pour résoudre le nom du
+  // prestataire de ménage (table interne cleaning_providers) vers son email
+  // VRPlatform exact quand il existe, avant de le mettre dans le champ
+  // Contact de l'export Expense.
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/finance/vendor-contacts");
+        const data = await res.json();
+        if (!data.error) setVendorContacts(data.contacts);
+      } catch {
+        // Dégradation silencieuse — le Contact retombe sur le nom local.
+      }
+    })();
+  }, []);
+
+  const vendorEmailByLowerName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of vendorContacts) {
+      if (c.name && c.email) map.set(c.name.trim().toLowerCase(), c.email);
+    }
+    return map;
+  }, [vendorContacts]);
 
   const cleaningProviderByPropertyId = useMemo(
     () => new Map(allProperties.map((p) => [p.id, p.cleaningProviderName])),
@@ -510,7 +535,8 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const result: ExpenseRow[] = [];
     for (const row of sortedRows) {
       if (row.cleaningFeeCustomField == null || row.cleaningFeeCustomField === 0) continue;
-      const contact = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
+      const providerName = cleaningProviderByPropertyId.get(row.propertyId) ?? "";
+      const contact = vendorEmailByLowerName.get(providerName.trim().toLowerCase()) ?? providerName;
       const alreadyRecordedIds = new Set(row.alreadyRecordedReservationIds);
       for (const checkout of row.checkouts) {
         const refResa = checkout.confirmationCode ?? row.reference;
@@ -528,7 +554,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       }
     }
     return result;
-  }, [sortedRows, cleaningProviderByPropertyId]);
+  }, [sortedRows, cleaningProviderByPropertyId, vendorEmailByLowerName]);
 
   const alreadyRecordedCount = expenseRows.filter((r) => r.alreadyRecorded).length;
   const expenseRowsToExport = excludeAlreadyRecorded ? expenseRows.filter((r) => !r.alreadyRecorded) : expenseRows;

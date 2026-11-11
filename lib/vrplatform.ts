@@ -123,6 +123,31 @@ export async function listContactIdentifiers(): Promise<string[]> {
   return Array.from(new Set(identifiers)).sort((a, b) => a.localeCompare(b, "fr"));
 }
 
+export interface VendorContact {
+  name: string | null;
+  email: string | null;
+}
+
+/** Contacts VRPlatform de type "vendor", nom et email séparés (pas déjà
+ * collapsés en un seul identifiant comme listContactIdentifiers) — utilisé
+ * pour résoudre un nom de prestataire connu localement (ex: table
+ * cleaning_providers) vers son email VRPlatform exact, quand il existe. */
+export async function listVendorContacts(): Promise<VendorContact[]> {
+  const contacts: VendorContact[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformContactsResponse>("/contacts", {
+      type: "vendor",
+      limit: "250",
+      page: String(page),
+    });
+    for (const contact of res.data) contacts.push({ name: contact.name, email: contact.email });
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return contacts;
+}
+
 interface VrPlatformListingsResponse {
   data: { id: string; name: string | null; title: string | null; uniqueRef: string | null }[];
   pagination: { page: number; totalPage: number };
