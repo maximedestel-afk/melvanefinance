@@ -109,9 +109,11 @@ function toRow(item: { id: string; name: string; column_values: ColumnValue[] })
   // La référence de réservation (ex: "BC-6yOYYYY8l") est extraite de la
   // colonne "Text" (text_mkz7e6e8, "Résa BC-6yOYYYY8l · Stripe ... ·
   // arrivée ...") dans sa propre colonne Ref Resa — Name reste l'item.name
-  // tel quel ("ECI"/"ECI Refund").
-  const text = byId.get("text_mkz7e6e8");
-  const reservationRef = text ? (text.match(RESA_REF_PATTERN)?.[1] ?? null) : null;
+  // tel quel ("ECI"/"ECI Refund"). Pour "ECI Refund", cette colonne ne
+  // contient que le code brut de la résa (ex: "HMFMR3QRN3"), sans le
+  // préfixe "Résa" ni le reste — on le prend alors tel quel.
+  const text = byId.get("text_mkz7e6e8")?.trim() || null;
+  const reservationRef = text ? (text.match(RESA_REF_PATTERN)?.[1] ?? text) : null;
   return {
     id: item.id,
     name: item.name,
