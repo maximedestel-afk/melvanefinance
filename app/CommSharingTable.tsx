@@ -143,12 +143,14 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       const dateLabel = formatDate(r.date);
       const isoDate = r.date ? r.date.slice(0, 10) : "";
       const billIdBase = `${r.flat ?? r.id}-ECI-${r.id}`;
+      // r.name est "ECI" ou "ECI Refund" (annulation) — repris tel quel pour
+      // que la description distingue les deux côté VRPlatform.
       const revenueDescription = reservationRef
-        ? `ECI Manager — ${property} — ${ref} — ${dateLabel}`
-        : `ECI Manager — ${property} — ${dateLabel}`;
+        ? `${r.name} Manager — ${property} — ${ref} — ${dateLabel}`
+        : `${r.name} Manager — ${property} — ${dateLabel}`;
       const expenseDescription = reservationRef
-        ? `ECI Prestataire — ${property} — ${ref} — ${dateLabel}`
-        : `ECI Prestataire — ${property} — ${dateLabel}`;
+        ? `${r.name} Prestataire — ${property} — ${ref} — ${dateLabel}`
+        : `${r.name} Prestataire — ${property} — ${dateLabel}`;
       const alreadyRecorded =
         alreadyRecordedDescriptions.has(revenueDescription) || alreadyRecordedDescriptions.has(expenseDescription);
 
