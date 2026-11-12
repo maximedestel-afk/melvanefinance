@@ -29,7 +29,10 @@ const ECI_LABEL_PATTERN = /early check/i;
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(`${iso}T00:00:00Z`);
+  // La colonne Date de Monday stocke parfois une heure ("2026-10-30
+  // 19:40") en plus de la date — on ne garde que la partie date.
+  const datePart = iso.slice(0, 10);
+  const d = new Date(`${datePart}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", timeZone: "UTC" });
 }
