@@ -81,6 +81,10 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   const [rows, setRows] = useState<CommSharingRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [alreadyRecordedDescriptions, setAlreadyRecordedDescriptions] = useState<Set<string>>(new Set());
+  // null = "toutes les lignes ECI sélectionnées" (valeur par défaut tant que
+  // l'utilisateur n'a pas touché à la sélection pour ce chargement).
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string> | null>(null);
 
   async function load() {
     setLoading(true);
@@ -94,6 +98,8 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         setRows(null);
       } else {
         setRows(data.rows);
+        setAlreadyRecordedDescriptions(new Set(data.alreadyRecordedDescriptions ?? []));
+        setSelectedRowIds(null);
       }
     } catch {
       setError("Impossible de charger le tableau Monday.com.");
@@ -123,9 +129,34 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       // La colonne Text Monday de 8MOR ne contient pas une vraie référence
       // de réservation — ne pas l'afficher/exporter pour ce bien.
       const reservationRef = is8mor ? null : r.reservationRef;
-      return { ...r, reservationRef, bonusEciPercent, amountDue };
+
+      // Même construction que l'export CSV (ligne Price = revenu manager,
+      // ligne Montant dû = dépense prestataire), calculée une seule fois ici
+      // pour être réutilisée à la fois par l'export et par le recoupement
+      // "déjà enregistré" (comparaison de description, voir
+      // getRecordedEarlyCheckinDescriptions côté lib/vrplatform.ts).
+      const ref = reservationRef ?? r.flat ?? r.id;
+      const dateLabel = formatDate(r.date);
+      const isoDate = r.date ? r.date.slice(0, 10) : "";
+      const billIdBase = `${r.flat ?? r.id}-ECI-${r.id}`;
+      const revenueDescription = `ECI Manager — ${ref} — ${dateLabel}`;
+      const expenseDescription = `ECI Prestataire — ${ref} — ${dateLabel}`;
+      const alreadyRecorded =
+        alreadyRecordedDescriptions.has(revenueDescription) || alreadyRecordedDescriptions.has(expenseDescription);
+
+      return {
+        ...r,
+        reservationRef,
+        bonusEciPercent,
+        amountDue,
+        isoDate,
+        billIdBase,
+        revenueDescription,
+        expenseDescription,
+        alreadyRecorded,
+      };
     });
-  }, [rows, bonusEciByReference]);
+  }, [rows, bonusEciByReference, alreadyRecordedDescriptions]);
 
   const filteredRows = useMemo(() => {
     if (!rowsWithBonus) return null;
@@ -177,20 +208,35 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   const total = sortedRows?.reduce((sum, r) => sum + (r.price ?? 0), 0) ?? 0;
   const totalDue = sortedRows?.reduce((sum, r) => sum + (r.amountDue ?? 0), 0) ?? 0;
 
+  // Lignes éligibles à l'export (Price et Montant dû connus) parmi
+  // sortedRows (donc déjà filtrées par la recherche).
+  const eciRows = useMemo(() => sortedRows?.filter((r) => r.amountDue != null && r.price != null) ?? [], [sortedRows]);
+  const eciRowIds = useMemo(() => new Set(eciRows.map((r) => r.id)), [eciRows]);
+  const effectiveSelectedIds = selectedRowIds ?? eciRowIds;
+  const selectedEciRows = eciRows.filter((r) => effectiveSelectedIds.has(r.id));
+  const alreadyRecordedCount = eciRows.filter((r) => r.alreadyRecorded).length;
+
+  function toggleRowSelection(id: string) {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev ?? eciRowIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   function escapeExpenseCsvField(value: string): string {
     return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
   }
 
   /** Export VRPlatform "Expenses" — deux lignes par ligne Early Check-in
-   * (Price et Montant dû connus), toutes deux sur le compte Early Check-ins,
-   * Bill to Owner FALSE (transaction manager/prestataire, le propriétaire
-   * n'est pas concerné) : le Price est le revenu du manager, le Montant dû
-   * (Bonus ECI) est la dépense payée au prestataire (négatif, Contact =
+   * sélectionnée, toutes deux sur le compte Early Check-ins, Bill to Owner
+   * FALSE (transaction manager/prestataire, le propriétaire n'est pas
+   * concerné) : le Price est le revenu du manager, le Montant dû (Bonus
+   * ECI) est la dépense payée au prestataire (négatif, Contact =
    * prestataire). */
   function exportExpensesCsv() {
-    if (!sortedRows) return;
-    const eciRows = sortedRows.filter((r) => r.amountDue != null && r.price != null);
-    if (eciRows.length === 0) return;
+    if (selectedEciRows.length === 0) return;
     const header = [
       "Issue Date",
       "Payment Date",
@@ -210,31 +256,19 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       "Markup Tax",
     ];
     const csvRows: string[][] = [header];
-    for (const r of eciRows) {
-      const ref = r.reservationRef ?? r.flat ?? r.id;
-      const dateLabel = formatDate(r.date);
-      // Le texte de la colonne Date Monday peut inclure une heure (ex:
-      // "2026-11-05 00:00:00") — VRPlatform attend juste "AAAA-MM-JJ".
-      const isoDate = r.date ? r.date.slice(0, 10) : "";
-      // r.id (ID de l'item Monday) plutôt que ref pour garantir un Bill ID
-      // unique par ligne — plusieurs ECI du même bien sans Ref Resa (8MOR)
-      // partageraient sinon le même Bill ID, et VRPlatform fusionne alors
-      // les lignes en une seule "bill" (erreur "fields must agree").
-      const billIdBase = `${r.flat ?? r.id}-ECI-${r.id}`;
-
-      const revenueDescription = `ECI Manager — ${ref} — ${dateLabel}`;
+    for (const r of selectedEciRows) {
       csvRows.push([
-        isoDate,
-        isoDate,
-        revenueDescription,
+        r.isoDate,
+        r.isoDate,
+        r.revenueDescription,
         "Unpaid",
         "",
         "info@melvanebydesign.com",
-        `${billIdBase}-REV`,
+        `${r.billIdBase}-REV`,
         "EUR",
         r.flat ?? "",
         r.reservationRef ?? "",
-        revenueDescription,
+        r.revenueDescription,
         "Early Check-ins",
         "FALSE",
         r.price!.toFixed(2),
@@ -242,19 +276,18 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         "",
       ]);
 
-      const expenseDescription = `ECI Prestataire — ${ref} — ${dateLabel}`;
       csvRows.push([
-        isoDate,
-        isoDate,
-        expenseDescription,
+        r.isoDate,
+        r.isoDate,
+        r.expenseDescription,
         "Unpaid",
         "",
         r.prestataire ?? "",
-        `${billIdBase}-EXP`,
+        `${r.billIdBase}-EXP`,
         "EUR",
         r.flat ?? "",
         r.reservationRef ?? "",
-        expenseDescription,
+        r.expenseDescription,
         "Early Check-ins",
         "FALSE",
         (-r.amountDue!).toFixed(2),
@@ -358,20 +391,47 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
               {sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""} · {formatEuros(total)} · {formatEuros(totalDue)}{" "}
               dû (Bonus ECI)
             </span>
-            <button
-              type="button"
-              onClick={exportExpensesCsv}
-              title="Deux lignes par Early Check-in, compte Early Check-ins : Price en revenu manager, Montant dû en dépense prestataire (négatif), Bill to Owner FALSE"
-              className="btn-secondary btn-sm"
-            >
-              Exporter Expense (CSV)
-            </button>
+            {alreadyRecordedCount > 0 && (
+              <span className="text-[13px] text-amber-600">
+                {alreadyRecordedCount} ECI déjà enregistré{alreadyRecordedCount !== 1 ? "s" : ""} côté VRPlatform
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              {eciRowIds.size > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRowIds(new Set(eciRowIds))}
+                    className="text-[12px] font-medium text-[#0071e3] hover:underline"
+                  >
+                    Tout sélectionner
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRowIds(new Set())}
+                    className="text-[12px] font-medium text-[#0071e3] hover:underline"
+                  >
+                    Tout désélectionner
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={exportExpensesCsv}
+                disabled={selectedEciRows.length === 0}
+                title="Deux lignes par Early Check-in sélectionnée, compte Early Check-ins : Price en revenu manager, Montant dû en dépense prestataire (négatif), Bill to Owner FALSE"
+                className="btn-secondary btn-sm"
+              >
+                Exporter Expense (CSV) ({selectedEciRows.length})
+              </button>
+            </div>
           </div>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[12px]">
                 <thead>
                   <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                    <th className="py-1.5 pl-3 pr-1 text-left text-[11px] font-medium text-[#86868b]"></th>
                     <SortHeader label="Name" k="name" sortKey={sortKey} direction={direction} onSort={handleSort} />
                     <SortHeader label="Ref Resa" k="reservationRef" sortKey={sortKey} direction={direction} onSort={handleSort} />
                     <SortHeader label="Date" k="date" sortKey={sortKey} direction={direction} onSort={handleSort} align="right" />
@@ -396,6 +456,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                       onSort={handleSort}
                       align="right"
                     />
+                    <th className="py-1.5 pl-2 pr-3 text-left text-[11px] font-medium text-[#86868b]">Statut</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -406,7 +467,17 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                         rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                       }`}
                     >
-                      <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">{row.name}</td>
+                      <td className="py-1.5 pl-3 pr-1 text-center">
+                        {row.amountDue != null && row.price != null && (
+                          <input
+                            type="checkbox"
+                            checked={effectiveSelectedIds.has(row.id)}
+                            onChange={() => toggleRowSelection(row.id)}
+                            className="h-3.5 w-3.5 accent-[#0071e3]"
+                          />
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 font-medium text-[#1d1d1f]">{row.name}</td>
                       <td className="py-1.5 px-2 text-[#1d1d1f]">{row.reservationRef ?? "—"}</td>
                       <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">{formatDate(row.date)}</td>
                       <td className="py-1.5 px-2 text-[#1d1d1f]">{row.flat ?? "—"}</td>
@@ -422,17 +493,28 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                       <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
                         {row.amountDue != null ? formatEuros(row.amountDue) : "—"}
                       </td>
+                      <td className="py-1.5 pl-2 pr-3 text-left">
+                        {row.amountDue != null && row.price != null && (
+                          row.alreadyRecorded ? (
+                            <span className="text-[11px] font-medium text-amber-600">✓ Déjà enreg.</span>
+                          ) : (
+                            <span className="text-[11px] font-medium text-emerald-600">Nouveau</span>
+                          )
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                    <td className="py-1.5 pl-3 pr-2" colSpan={6}>
+                    <td className="py-1.5 pl-3 pr-2" colSpan={7}>
                       Total ({sortedRows.length} ligne{sortedRows.length !== 1 ? "s" : ""})
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">{formatEuros(total)}</td>
                     <td className="py-1.5 px-2"></td>
+                    <td className="py-1.5 px-2"></td>
                     <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">{formatEuros(totalDue)}</td>
+                    <td className="py-1.5 pl-2 pr-3"></td>
                   </tr>
                 </tfoot>
               </table>

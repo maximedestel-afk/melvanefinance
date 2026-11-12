@@ -2012,6 +2012,41 @@ async function getRecordedHousekeepingDescriptions(listingIds: string[], dateFil
   return descriptions;
 }
 
+const EARLY_CHECKINS_ACCOUNT_ID = "3b21c65d-3025-4b7f-a3be-bafea11851c0";
+
+/** Descriptions des écritures déjà postées sur le compte "Early Check-ins"
+ * pour un mois donné — sert à recouper l'export Expense ECI (onglet ECI,
+ * CommSharingTable.tsx) avec VRPlatform et repérer les lignes déjà
+ * enregistrées (éviter les doublons), matché sur la description comme pour
+ * getRecordedHousekeepingDescriptions. Pas de filtre par listing : les
+ * lignes ECI viennent de Monday.com (référence de bien en texte libre, pas
+ * forcément résolue en ID de listing), donc une seule requête sur tout le
+ * compte pour le mois plutôt qu'une par listing. */
+export async function getRecordedEarlyCheckinDescriptions(year: number, month: number): Promise<Set<string>> {
+  const descriptions = new Set<string>();
+  const dateFilter = `${year}-${String(month).padStart(2, "0")}`;
+  try {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
+        accountIds: EARLY_CHECKINS_ACCOUNT_ID,
+        date: dateFilter,
+        status: "active",
+        limit: "250",
+        page: String(page),
+      });
+      for (const entry of res.data) {
+        if (entry.description) descriptions.add(entry.description.trim());
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+  return descriptions;
+}
+
 export interface PropertyCheckoutsResult {
   propertyId: string;
   reference: string;

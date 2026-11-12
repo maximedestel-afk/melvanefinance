@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
 import { commSharingBoardLabel, getCommSharingRows, isMondayConfigured } from "@/lib/monday";
+import { getRecordedEarlyCheckinDescriptions, isVrPlatformConfigured } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,7 +31,23 @@ export async function GET(request: Request) {
         { status: 404 }
       );
     }
-    return NextResponse.json({ year, month, rows }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    // Recoupement VRPlatform (compte Early Check-ins) pour repérer les
+    // lignes déjà enregistrées côté export Expense — dégradation
+    // silencieuse si VRPlatform n'est pas configuré ou indisponible,
+    // puisque c'est un recoupement en plus, pas la donnée principale.
+    let alreadyRecordedDescriptions: string[] = [];
+    if (isVrPlatformConfigured()) {
+      try {
+        alreadyRecordedDescriptions = Array.from(await getRecordedEarlyCheckinDescriptions(year, month));
+      } catch {
+        alreadyRecordedDescriptions = [];
+      }
+    }
+
+    return NextResponse.json(
+      { year, month, rows, alreadyRecordedDescriptions },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Erreur Monday.com inconnue." },
