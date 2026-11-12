@@ -215,11 +215,6 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   const effectiveSelectedIds = selectedRowIds ?? eciRowIds;
   const selectedEciRows = eciRows.filter((r) => effectiveSelectedIds.has(r.id));
   const alreadyRecordedCount = eciRows.filter((r) => r.alreadyRecorded).length;
-  // Le Deposit (encaissement du paiement guest) ne peut cibler que les
-  // réservations qui existent réellement dans VRPlatform via la colonne
-  // "Reservation" — exclut donc 8MOR, dont les réservations n'y sont pas
-  // synchronisées (reservationRef est déjà nullifié pour 8MOR plus haut).
-  const eciDepositRows = selectedEciRows.filter((r) => r.reservationRef != null);
 
   function toggleRowSelection(id: string) {
     setSelectedRowIds((prev) => {
@@ -272,7 +267,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         `${r.billIdBase}-REV`,
         "EUR",
         r.flat ?? "",
-        r.reservationRef ?? "",
+        "",
         r.revenueDescription,
         "Early Check-ins",
         "FALSE",
@@ -291,7 +286,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         `${r.billIdBase}-EXP`,
         "EUR",
         r.flat ?? "",
-        r.reservationRef ?? "",
+        "",
         r.expenseDescription,
         "Early Check-ins",
         "FALSE",
@@ -310,68 +305,6 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
     URL.revokeObjectURL(url);
   }
 
-  /** Export VRPlatform "Deposits" — un seul dépôt (même Reference/Date/
-   * Description, regroupées par VRPlatform en un seul enregistrement) avec
-   * une ligne par réservation sélectionnée : encaisse le paiement ECI du
-   * guest en le rattachant directement à la réservation (colonne
-   * Reservation), ce qui le fait apparaître dans les Financials de la
-   * réservation. Exclut 8MOR, dont les réservations n'existent pas dans
-   * VRPlatform (voir eciDepositRows). */
-  function exportDepositCsv() {
-    if (eciDepositRows.length === 0) return;
-    const header = [
-      "Date",
-      "Reference",
-      "Bank/CC Account",
-      "Description",
-      "Currency",
-      "Reservation",
-      "Contact",
-      "Listing",
-      "Account",
-      "Bill to Owner",
-      "Line Description",
-      "Applied Amount",
-      "Merchant Fee",
-      "Channel Fee",
-      "Reserve",
-      "Co-Host",
-      "VAT",
-    ];
-    const today = new Date().toISOString().slice(0, 10);
-    const reference = `ECI-${year}${String(month).padStart(2, "0")}`;
-    const description = `Dépôt ECI — ${MONTH_LABELS_SHORT[month - 1]} ${String(year).slice(-2)}`;
-    const csvRows: string[][] = [header];
-    for (const r of eciDepositRows) {
-      csvRows.push([
-        today,
-        reference,
-        "",
-        description,
-        "EUR",
-        r.reservationRef ?? "",
-        "",
-        "",
-        "",
-        "",
-        "",
-        r.price!.toFixed(2),
-        "",
-        "",
-        "",
-        "",
-        "",
-      ]);
-    }
-    const csvContent = csvRows.map((row) => row.map(escapeExpenseCsvField).join(",")).join("\r\n");
-    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `eci_deposit_${year}_${String(month).padStart(2, "0")}_vrplatform.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
   return (
     <div className="space-y-4">
@@ -483,15 +416,6 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
                   </button>
                 </>
               )}
-              <button
-                type="button"
-                onClick={exportDepositCsv}
-                disabled={eciDepositRows.length === 0}
-                title="Un seul dépôt regroupant toutes les réservations sélectionnées (Reference commune), chaque ligne rattachée à sa réservation via la colonne Reservation — exclut 8MOR (pas de réservation VRPlatform)"
-                className="btn-secondary btn-sm"
-              >
-                Exporter Deposit (CSV) ({eciDepositRows.length})
-              </button>
               <button
                 type="button"
                 onClick={exportExpensesCsv}
