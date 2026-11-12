@@ -141,6 +141,9 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   const [lossAmount, setLossAmount] = useState("");
   const [lossError, setLossError] = useState<string | null>(null);
   const [csvExportDate, setCsvExportDate] = useState(todayIso());
+  // null = "tous les biens sélectionnés" (valeur par défaut tant que
+  // l'utilisateur n'a pas touché à la sélection pour ce chargement).
+  const [selectedPropertyRowIds, setSelectedPropertyRowIds] = useState<Set<string> | null>(null);
 
   // Stockées côté Supabase (table bonus_menage_losses) — partagées entre
   // utilisateurs/appareils, et le composant est démonté à chaque changement
@@ -228,6 +231,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       } else {
         setResults(data.properties);
         setRemovedRowIds(new Set());
+        setSelectedPropertyRowIds(null);
       }
     } catch {
       setError("Impossible de charger les données financières.");
@@ -289,9 +293,10 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   }
 
   /** Export VRPlatform "Expenses" — le Bonus Ménage est attribué à Sweep It
-   * (compte Housekeeping, Bill to Owner FALSE) : une ligne par bien avec sa
-   * référence en Listing, plus une ligne par perte (sans référence de bien,
-   * montant négatif en déduction). */
+   * (compte Front Desk, Bill to Owner FALSE) : une ligne par bien
+   * sélectionné (voir effectiveSelectedRowIds) avec sa référence en
+   * Listing, plus une ligne par perte (sans référence de bien, montant
+   * négatif en déduction, toujours incluses). */
   function exportExpensesCsv() {
     if (sortedRows == null) return;
     const header = [
@@ -317,6 +322,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
       if (!row.bonusCentsPerDay) continue;
+      if (!effectiveSelectedRowIds.has(row.propertyId)) continue;
       const description = `Bonus Ménage — ${row.reference} — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
@@ -330,7 +336,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
         row.reference,
         "",
         description,
-        "Housekeeping",
+        "Front Desk",
         "FALSE",
         (row.bonusCentsPerDay / 100).toFixed(2),
         "",
@@ -351,7 +357,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
         "",
         "",
         description,
-        "Housekeeping",
+        "Front Desk",
         "FALSE",
         (-loss.amountCents / 100).toFixed(2),
         "",
@@ -417,6 +423,18 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
 
   const totalLossCents = losses.reduce((sum, l) => sum + l.amountCents, 0);
   const adjustedBonusCentsPerDay = totals ? totals.bonusCentsPerDay - totalLossCents : null;
+
+  const allRowIds = new Set((sortedRows ?? []).map((r) => r.propertyId));
+  const effectiveSelectedRowIds = selectedPropertyRowIds ?? allRowIds;
+
+  function toggleRowSelection(propertyId: string) {
+    setSelectedPropertyRowIds((prev) => {
+      const next = new Set(prev ?? allRowIds);
+      if (next.has(propertyId)) next.delete(propertyId);
+      else next.add(propertyId);
+      return next;
+    });
+  }
 
   const periodSummary =
     selectedMonths.length === 0
@@ -685,6 +703,24 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
             </p>
           )}
           <div className="flex flex-wrap items-end justify-end gap-2">
+            {allRowIds.size > 0 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPropertyRowIds(new Set(allRowIds))}
+                  className="text-[12px] font-medium text-[#0071e3] hover:underline"
+                >
+                  Tout sélectionner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPropertyRowIds(new Set())}
+                  className="text-[12px] font-medium text-[#0071e3] hover:underline"
+                >
+                  Tout désélectionner
+                </button>
+              </>
+            )}
             <div>
               <label className="text-[12px] text-[#6e6e73]" htmlFor="bonus-csv-date">
                 Date du CSV
@@ -701,10 +737,10 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
               type="button"
               onClick={exportExpensesCsv}
               disabled={!csvExportDate}
-              title="Compte Housekeeping, Contact Sweep It, Bill to Owner FALSE — une ligne par bien (Listing = référence) + une ligne par perte sans référence de bien (montant négatif)"
+              title="Compte Front Desk, Contact Sweep It, Bill to Owner FALSE — une ligne par bien sélectionné (Listing = référence) + une ligne par perte sans référence de bien (montant négatif)"
               className="btn-secondary btn-sm"
             >
-              Exporter Expense (CSV)
+              Exporter Expense (CSV) ({effectiveSelectedRowIds.size})
             </button>
           </div>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
@@ -712,6 +748,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
               <table className="w-full border-collapse text-[12px]">
                 <thead>
                   <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                    <th className="py-1.5 pl-3 pr-1 text-left text-[11px] font-medium text-[#86868b]"></th>
                     <SortHeader
                       label="Bien"
                       sortKey="reference"
@@ -754,7 +791,15 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                         rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                       }`}
                     >
-                      <td className="py-1.5 pl-3 pr-2 text-[#1d1d1f]">
+                      <td className="py-1.5 pl-3 pr-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={effectiveSelectedRowIds.has(row.propertyId)}
+                          onChange={() => toggleRowSelection(row.propertyId)}
+                          className="h-3.5 w-3.5 accent-[#0071e3]"
+                        />
+                      </td>
+                      <td className="py-1.5 px-2 text-[#1d1d1f]">
                         <button
                           type="button"
                           onClick={() => removeRow(row.propertyId)}
@@ -796,7 +841,8 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                    <td className="py-1.5 pl-3 pr-2">
+                    <td className="py-1.5 pl-3 pr-1"></td>
+                    <td className="py-1.5 px-2">
                       Total ({sortedRows.length} bien{sortedRows.length !== 1 ? "s" : ""})
                     </td>
                     <td className="py-1.5 px-2 text-right tabular-nums">
@@ -820,7 +866,8 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                     <>
                       {losses.map((loss) => (
                         <tr key={loss.id} className="border-t border-black/[0.05] text-[#1d1d1f]">
-                          <td className="py-1.5 pl-3 pr-2.5 text-[#6e6e73]">Perte — {loss.name}</td>
+                          <td className="py-1.5 pl-3 pr-1"></td>
+                          <td className="py-1.5 px-2.5 text-[#6e6e73]">Perte — {loss.name}</td>
                           <td className="py-1.5 px-2.5" colSpan={5}></td>
                           <td className="py-1.5 pl-2.5 pr-3 text-right tabular-nums text-red-600">
                             −{formatEuros(loss.amountCents / 100)}
@@ -828,7 +875,8 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
                         </tr>
                       ))}
                       <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                        <td className="py-2 pl-3 pr-2.5">Total ajusté</td>
+                        <td className="py-2 pl-3 pr-1"></td>
+                        <td className="py-2 px-2.5">Total ajusté</td>
                         <td className="py-2 px-2.5" colSpan={5}></td>
                         <td className="py-2 pl-2.5 pr-3 text-right tabular-nums">
                           <Money cents={adjustedBonusCentsPerDay} bold />
