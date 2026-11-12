@@ -293,10 +293,11 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   }
 
   /** Export VRPlatform "Expenses" — le Bonus Ménage est attribué à Sweep It
-   * (compte Front Desk, Bill to Owner FALSE) : une ligne par bien
-   * sélectionné (voir effectiveSelectedRowIds) avec sa référence en
-   * Listing, plus une ligne par perte (sans référence de bien, montant
-   * négatif en déduction, toujours incluses). */
+   * (compte Front Desk, Bill to Owner FALSE), montants toujours négatifs
+   * (dépense) : une ligne par bien sélectionné (voir
+   * effectiveSelectedRowIds) avec sa référence en Listing, plus une ligne
+   * par perte (sans référence de bien en Listing, mais dans le Bill ID,
+   * toujours incluses). */
   function exportExpensesCsv() {
     if (sortedRows == null) return;
     const header = [
@@ -338,7 +339,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
         description,
         "Front Desk",
         "FALSE",
-        (row.bonusCentsPerDay / 100).toFixed(2),
+        (-row.bonusCentsPerDay / 100).toFixed(2),
         "",
         "",
       ]);
@@ -740,7 +741,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
               type="button"
               onClick={exportExpensesCsv}
               disabled={!csvExportDate}
-              title="Compte Front Desk, Contact Sweep It, Bill to Owner FALSE — une ligne par bien sélectionné (Listing = référence) + une ligne par perte sans référence de bien (montant négatif)"
+              title="Compte Front Desk, Contact Sweep It, Bill to Owner FALSE, montants négatifs — une ligne par bien sélectionné (Listing = référence) + une ligne par perte sans référence de bien en Listing"
               className="btn-secondary btn-sm"
             >
               Exporter Expense (CSV) ({effectiveSelectedRowIds.size})
