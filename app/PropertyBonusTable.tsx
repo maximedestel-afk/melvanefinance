@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { formatEuros, MONTH_LABELS_SHORT } from "@/lib/format";
+import { formatEuros, MONTH_LABELS_SHORT, todayIso } from "@/lib/format";
 import type { PropertyMonthlyResult } from "@/lib/vrplatform";
 import type { RentType } from "@/lib/types";
 
@@ -140,6 +140,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   const [lossName, setLossName] = useState("");
   const [lossAmount, setLossAmount] = useState("");
   const [lossError, setLossError] = useState<string | null>(null);
+  const [csvExportDate, setCsvExportDate] = useState(todayIso());
 
   // Stockées côté Supabase (table bonus_menage_losses) — partagées entre
   // utilisateurs/appareils, et le composant est démonté à chaque changement
@@ -285,6 +286,87 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       setLossError("Impossible de supprimer cette perte.");
       setLosses(previous);
     }
+  }
+
+  /** Export VRPlatform "Expenses" — le Bonus Ménage est attribué à Sweep It
+   * (compte Housekeeping, Bill to Owner FALSE) : une ligne par bien avec sa
+   * référence en Listing, plus une ligne par perte (sans référence de bien,
+   * montant négatif en déduction). */
+  function exportExpensesCsv() {
+    if (sortedRows == null) return;
+    const header = [
+      "Issue Date",
+      "Payment Date",
+      "Description",
+      "Status",
+      "Bank/CC account",
+      "Contact",
+      "Bill ID",
+      "Currency",
+      "Listing",
+      "Reservation",
+      "Line Description",
+      "Expense account",
+      "Bill to Owner",
+      "Applied amount",
+      "Markup",
+      "Markup Tax",
+    ];
+    const escapeCsvField = (value: string): string => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+    const periodRef = `${year}${selectedMonths.map((m) => String(m).padStart(2, "0")).join("")}`;
+    const csvRows: string[][] = [header];
+    for (const row of sortedRows) {
+      if (!row.bonusCentsPerDay) continue;
+      const description = `Bonus Ménage — ${row.reference} — ${periodSummary}`;
+      csvRows.push([
+        csvExportDate,
+        csvExportDate,
+        description,
+        "Unpaid",
+        "",
+        "contact@sweepit.fr",
+        `${row.reference}-BONUSMENAGE-${periodRef}`,
+        "EUR",
+        row.reference,
+        "",
+        description,
+        "Housekeeping",
+        "FALSE",
+        (row.bonusCentsPerDay / 100).toFixed(2),
+        "",
+        "",
+      ]);
+    }
+    for (const loss of losses) {
+      const description = `Bonus Ménage — Perte ${loss.name} — ${periodSummary}`;
+      csvRows.push([
+        csvExportDate,
+        csvExportDate,
+        description,
+        "Unpaid",
+        "",
+        "contact@sweepit.fr",
+        `PERTE-${loss.id}`,
+        "EUR",
+        "",
+        "",
+        description,
+        "Housekeeping",
+        "FALSE",
+        (-loss.amountCents / 100).toFixed(2),
+        "",
+        "",
+      ]);
+    }
+    if (csvRows.length === 1) return;
+    const csvContent = csvRows.map((r) => r.map(escapeCsvField).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `bonus_menage_${year}_vrplatform.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const rows =
@@ -602,6 +684,29 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
               </button>
             </p>
           )}
+          <div className="flex flex-wrap items-end justify-end gap-2">
+            <div>
+              <label className="text-[12px] text-[#6e6e73]" htmlFor="bonus-csv-date">
+                Date du CSV
+              </label>
+              <input
+                id="bonus-csv-date"
+                type="date"
+                value={csvExportDate}
+                onChange={(e) => setCsvExportDate(e.target.value)}
+                className="mt-0.5 block rounded-[8px] border border-black/10 bg-white px-2.5 py-1.5 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none focus:ring-[3px] focus:ring-[#0071e3]/15"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={exportExpensesCsv}
+              disabled={!csvExportDate}
+              title="Compte Housekeeping, Contact Sweep It, Bill to Owner FALSE — une ligne par bien (Listing = référence) + une ligne par perte sans référence de bien (montant négatif)"
+              className="btn-secondary btn-sm"
+            >
+              Exporter Expense (CSV)
+            </button>
+          </div>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[12px]">
