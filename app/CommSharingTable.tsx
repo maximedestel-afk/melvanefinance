@@ -138,12 +138,17 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
       // pour être réutilisée à la fois par l'export et par le recoupement
       // "déjà enregistré" (comparaison de description, voir
       // getRecordedEarlyCheckinDescriptions côté lib/vrplatform.ts).
-      const ref = reservationRef ?? r.flat ?? r.id;
+      const ref = reservationRef ?? r.id;
+      const property = r.flat ?? "?";
       const dateLabel = formatDate(r.date);
       const isoDate = r.date ? r.date.slice(0, 10) : "";
       const billIdBase = `${r.flat ?? r.id}-ECI-${r.id}`;
-      const revenueDescription = `ECI Manager — ${ref} — ${dateLabel}`;
-      const expenseDescription = `ECI Prestataire — ${ref} — ${dateLabel}`;
+      const revenueDescription = reservationRef
+        ? `ECI Manager — ${property} — ${ref} — ${dateLabel}`
+        : `ECI Manager — ${property} — ${dateLabel}`;
+      const expenseDescription = reservationRef
+        ? `ECI Prestataire — ${property} — ${ref} — ${dateLabel}`
+        : `ECI Prestataire — ${property} — ${dateLabel}`;
       const alreadyRecorded =
         alreadyRecordedDescriptions.has(revenueDescription) || alreadyRecordedDescriptions.has(expenseDescription);
 
