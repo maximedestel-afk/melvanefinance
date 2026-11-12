@@ -293,11 +293,13 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
   }
 
   /** Export VRPlatform "Expenses" — le Bonus Ménage est attribué à Sweep It
-   * (compte Front Desk, Bill to Owner FALSE) : une ligne par bien
-   * sélectionné (voir effectiveSelectedRowIds, montant négatif — dépense)
-   * avec sa référence en Listing, plus une ligne par perte (montant
-   * positif — déduction partielle de la dépense, sans référence de bien en
-   * Listing mais reprise dans le Bill ID, toujours incluses). */
+   * (compte Front Desk, Bill to Owner FALSE), toutes les lignes partagent
+   * la même Description ("BONUS MENAGE {période}") et le même Bill ID
+   * (référence inventée, voir billId) pour être regroupées en une seule
+   * facture VRPlatform : une ligne par bien sélectionné (voir
+   * effectiveSelectedRowIds, montant négatif — dépense, Listing =
+   * référence) plus une ligne par perte (montant positif — déduction
+   * partielle de la dépense, sans Listing, toujours incluses). */
   function exportExpensesCsv() {
     if (sortedRows == null) return;
     const header = [
@@ -320,11 +322,16 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     ];
     const escapeCsvField = (value: string): string => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
     const periodRef = `${year}${selectedMonths.map((m) => String(m).padStart(2, "0")).join("")}`;
+    // Description et Bill ID communs à toutes les lignes pour que
+    // VRPlatform les regroupe en une seule facture (un bill = toutes les
+    // lignes Bien + Perte du mois) — la référence par bien reste dans
+    // Line Description pour distinguer chaque ligne à l'intérieur du bill.
+    const description = `BONUS MENAGE ${periodSummary}`.toUpperCase();
+    const billId = `BONUSMENAGE-${periodRef}`;
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
       if (!row.bonusCentsPerDay) continue;
       if (!effectiveSelectedRowIds.has(row.propertyId)) continue;
-      const description = `Bonus Ménage — ${row.reference} — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
         csvExportDate,
@@ -332,11 +339,11 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
         "Unpaid",
         "",
         "contact@sweepit.fr",
-        `${row.reference}-BONUSMENAGE-${periodRef}`,
+        billId,
         "EUR",
         row.reference,
         "",
-        description,
+        row.reference,
         "Front Desk",
         "FALSE",
         (-row.bonusCentsPerDay / 100).toFixed(2),
@@ -345,10 +352,6 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       ]);
     }
     for (const loss of losses) {
-      const description = `Bonus Ménage — ${loss.name} (Perte) — ${periodSummary}`;
-      // Référence du bien perdu (libre) reprise dans le Bill ID, nettoyée
-      // des caractères qui ne passent pas bien dans un identifiant.
-      const lossRef = loss.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
       csvRows.push([
         csvExportDate,
         csvExportDate,
@@ -356,11 +359,11 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
         "Unpaid",
         "",
         "contact@sweepit.fr",
-        `${lossRef || "PERTE"}-PERTE-${loss.id}`,
+        billId,
         "EUR",
         "",
         "",
-        description,
+        `${loss.name} (Perte)`,
         "Front Desk",
         "FALSE",
         (loss.amountCents / 100).toFixed(2),
@@ -741,7 +744,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
               type="button"
               onClick={exportExpensesCsv}
               disabled={!csvExportDate}
-              title="Compte Front Desk, Contact Sweep It, Bill to Owner FALSE — une ligne par bien sélectionné (montant négatif, Listing = référence) + une ligne par perte (montant positif, sans référence de bien en Listing)"
+              title="Compte Front Desk, Contact Sweep It, Bill to Owner FALSE, même Description/Bill ID pour toutes les lignes (regroupées en une facture) — bien sélectionné = montant négatif, perte = montant positif"
               className="btn-secondary btn-sm"
             >
               Exporter Expense (CSV) ({effectiveSelectedRowIds.size})
