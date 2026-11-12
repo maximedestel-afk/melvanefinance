@@ -344,7 +344,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       ]);
     }
     for (const loss of losses) {
-      const description = `Bonus Ménage — Perte ${loss.name} — ${periodSummary}`;
+      const description = `Bonus Ménage — ${loss.name} (Perte) — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
         csvExportDate,
