@@ -184,25 +184,53 @@ interface VrPlatformBankRecordsResponse {
   pagination: { page: number; totalPage: number };
 }
 
+/** Élargit un filtre de date VRPlatform ("YYYY", "YYYY-MM" ou
+ * "YYYY-MM-DD...YYYY-MM-DD") d'un nombre de jours avant/après — un paiement
+ * groupé arrive typiquement après la période des dépenses qu'il règle (ex:
+ * payé début novembre pour des dépenses d'octobre), donc chercher le relevé
+ * bancaire sur la même période exacte que les dépenses le rate. */
+function widenDateFilter(dateFilter: string, paddingDaysBefore: number, paddingDaysAfter: number): string {
+  let start: string;
+  let end: string;
+  if (dateFilter.includes("...")) {
+    [start, end] = dateFilter.split("...");
+  } else if (/^\d{4}-\d{2}$/.test(dateFilter)) {
+    const [y, m] = dateFilter.split("-").map(Number);
+    start = `${dateFilter}-01`;
+    end = `${dateFilter}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
+  } else if (/^\d{4}$/.test(dateFilter)) {
+    start = `${dateFilter}-01-01`;
+    end = `${dateFilter}-12-31`;
+  } else {
+    return dateFilter;
+  }
+  const startDate = new Date(`${start}T00:00:00Z`);
+  startDate.setUTCDate(startDate.getUTCDate() - paddingDaysBefore);
+  const endDate = new Date(`${end}T00:00:00Z`);
+  endDate.setUTCDate(endDate.getUTCDate() + paddingDaysAfter);
+  return `${startDate.toISOString().slice(0, 10)}...${endDate.toISOString().slice(0, 10)}`;
+}
+
 /** Référence (description, sinon uniqueRef) du relevé bancaire rapproché
  * pour chaque transaction donnée — en passant par les relevés bancaires
- * "paid" de la période plutôt que par transaction.payment.bankRecordIds
- * (voir le commentaire sur VendorExpenseLine.paymentReference), puisque
- * c'est le relevé qui liste les transactions qu'il a réglées
- * (reconciliation.transactions[]), pas l'inverse. Dégradation silencieuse :
- * une facture sans relevé résolu retombe sur son shortRef (voir
- * getVendorExpenses). */
+ * "paid" de la période (élargie, voir widenDateFilter) plutôt que par
+ * transaction.payment.bankRecordIds (voir le commentaire sur
+ * VendorExpenseLine.paymentReference), puisque c'est le relevé qui liste
+ * les transactions qu'il a réglées (reconciliation.transactions[]), pas
+ * l'inverse. Dégradation silencieuse : une facture sans relevé résolu
+ * retombe sur son shortRef (voir getVendorExpenses). */
 async function getPaidBankRecordReferences(
   transactionIds: Set<string>,
   dateRange: string
 ): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   if (transactionIds.size === 0) return map;
+  const widenedDateRange = widenDateFilter(dateRange, 30, 60);
   try {
     let page = 1;
     for (;;) {
       const res = await vrPlatformFetch<VrPlatformBankRecordsResponse>("/bank-records", {
-        dateRange,
+        dateRange: widenedDateRange,
         reconcileStatus: "paid",
         limit: "250",
         page: String(page),
