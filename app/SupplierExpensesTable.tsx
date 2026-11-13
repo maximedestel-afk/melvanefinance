@@ -11,14 +11,21 @@ interface VendorContact {
 
 interface VendorExpenseLine {
   transactionId: string;
+  lineId: string;
   date: string;
   description: string;
   listingRef: string | null;
+  accountId: string | null;
   accountName: string;
   cents: number;
   paidStatus: "unpaid" | "underpaid" | "overpaid" | "paid";
   shortRef: string | null;
   paymentReference: string | null;
+}
+
+interface ExpenseAccountOption {
+  id: string;
+  name: string;
 }
 
 type StatusFilter = "unpaid" | "paid" | "both";
@@ -57,6 +64,54 @@ export function SupplierExpensesTable() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+
+  const [accountOptions, setAccountOptions] = useState<ExpenseAccountOption[] | null>(null);
+  const [savingLineKey, setSavingLineKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/finance/expense-account-options");
+        const data = await res.json();
+        if (!data.error) setAccountOptions(data.accounts);
+      } catch {
+        // Dégradation silencieuse — l'édition du compte reste juste indisponible.
+      }
+    })();
+  }, []);
+
+  async function changeLineAccount(line: VendorExpenseLine, newAccountId: string) {
+    const newAccount = accountOptions?.find((a) => a.id === newAccountId);
+    if (!newAccount) return;
+    const key = `${line.transactionId}-${line.lineId}`;
+    setSavingLineKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/finance/supplier-expense-line", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId: line.transactionId, lineId: line.lineId, accountId: newAccountId }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        return;
+      }
+      setExpenses((prev) =>
+        prev
+          ? prev.map((l) =>
+              l.transactionId === line.transactionId && l.lineId === line.lineId
+                ? { ...l, accountId: newAccount.id, accountName: newAccount.name }
+                : l
+            )
+          : prev
+      );
+    } catch {
+      setError("Impossible de modifier le compte de cette ligne.");
+    } finally {
+      setSavingLineKey(null);
+    }
+  }
 
   function toggleAccount(accountName: string) {
     setExpandedAccounts((prev) => {
@@ -328,14 +383,33 @@ export function SupplierExpensesTable() {
                           </td>
                         </tr>
                         {expanded &&
-                          group.lines.map((line, rowIndex) => (
+                          group.lines.map((line, rowIndex) => {
+                            const lineKey = `${line.transactionId}-${line.lineId}`;
+                            const saving = savingLineKey === lineKey;
+                            return (
                             <tr
-                              key={`${line.transactionId}-${line.listingRef ?? "none"}-${rowIndex}`}
+                              key={lineKey}
                               className={`border-b border-black/[0.04] last:border-b-0 ${
                                 rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                               }`}
                             >
-                              <td className="py-1.5 pl-3 pr-2"></td>
+                              <td className="py-1.5 pl-3 pr-2">
+                                {accountOptions && (
+                                  <select
+                                    value={line.accountId ?? ""}
+                                    disabled={saving}
+                                    onChange={(e) => changeLineAccount(line, e.target.value)}
+                                    className="w-full max-w-[160px] rounded-[6px] border border-black/10 bg-white px-1.5 py-1 text-[11px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
+                                  >
+                                    {line.accountId == null && <option value="">—</option>}
+                                    {accountOptions.map((a) => (
+                                      <option key={a.id} value={a.id}>
+                                        {a.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </td>
                               <td className="py-1.5 px-2 font-medium text-[#1d1d1f]">
                                 {line.listingRef ?? <span className="text-[#6e6e73]">—</span>}
                               </td>
@@ -363,7 +437,8 @@ export function SupplierExpensesTable() {
                                 {formatEuros(line.cents / 100)}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                       </Fragment>
                     );
                   })}
