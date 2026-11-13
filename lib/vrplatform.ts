@@ -99,6 +99,72 @@ interface VrPlatformContactsResponse {
   pagination: { page: number; totalPage: number };
 }
 
+export type VendorExpensePaidStatus = "unpaid" | "underpaid" | "overpaid" | "paid";
+
+export interface VendorExpenseTransaction {
+  id: string;
+  date: string;
+  description: string;
+  amountCents: number;
+  currency: string;
+  paidStatus: VendorExpensePaidStatus;
+  shortRef: string | null;
+}
+
+interface VrPlatformTransactionsResponse {
+  data: { id: string; date: string; description: string; amount: number; currency: string; shortRef: string | null }[];
+  pagination: { page: number; totalPage: number };
+}
+
+async function getVendorExpenseTransactionsByStatus(
+  contactId: string,
+  dateRange: string,
+  paidStatus: VendorExpensePaidStatus
+): Promise<VendorExpenseTransaction[]> {
+  const results: VendorExpenseTransaction[] = [];
+  let page = 1;
+  for (;;) {
+    const res = await vrPlatformFetch<VrPlatformTransactionsResponse>("/transactions", {
+      type: "expense",
+      contactId,
+      dateRange,
+      paidStatus,
+      limit: "250",
+      page: String(page),
+      sort: "-date",
+    });
+    for (const t of res.data) {
+      results.push({
+        id: t.id,
+        date: t.date,
+        description: t.description,
+        amountCents: Math.abs(t.amount),
+        currency: t.currency,
+        paidStatus,
+        shortRef: t.shortRef,
+      });
+    }
+    if (page >= res.pagination.totalPage) break;
+    page++;
+  }
+  return results;
+}
+
+/** Dépenses (factures) d'un vendor VRPlatform sur une période — "both" fait
+ * deux appels (l'API ne prend qu'un seul paidStatus à la fois) pour
+ * recouvrir non payées + payées en une seule liste, chaque ligne gardant le
+ * statut de l'appel qui l'a renvoyée (pas de champ "paidStatus" fiable dans
+ * la réponse elle-même). Utilisé par l'onglet Supplier. */
+export async function getVendorExpenses(
+  contactId: string,
+  dateRange: string,
+  statusFilter: "unpaid" | "paid" | "both"
+): Promise<VendorExpenseTransaction[]> {
+  const statuses: VendorExpensePaidStatus[] = statusFilter === "both" ? ["unpaid", "paid"] : [statusFilter];
+  const perStatus = await Promise.all(statuses.map((s) => getVendorExpenseTransactionsByStatus(contactId, dateRange, s)));
+  return perStatus.flat().sort((a, b) => b.date.localeCompare(a.date));
+}
+
 /** Identifiants (email si connu, sinon nom) des contacts VRPlatform de type
  * "vendor" (fournisseurs — Amazon, Booking.com, prestataires...), à
  * l'exclusion des contacts "owner" — utilisé pour peupler le champ
@@ -124,6 +190,7 @@ export async function listContactIdentifiers(): Promise<string[]> {
 }
 
 export interface VendorContact {
+  id: string;
   name: string | null;
   email: string | null;
 }
@@ -131,7 +198,8 @@ export interface VendorContact {
 /** Contacts VRPlatform de type "vendor", nom et email séparés (pas déjà
  * collapsés en un seul identifiant comme listContactIdentifiers) — utilisé
  * pour résoudre un nom de prestataire connu localement (ex: table
- * cleaning_providers) vers son email VRPlatform exact, quand il existe. */
+ * cleaning_providers) vers son email VRPlatform exact, quand il existe, et
+ * pour peupler le choix de vendor de l'onglet Supplier (via son id). */
 export async function listVendorContacts(): Promise<VendorContact[]> {
   const contacts: VendorContact[] = [];
   let page = 1;
@@ -141,7 +209,7 @@ export async function listVendorContacts(): Promise<VendorContact[]> {
       limit: "250",
       page: String(page),
     });
-    for (const contact of res.data) contacts.push({ name: contact.name, email: contact.email });
+    for (const contact of res.data) contacts.push({ id: contact.id, name: contact.name, email: contact.email });
     if (page >= res.pagination.totalPage) break;
     page++;
   }

@@ -19,6 +19,7 @@ import { CommSharingTable } from "./CommSharingTable";
 import { SupplierInvoicesTable } from "./SupplierInvoicesTable";
 import { PropertyBankDetailsTable } from "./PropertyBankDetailsTable";
 import { PropertyManagerExpensesTable } from "./PropertyManagerExpensesTable";
+import { SupplierExpensesTable } from "./SupplierExpensesTable";
 import type { RentType } from "@/lib/types";
 
 type Tab =
@@ -39,7 +40,8 @@ type Tab =
   | "comm-sharing"
   | "invoices"
   | "bank-details"
-  | "manager-expenses";
+  | "manager-expenses"
+  | "supplier";
 
 export function DashboardClient({
   properties,
@@ -242,6 +244,15 @@ export function DashboardClient({
         >
           Dépenses
         </button>
+        <button
+          type="button"
+          onClick={() => setTab("supplier")}
+          className={`px-4 py-2 text-[14px] font-medium transition ${
+            tab === "supplier" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
+          }`}
+        >
+          Supplier
+        </button>
       </div>
       </div>
 
@@ -337,6 +348,11 @@ export function DashboardClient({
       <section className={`card space-y-3 p-5 ${tab === "manager-expenses" ? "" : "hidden"}`}>
         <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Dépenses</h2>
         <PropertyManagerExpensesTable />
+      </section>
+
+      <section className={`card space-y-3 p-5 ${tab === "supplier" ? "" : "hidden"}`}>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Supplier</h2>
+        <SupplierExpensesTable />
       </section>
     </div>
   );
