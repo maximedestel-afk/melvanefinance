@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { formatEuros, MONTH_LABELS_SHORT, todayIso } from "@/lib/format";
 
 interface VendorContact {
@@ -9,20 +9,22 @@ interface VendorContact {
   email: string | null;
 }
 
-interface VendorExpense {
-  id: string;
+interface VendorExpenseLine {
+  transactionId: string;
   date: string;
   description: string;
-  amountCents: number;
-  currency: string;
+  listingRef: string | null;
+  accountName: string;
+  cents: number;
   paidStatus: "unpaid" | "underpaid" | "overpaid" | "paid";
   shortRef: string | null;
+  paymentReference: string | null;
 }
 
 type StatusFilter = "unpaid" | "paid" | "both";
 type Mode = "month" | "range";
 
-const STATUS_LABELS: Record<VendorExpense["paidStatus"], string> = {
+const STATUS_LABELS: Record<VendorExpenseLine["paidStatus"], string> = {
   unpaid: "Non payé",
   underpaid: "Payé partiellement",
   overpaid: "Payé en trop",
@@ -51,9 +53,19 @@ export function SupplierExpensesTable() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("unpaid");
 
-  const [expenses, setExpenses] = useState<VendorExpense[] | null>(null);
+  const [expenses, setExpenses] = useState<VendorExpenseLine[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+
+  function toggleAccount(accountName: string) {
+    setExpandedAccounts((prev) => {
+      const next = new Set(prev);
+      if (next.has(accountName)) next.delete(accountName);
+      else next.add(accountName);
+      return next;
+    });
+  }
 
   useEffect(() => {
     (async () => {
@@ -97,6 +109,7 @@ export function SupplierExpensesTable() {
         setExpenses(null);
       } else {
         setExpenses(data.expenses);
+        setExpandedAccounts(new Set());
       }
     } catch {
       setError("Impossible de charger les dépenses de ce vendor.");
@@ -105,7 +118,24 @@ export function SupplierExpensesTable() {
     }
   }
 
-  const total = expenses ? expenses.reduce((sum, e) => sum + e.amountCents, 0) : 0;
+  const total = expenses ? expenses.reduce((sum, e) => sum + e.cents, 0) : 0;
+
+  const groupsByAccount = useMemo(() => {
+    if (!expenses) return [];
+    const byAccount = new Map<string, VendorExpenseLine[]>();
+    for (const line of expenses) {
+      const list = byAccount.get(line.accountName) ?? [];
+      list.push(line);
+      byAccount.set(line.accountName, list);
+    }
+    return Array.from(byAccount.entries())
+      .map(([accountName, lines]) => ({
+        accountName,
+        lines: [...lines].sort((a, b) => b.date.localeCompare(a.date)),
+        totalCents: lines.reduce((sum, l) => sum + l.cents, 0),
+      }))
+      .sort((a, b) => b.totalCents - a.totalCents);
+  }, [expenses]);
 
   return (
     <div className="space-y-4">
@@ -254,54 +284,95 @@ export function SupplierExpensesTable() {
       {expenses && expenses.length > 0 && !loading && (
         <div className="space-y-2">
           <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
-            {expenses.length} facture{expenses.length !== 1 ? "s" : ""} · {formatEuros(total / 100)}
+            {expenses.length} ligne{expenses.length !== 1 ? "s" : ""} sur {groupsByAccount.length} catégorie
+            {groupsByAccount.length !== 1 ? "s" : ""} · {formatEuros(total / 100)}
           </span>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[12px]">
                 <thead>
                   <tr className="border-b border-black/[0.08] bg-black/[0.015]">
-                    <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Date</th>
+                    <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Catégorie</th>
+                    <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
+                    <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Date</th>
                     <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Description</th>
-                    <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Réf</th>
+                    <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Réf. paiement</th>
                     <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Statut</th>
                     <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Montant</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.map((e, rowIndex) => (
-                    <tr
-                      key={e.id}
-                      className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
-                        rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
-                      }`}
-                    >
-                      <td className="py-1.5 pl-3 pr-2 text-right tabular-nums text-[#1d1d1f]">{formatDate(e.date)}</td>
-                      <td className="py-1.5 px-2 text-[#1d1d1f]">{e.description}</td>
-                      <td className="py-1.5 px-2 text-[#6e6e73]">{e.shortRef ?? "—"}</td>
-                      <td className="py-1.5 px-2">
-                        <span
-                          className={
-                            e.paidStatus === "paid"
-                              ? "text-emerald-600"
-                              : e.paidStatus === "unpaid"
-                                ? "text-amber-600"
-                                : "text-[#6e6e73]"
-                          }
+                  {groupsByAccount.map((group) => {
+                    const expanded = expandedAccounts.has(group.accountName);
+                    return (
+                      <Fragment key={group.accountName}>
+                        <tr
+                          className="cursor-pointer border-b border-black/[0.04] bg-[#f5f5f7] transition hover:bg-[#ebebed]"
+                          onClick={() => toggleAccount(group.accountName)}
                         >
-                          {STATUS_LABELS[e.paidStatus]}
-                        </span>
-                      </td>
-                      <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                        {formatEuros(e.amountCents / 100)}
-                      </td>
-                    </tr>
-                  ))}
+                          <td className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">
+                            <span
+                              aria-hidden
+                              className={`mr-1.5 inline-block transition-transform ${expanded ? "rotate-90" : ""}`}
+                            >
+                              ▸
+                            </span>
+                            {group.accountName}
+                          </td>
+                          <td className="py-1.5 px-2 text-[#6e6e73]" colSpan={4}>
+                            {group.lines.length} ligne{group.lines.length !== 1 ? "s" : ""}
+                          </td>
+                          <td className="py-1.5 px-2"></td>
+                          <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                            {formatEuros(group.totalCents / 100)}
+                          </td>
+                        </tr>
+                        {expanded &&
+                          group.lines.map((line, rowIndex) => (
+                            <tr
+                              key={`${line.transactionId}-${line.listingRef ?? "none"}-${rowIndex}`}
+                              className={`border-b border-black/[0.04] last:border-b-0 ${
+                                rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                              }`}
+                            >
+                              <td className="py-1.5 pl-3 pr-2"></td>
+                              <td className="py-1.5 px-2 font-medium text-[#1d1d1f]">
+                                {line.listingRef ?? <span className="text-[#6e6e73]">—</span>}
+                              </td>
+                              <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                                {formatDate(line.date)}
+                              </td>
+                              <td className="py-1.5 px-2 text-[#1d1d1f]">{line.description}</td>
+                              <td className="py-1.5 px-2 text-[#6e6e73]">
+                                {line.paymentReference ?? line.shortRef ?? "—"}
+                              </td>
+                              <td className="py-1.5 px-2">
+                                <span
+                                  className={
+                                    line.paidStatus === "paid"
+                                      ? "text-emerald-600"
+                                      : line.paidStatus === "unpaid"
+                                        ? "text-amber-600"
+                                        : "text-[#6e6e73]"
+                                  }
+                                >
+                                  {STATUS_LABELS[line.paidStatus]}
+                                </span>
+                              </td>
+                              <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
+                                {formatEuros(line.cents / 100)}
+                              </td>
+                            </tr>
+                          ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
-                    <td className="py-1.5 pl-3 pr-2" colSpan={4}>
-                      Total ({expenses.length} facture{expenses.length !== 1 ? "s" : ""})
+                    <td className="py-1.5 pl-3 pr-2" colSpan={6}>
+                      Total ({expenses.length} ligne{expenses.length !== 1 ? "s" : ""} sur {groupsByAccount.length}{" "}
+                      catégorie{groupsByAccount.length !== 1 ? "s" : ""})
                     </td>
                     <td className="py-1.5 pl-2 pr-3 text-right tabular-nums">{formatEuros(total / 100)}</td>
                   </tr>
