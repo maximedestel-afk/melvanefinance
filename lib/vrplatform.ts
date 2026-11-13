@@ -410,6 +410,17 @@ export async function updateVendorExpenseLineAccount(
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
+    let reason: string | undefined;
+    try {
+      reason = (JSON.parse(body) as { reason?: string }).reason;
+    } catch {
+      // Corps non-JSON — tant pis, on retombe sur le message générique.
+    }
+    if (reason === "reconciliationAmountMismatch") {
+      throw new Error(
+        "Cette dépense est déjà rapprochée d'un relevé bancaire — VRPlatform refuse de changer son compte tant qu'elle reste rapprochée. Annule le rapprochement bancaire de cette ligne dans VRPlatform, puis réessaie."
+      );
+    }
     throw new Error(`VRPlatform a répondu ${response.status} sur /transactions/${transactionId}${body ? ` — ${body}` : ""}.`);
   }
 }
