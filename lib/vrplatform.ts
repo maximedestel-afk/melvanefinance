@@ -114,14 +114,24 @@ export interface VendorExpenseLine {
   accountName: string;
   cents: number;
   paidStatus: VendorExpensePaidStatus;
-  /** Référence de la transaction (ex: "EXP-0IV-95AH-A4N") — l'API ne renvoie
-   * pas de référence de paiement distincte (le "payment" d'une expense n'a
-   * qu'un statut/une date/des bankRecordIds, pas de champ reference). */
+  /** Référence de la transaction (ex: "EXP-0IV-95AH-A4N"). */
   shortRef: string | null;
+  /** Référence du relevé bancaire qui a réglé cette dépense (sa description,
+   * ex: le libellé du virement), résolue via les bankRecordIds du paiement
+   * — null si pas encore payé ou si le paiement n'est pas passé par un
+   * relevé bancaire rapproché (voir getBankRecordReferences). */
+  paymentReference: string | null;
 }
 
 interface VrPlatformTransactionsResponse {
-  data: { id: string; date: string; description: string; amount: number; shortRef: string | null }[];
+  data: {
+    id: string;
+    date: string;
+    description: string;
+    amount: number;
+    shortRef: string | null;
+    payment?: { bankRecordIds?: string[] } | null;
+  }[];
   pagination: { page: number; totalPage: number };
 }
 
@@ -132,6 +142,7 @@ interface VendorExpenseTransactionRaw {
   amountCents: number;
   paidStatus: VendorExpensePaidStatus;
   shortRef: string | null;
+  bankRecordIds: string[];
 }
 
 async function getVendorExpenseTransactionsByStatus(
@@ -159,12 +170,50 @@ async function getVendorExpenseTransactionsByStatus(
         amountCents: Math.abs(t.amount),
         paidStatus,
         shortRef: t.shortRef,
+        bankRecordIds: t.payment?.bankRecordIds ?? [],
       });
     }
     if (page >= res.pagination.totalPage) break;
     page++;
   }
   return results;
+}
+
+// Nombre d'IDs de relevé bancaire par requête /bank-records.
+const BANK_RECORD_ID_CHUNK_SIZE = 25;
+
+interface VrPlatformBankRecordsResponse {
+  data: { id: string; description: string | null; uniqueRef: string | null }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Description (ou référence) des relevés bancaires donnés, via
+ * /bank-records?ids=... — par lots. Dégradation silencieuse : une facture
+ * payée sans relevé résolu retombe sur son shortRef (voir getVendorExpenses). */
+async function getBankRecordReferences(bankRecordIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (bankRecordIds.length === 0) return map;
+  const chunks: string[][] = [];
+  for (let i = 0; i < bankRecordIds.length; i += BANK_RECORD_ID_CHUNK_SIZE) {
+    chunks.push(bankRecordIds.slice(i, i + BANK_RECORD_ID_CHUNK_SIZE));
+  }
+  try {
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        const res = await vrPlatformFetch<VrPlatformBankRecordsResponse>("/bank-records", {
+          ids: chunk.join(","),
+          limit: "250",
+        });
+        for (const record of res.data) {
+          const ref = record.description ?? record.uniqueRef;
+          if (ref) map.set(record.id, ref);
+        }
+      })
+    );
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+  return map;
 }
 
 // Nombre d'IDs de transaction par requête /reports/journal-entries, même
@@ -255,13 +304,15 @@ export async function getVendorExpenses(
   const transactions = perStatus.flat();
   const listingsById = new Map(listings.map((l) => [l.id, l.name]));
 
-  const linesByTransaction = await getJournalEntryLinesForTransactions(
-    transactions.map((t) => t.id),
-    listingsById
-  );
+  const allBankRecordIds = Array.from(new Set(transactions.flatMap((t) => t.bankRecordIds)));
+  const [linesByTransaction, bankRecordRefs] = await Promise.all([
+    getJournalEntryLinesForTransactions(transactions.map((t) => t.id), listingsById),
+    getBankRecordReferences(allBankRecordIds),
+  ]);
 
   const result: VendorExpenseLine[] = [];
   for (const t of transactions) {
+    const paymentReference = t.bankRecordIds.map((id) => bankRecordRefs.get(id)).find((ref): ref is string => !!ref) ?? null;
     const lines = linesByTransaction.get(t.id);
     if (lines && lines.length > 0) {
       for (const line of lines) {
@@ -274,6 +325,7 @@ export async function getVendorExpenses(
           cents: Math.abs(line.cents),
           paidStatus: t.paidStatus,
           shortRef: t.shortRef,
+          paymentReference,
         });
       }
     } else {
@@ -286,6 +338,7 @@ export async function getVendorExpenses(
         cents: t.amountCents,
         paidStatus: t.paidStatus,
         shortRef: t.shortRef,
+        paymentReference,
       });
     }
   }

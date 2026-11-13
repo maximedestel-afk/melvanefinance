@@ -59,9 +59,14 @@ export async function GET(request: Request) {
       dateRange,
       limit: "10",
       sort: "-date",
-    })) as { data: { id: string }[] };
+    })) as { data: { id: string; payment?: { bankRecordIds?: string[] } }[] };
 
     const transactionIds = transactions.data.map((t) => t.id);
+    const bankRecordIds = Array.from(new Set(transactions.data.flatMap((t) => t.payment?.bankRecordIds ?? [])));
+
+    const bankRecords = bankRecordIds.length
+      ? await vrPlatformFetchRaw("/bank-records", { ids: bankRecordIds.join(","), limit: "250" })
+      : null;
 
     const journalEntriesAllTypes = transactionIds.length
       ? await vrPlatformFetchRaw("/reports/journal-entries", {
@@ -79,7 +84,7 @@ export async function GET(request: Request) {
       : null;
 
     return NextResponse.json(
-      { contactId, matchedVendors, transactions, journalEntriesAllTypes, journalEntriesLineType },
+      { contactId, matchedVendors, transactions, journalEntriesAllTypes, journalEntriesLineType, bankRecords },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
