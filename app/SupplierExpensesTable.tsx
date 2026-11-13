@@ -37,6 +37,11 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
+function escapeCsvField(value: string): string {
+  if (/[";\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
 export function SupplierExpensesTable() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
@@ -136,6 +141,37 @@ export function SupplierExpensesTable() {
       }))
       .sort((a, b) => b.totalCents - a.totalCents);
   }, [expenses]);
+
+  /** Export "lisible Excel" (point-virgule, pas le format d'import
+   * VRPlatform) — une ligne par ligne de facture, groupée par catégorie
+   * comme à l'écran. */
+  function exportExcel() {
+    if (!expenses || expenses.length === 0) return;
+    const header = ["Catégorie", "Bien", "Date", "Description", "Réf. paiement", "Statut", "Montant"];
+    const rows: string[][] = [header];
+    for (const group of groupsByAccount) {
+      for (const line of group.lines) {
+        rows.push([
+          group.accountName,
+          line.listingRef ?? "",
+          formatDate(line.date),
+          line.description,
+          line.paymentReference ?? line.shortRef ?? "",
+          STATUS_LABELS[line.paidStatus],
+          formatEuros(line.cents / 100),
+        ]);
+      }
+    }
+    rows.push(["", "", "", "", "", "Total", formatEuros(total / 100)]);
+    const csvContent = rows.map((r) => r.map(escapeCsvField).join(";")).join("\r\n");
+    const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `supplier_expenses_${todayIso()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-4">
@@ -283,10 +319,15 @@ export function SupplierExpensesTable() {
 
       {expenses && expenses.length > 0 && !loading && (
         <div className="space-y-2">
-          <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
-            {expenses.length} ligne{expenses.length !== 1 ? "s" : ""} sur {groupsByAccount.length} catégorie
-            {groupsByAccount.length !== 1 ? "s" : ""} · {formatEuros(total / 100)}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-[#0071e3]/10 px-3 py-1.5 text-[13px] font-semibold text-[#0071e3]">
+              {expenses.length} ligne{expenses.length !== 1 ? "s" : ""} sur {groupsByAccount.length} catégorie
+              {groupsByAccount.length !== 1 ? "s" : ""} · {formatEuros(total / 100)}
+            </span>
+            <button type="button" onClick={exportExcel} className="btn-secondary btn-sm ml-auto">
+              Exporter Excel (CSV)
+            </button>
+          </div>
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-[12px]">
