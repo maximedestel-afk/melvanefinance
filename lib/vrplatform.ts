@@ -94,43 +94,6 @@ async function listAllAccountIds(): Promise<string[]> {
   return Array.from(ids);
 }
 
-export interface ExpenseAccountOption {
-  id: string;
-  name: string;
-}
-
-interface VrPlatformAccountOptionsResponse {
-  data: { id: string; name: string; category?: { classification?: string } }[];
-  pagination: { page: number; totalPage: number };
-}
-
-/** Comptes de dépense (id + nom) actifs de l'équipe, même logique de
- * sélection que listAllAccountIds (category.classification="expense" UNIS à
- * EXPENSE_ACCOUNT_IDS) — utilisé pour le menu déroulant d'édition du compte
- * d'une ligne dans l'onglet Supplier (il faut l'id pour écrire via PUT
- * /transactions/{id}, pas que le nom). */
-export async function listExpenseAccountOptions(): Promise<ExpenseAccountOption[]> {
-  const options = new Map<string, string>();
-  let page = 1;
-  for (;;) {
-    const res = await vrPlatformFetch<VrPlatformAccountOptionsResponse>("/accounts", {
-      status: "active",
-      limit: "250",
-      page: String(page),
-    });
-    for (const account of res.data) {
-      if (account.category?.classification === "expense" || EXPENSE_ACCOUNT_IDS.includes(account.id)) {
-        options.set(account.id, account.name);
-      }
-    }
-    if (page >= res.pagination.totalPage) break;
-    page++;
-  }
-  return Array.from(options.entries())
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
-}
-
 interface VrPlatformContactsResponse {
   data: { id: string; name: string | null; email: string | null }[];
   pagination: { page: number; totalPage: number };
@@ -138,22 +101,16 @@ interface VrPlatformContactsResponse {
 
 export type VendorExpensePaidStatus = "unpaid" | "underpaid" | "overpaid" | "paid";
 
-/** Une ligne de facture (bien + catégorie) — une facture peut couvrir
- * plusieurs biens/catégories à la fois (ex: une intervention facturée sur
- * plusieurs biens d'un coup), d'où l'éclatement par ligne plutôt que par
- * facture. Le bien et le compte viennent directement de
- * transaction.lines[] (GET /transactions?includeLines=true), chacun déjà un
- * objet {id,name} complet — vérifié en live, pas besoin de passer par
- * /reports/journal-entries comme tenté d'abord. */
+/** Une ligne de facture (bien + catégorie), résolue via
+ * /reports/journal-entries (voir getJournalEntryLinesForTransactions) — une
+ * facture peut couvrir plusieurs biens/catégories à la fois (ex: une
+ * intervention facturée sur plusieurs biens d'un coup), d'où l'éclatement
+ * par ligne plutôt que par facture. */
 export interface VendorExpenseLine {
   transactionId: string;
-  /** ID de la ligne (transaction.lines[].id) — nécessaire pour éditer cette
-   * ligne précise via PUT /transactions/{id} + lines_update. */
-  lineId: string;
   date: string;
   description: string;
   listingRef: string | null;
-  accountId: string | null;
   accountName: string;
   cents: number;
   paidStatus: VendorExpensePaidStatus;
@@ -172,20 +129,7 @@ export interface VendorExpenseLine {
 }
 
 interface VrPlatformTransactionsResponse {
-  data: {
-    id: string;
-    date: string;
-    description: string;
-    amount: number;
-    shortRef: string | null;
-    lines?: {
-      id: string;
-      description: string;
-      amount: number;
-      listing?: { id: string; name: string } | null;
-      account?: { id: string; name: string } | null;
-    }[];
-  }[];
+  data: { id: string; date: string; description: string; amount: number; shortRef: string | null }[];
   pagination: { page: number; totalPage: number };
 }
 
@@ -196,14 +140,6 @@ interface VendorExpenseTransactionRaw {
   amountCents: number;
   paidStatus: VendorExpensePaidStatus;
   shortRef: string | null;
-  lines: {
-    id: string;
-    description: string;
-    cents: number;
-    listingRef: string | null;
-    accountId: string | null;
-    accountName: string;
-  }[];
 }
 
 async function getVendorExpenseTransactionsByStatus(
@@ -219,7 +155,6 @@ async function getVendorExpenseTransactionsByStatus(
       contactId,
       dateRange,
       paidStatus,
-      includeLines: "true",
       limit: "250",
       page: String(page),
       sort: "-date",
@@ -232,14 +167,6 @@ async function getVendorExpenseTransactionsByStatus(
         amountCents: Math.abs(t.amount),
         paidStatus,
         shortRef: t.shortRef,
-        lines: (t.lines ?? []).map((line) => ({
-          id: line.id,
-          description: line.description,
-          cents: Math.abs(line.amount),
-          listingRef: line.listing?.name ?? null,
-          accountId: line.account?.id ?? null,
-          accountName: line.account?.name ?? "Autre",
-        })),
       });
     }
     if (page >= res.pagination.totalPage) break;
@@ -327,12 +254,80 @@ async function getPaidBankRecordReferences(
   return map;
 }
 
+// Nombre d'IDs de transaction par requête /reports/journal-entries, même
+// logique que ACCOUNT_ID_CHUNK_SIZE — reste sous la longueur d'URL maximale.
+const TRANSACTION_ID_CHUNK_SIZE = 25;
+
+interface VrPlatformJournalEntryLineResponse {
+  data: {
+    transactionId?: string;
+    account?: { name: string } | null;
+    /** ID du listing — pas un objet {id,name} imbriqué, il faut le
+     * résoudre via listVrPlatformListings() (vérifié live, voir
+     * app/api/admin/supplier-journal-entries-check). */
+    listingId?: string;
+    centTotal: number;
+  }[];
+  pagination: { page: number; totalPage: number };
+}
+
+/** Lignes de détail (bien + catégorie) des factures données, via
+ * /reports/journal-entries?transactionIds=...&types=transaction_expense_line
+ * (le type "ligne", pas l'écriture d'en-tête "transaction_expense" ni les
+ * écritures de paiement, pour ne pas compter en double) — par lots de
+ * TRANSACTION_ID_CHUNK_SIZE en parallèle, listingId résolu en nom via
+ * listingsById. Dégradation silencieuse : en cas d'erreur, les factures
+ * retombent sur une seule ligne "Autre" sans bien (voir getVendorExpenses)
+ * plutôt que de faire échouer tout l'onglet. */
+async function getJournalEntryLinesForTransactions(
+  transactionIds: string[],
+  listingsById: Map<string, string>
+): Promise<Map<string, { listingRef: string | null; accountName: string; cents: number }[]>> {
+  const map = new Map<string, { listingRef: string | null; accountName: string; cents: number }[]>();
+  if (transactionIds.length === 0) return map;
+  const chunks: string[][] = [];
+  for (let i = 0; i < transactionIds.length; i += TRANSACTION_ID_CHUNK_SIZE) {
+    chunks.push(transactionIds.slice(i, i + TRANSACTION_ID_CHUNK_SIZE));
+  }
+  try {
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        let page = 1;
+        for (;;) {
+          const res = await vrPlatformFetch<VrPlatformJournalEntryLineResponse>("/reports/journal-entries", {
+            transactionIds: chunk.join(","),
+            types: "transaction_expense_line",
+            limit: "250",
+            page: String(page),
+          });
+          for (const entry of res.data) {
+            if (!entry.transactionId) continue;
+            const list = map.get(entry.transactionId) ?? [];
+            list.push({
+              listingRef: entry.listingId ? (listingsById.get(entry.listingId) ?? null) : null,
+              accountName: entry.account?.name ?? "Autre",
+              cents: entry.centTotal,
+            });
+            map.set(entry.transactionId, list);
+          }
+          if (page >= res.pagination.totalPage) break;
+          page++;
+        }
+      })
+    );
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+  return map;
+}
+
 /** Dépenses (factures) d'un vendor VRPlatform sur une période, éclatées par
  * ligne bien/catégorie — "both" fait deux appels /transactions (l'API ne
  * prend qu'un seul paidStatus à la fois) pour recouvrir non payées + payées,
  * chaque ligne gardant le statut de l'appel qui l'a renvoyée (pas de champ
- * "paidStatus" fiable dans la réponse elle-même). Le bien et la catégorie de
- * chaque ligne viennent directement de transaction.lines[] (includeLines).
+ * "paidStatus" fiable dans la réponse elle-même), puis une passe
+ * /reports/journal-entries pour résoudre le bien (listingId → nom via
+ * listVrPlatformListings) et la catégorie de chaque ligne de facture.
  * Utilisé par l'onglet Supplier. */
 export async function getVendorExpenses(
   contactId: string,
@@ -340,27 +335,32 @@ export async function getVendorExpenses(
   statusFilter: "unpaid" | "paid" | "both"
 ): Promise<VendorExpenseLine[]> {
   const statuses: VendorExpensePaidStatus[] = statusFilter === "both" ? ["unpaid", "paid"] : [statusFilter];
-  const transactions = (
-    await Promise.all(statuses.map((s) => getVendorExpenseTransactionsByStatus(contactId, dateRange, s)))
-  ).flat();
+  const [perStatus, listings] = await Promise.all([
+    Promise.all(statuses.map((s) => getVendorExpenseTransactionsByStatus(contactId, dateRange, s))),
+    listVrPlatformListings(),
+  ]);
+  const transactions = perStatus.flat();
+  const listingsById = new Map(listings.map((l) => [l.id, l.name]));
 
   const transactionIds = new Set(transactions.map((t) => t.id));
-  const paymentRefsByTransaction = await getPaidBankRecordReferences(transactionIds, dateRange);
+  const [linesByTransaction, paymentRefsByTransaction] = await Promise.all([
+    getJournalEntryLinesForTransactions(transactions.map((t) => t.id), listingsById),
+    getPaidBankRecordReferences(transactionIds, dateRange),
+  ]);
 
   const result: VendorExpenseLine[] = [];
   for (const t of transactions) {
     const paymentReference = paymentRefsByTransaction.get(t.id) ?? null;
-    if (t.lines.length > 0) {
-      for (const line of t.lines) {
+    const lines = linesByTransaction.get(t.id);
+    if (lines && lines.length > 0) {
+      for (const line of lines) {
         result.push({
           transactionId: t.id,
-          lineId: line.id,
           date: t.date,
-          description: line.description || t.description,
+          description: t.description,
           listingRef: line.listingRef,
-          accountId: line.accountId,
           accountName: line.accountName,
-          cents: line.cents,
+          cents: Math.abs(line.cents),
           paidStatus: t.paidStatus,
           shortRef: t.shortRef,
           paymentReference,
@@ -369,11 +369,9 @@ export async function getVendorExpenses(
     } else {
       result.push({
         transactionId: t.id,
-        lineId: t.id,
         date: t.date,
         description: t.description,
         listingRef: null,
-        accountId: null,
         accountName: "Autre",
         cents: t.amountCents,
         paidStatus: t.paidStatus,
@@ -383,46 +381,6 @@ export async function getVendorExpenses(
     }
   }
   return result.sort((a, b) => b.date.localeCompare(a.date));
-}
-
-/** Change le compte de dépense d'une ligne précise d'une facture vendor, via
- * PUT /transactions/{transactionId} avec lines_update (met à jour cette
- * seule ligne, sans retoucher les autres) — utilisé par l'onglet Supplier
- * pour éditer le compte directement dans la liste. */
-export async function updateVendorExpenseLineAccount(
-  transactionId: string,
-  lineId: string,
-  accountId: string
-): Promise<void> {
-  const apiKey = process.env.VRPLATFORM_API_KEY;
-  const teamId = process.env.VRPLATFORM_TEAM_ID;
-  if (!apiKey || !teamId) {
-    throw new Error("VRPlatform n'est pas configuré (VRPLATFORM_API_KEY / VRPLATFORM_TEAM_ID manquants).");
-  }
-  const response = await fetch(new URL(`/transactions/${transactionId}`, API_BASE_URL), {
-    method: "PUT",
-    headers: {
-      "x-api-key": apiKey,
-      "x-team-id": teamId,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ lines_update: [{ id: lineId, accountId }] }),
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    let reason: string | undefined;
-    try {
-      reason = (JSON.parse(body) as { reason?: string }).reason;
-    } catch {
-      // Corps non-JSON — tant pis, on retombe sur le message générique.
-    }
-    if (reason === "reconciliationAmountMismatch") {
-      throw new Error(
-        "Cette dépense est déjà rapprochée d'un relevé bancaire — VRPlatform refuse de changer son compte tant qu'elle reste rapprochée. Annule le rapprochement bancaire de cette ligne dans VRPlatform, puis réessaie."
-      );
-    }
-    throw new Error(`VRPlatform a répondu ${response.status} sur /transactions/${transactionId}${body ? ` — ${body}` : ""}.`);
-  }
 }
 
 /** Identifiants (email si connu, sinon nom) des contacts VRPlatform de type
