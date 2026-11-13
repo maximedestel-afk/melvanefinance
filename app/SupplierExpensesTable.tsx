@@ -18,7 +18,6 @@ interface VendorExpenseLine {
   cents: number;
   paidStatus: "unpaid" | "underpaid" | "overpaid" | "paid";
   shortRef: string | null;
-  paymentReference: string | null;
 }
 
 type StatusFilter = "unpaid" | "paid" | "both";
@@ -344,7 +343,7 @@ export function SupplierExpensesTable() {
                               </td>
                               <td className="py-1.5 px-2 text-[#1d1d1f]">{line.description}</td>
                               <td className="py-1.5 px-2 text-[#6e6e73]">
-                                {line.paymentReference ?? line.shortRef ?? "—"}
+                                {line.shortRef ?? "—"}
                               </td>
                               <td className="py-1.5 px-2">
                                 <span

@@ -114,19 +114,14 @@ export interface VendorExpenseLine {
   accountName: string;
   cents: number;
   paidStatus: VendorExpensePaidStatus;
+  /** Référence de la transaction (ex: "EXP-0IV-95AH-A4N") — l'API ne renvoie
+   * pas de référence de paiement distincte (le "payment" d'une expense n'a
+   * qu'un statut/une date/des bankRecordIds, pas de champ reference). */
   shortRef: string | null;
-  paymentReference: string | null;
 }
 
 interface VrPlatformTransactionsResponse {
-  data: {
-    id: string;
-    date: string;
-    description: string;
-    amount: number;
-    shortRef: string | null;
-    payments?: { reference: string | null }[];
-  }[];
+  data: { id: string; date: string; description: string; amount: number; shortRef: string | null }[];
   pagination: { page: number; totalPage: number };
 }
 
@@ -137,7 +132,6 @@ interface VendorExpenseTransactionRaw {
   amountCents: number;
   paidStatus: VendorExpensePaidStatus;
   shortRef: string | null;
-  paymentReference: string | null;
 }
 
 async function getVendorExpenseTransactionsByStatus(
@@ -158,7 +152,6 @@ async function getVendorExpenseTransactionsByStatus(
       sort: "-date",
     });
     for (const t of res.data) {
-      const paymentReference = (t.payments ?? []).map((p) => p.reference).find((r): r is string => !!r) ?? null;
       results.push({
         id: t.id,
         date: t.date,
@@ -166,7 +159,6 @@ async function getVendorExpenseTransactionsByStatus(
         amountCents: Math.abs(t.amount),
         paidStatus,
         shortRef: t.shortRef,
-        paymentReference,
       });
     }
     if (page >= res.pagination.totalPage) break;
@@ -183,7 +175,10 @@ interface VrPlatformJournalEntryLineResponse {
   data: {
     transactionId?: string;
     account?: { name: string } | null;
-    listing?: { name: string } | null;
+    /** ID du listing — pas un objet {id,name} imbriqué, il faut le
+     * résoudre via listVrPlatformListings() (vérifié live, voir
+     * app/api/admin/supplier-journal-entries-check). */
+    listingId?: string;
     centTotal: number;
   }[];
   pagination: { page: number; totalPage: number };
@@ -193,11 +188,13 @@ interface VrPlatformJournalEntryLineResponse {
  * /reports/journal-entries?transactionIds=...&types=transaction_expense_line
  * (le type "ligne", pas l'écriture d'en-tête "transaction_expense" ni les
  * écritures de paiement, pour ne pas compter en double) — par lots de
- * TRANSACTION_ID_CHUNK_SIZE en parallèle. Dégradation silencieuse : en cas
- * d'erreur, les factures retombent sur une seule ligne "Autre" sans bien
- * (voir getVendorExpenses) plutôt que de faire échouer tout l'onglet. */
+ * TRANSACTION_ID_CHUNK_SIZE en parallèle, listingId résolu en nom via
+ * listingsById. Dégradation silencieuse : en cas d'erreur, les factures
+ * retombent sur une seule ligne "Autre" sans bien (voir getVendorExpenses)
+ * plutôt que de faire échouer tout l'onglet. */
 async function getJournalEntryLinesForTransactions(
-  transactionIds: string[]
+  transactionIds: string[],
+  listingsById: Map<string, string>
 ): Promise<Map<string, { listingRef: string | null; accountName: string; cents: number }[]>> {
   const map = new Map<string, { listingRef: string | null; accountName: string; cents: number }[]>();
   if (transactionIds.length === 0) return map;
@@ -220,7 +217,7 @@ async function getJournalEntryLinesForTransactions(
             if (!entry.transactionId) continue;
             const list = map.get(entry.transactionId) ?? [];
             list.push({
-              listingRef: entry.listing?.name ?? null,
+              listingRef: entry.listingId ? (listingsById.get(entry.listingId) ?? null) : null,
               accountName: entry.account?.name ?? "Autre",
               cents: entry.centTotal,
             });
@@ -242,18 +239,26 @@ async function getJournalEntryLinesForTransactions(
  * prend qu'un seul paidStatus à la fois) pour recouvrir non payées + payées,
  * chaque ligne gardant le statut de l'appel qui l'a renvoyée (pas de champ
  * "paidStatus" fiable dans la réponse elle-même), puis une passe
- * /reports/journal-entries pour résoudre le bien et la catégorie de chaque
- * ligne de facture. Utilisé par l'onglet Supplier. */
+ * /reports/journal-entries pour résoudre le bien (listingId → nom via
+ * listVrPlatformListings) et la catégorie de chaque ligne de facture.
+ * Utilisé par l'onglet Supplier. */
 export async function getVendorExpenses(
   contactId: string,
   dateRange: string,
   statusFilter: "unpaid" | "paid" | "both"
 ): Promise<VendorExpenseLine[]> {
   const statuses: VendorExpensePaidStatus[] = statusFilter === "both" ? ["unpaid", "paid"] : [statusFilter];
-  const perStatus = await Promise.all(statuses.map((s) => getVendorExpenseTransactionsByStatus(contactId, dateRange, s)));
+  const [perStatus, listings] = await Promise.all([
+    Promise.all(statuses.map((s) => getVendorExpenseTransactionsByStatus(contactId, dateRange, s))),
+    listVrPlatformListings(),
+  ]);
   const transactions = perStatus.flat();
+  const listingsById = new Map(listings.map((l) => [l.id, l.name]));
 
-  const linesByTransaction = await getJournalEntryLinesForTransactions(transactions.map((t) => t.id));
+  const linesByTransaction = await getJournalEntryLinesForTransactions(
+    transactions.map((t) => t.id),
+    listingsById
+  );
 
   const result: VendorExpenseLine[] = [];
   for (const t of transactions) {
@@ -269,7 +274,6 @@ export async function getVendorExpenses(
           cents: Math.abs(line.cents),
           paidStatus: t.paidStatus,
           shortRef: t.shortRef,
-          paymentReference: t.paymentReference,
         });
       }
     } else {
@@ -282,7 +286,6 @@ export async function getVendorExpenses(
         cents: t.amountCents,
         paidStatus: t.paidStatus,
         shortRef: t.shortRef,
-        paymentReference: t.paymentReference,
       });
     }
   }
