@@ -106,6 +106,10 @@ export function SupplierExpensesTable() {
             )
           : prev
       );
+      // La ligne vient de changer de groupe (catégorie) — déplie le nouveau
+      // groupe pour qu'elle reste visible au lieu de disparaître dans un
+      // groupe replié.
+      setExpandedAccounts((prev) => new Set(prev).add(newAccount.name));
     } catch {
       setError("Impossible de modifier le compte de cette ligne.");
     } finally {
