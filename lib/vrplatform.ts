@@ -116,9 +116,10 @@ export interface VendorExpenseLine {
   paidStatus: VendorExpensePaidStatus;
   /** Référence de la transaction (ex: "EXP-0IV-95AH-A4N"). */
   shortRef: string | null;
-  /** Référence du relevé bancaire rapproché qui a réglé cette dépense (sa
-   * description, ex: "Sweep It - dépenses importées du 01/11/2026") —
-   * résolue via la liste des transactions que CE relevé dit avoir réglées
+  /** Référence du relevé bancaire rapproché qui a réglé cette dépense (son
+   * champ Reference, ex: "wise-2026-11-02-sweepit-imported-0111-119983",
+   * pas sa Description) — résolue via la liste des transactions que CE
+   * relevé dit avoir réglées
    * (reconciliation.transactions[], voir getPaidBankRecordReferences), pas
    * via payment.bankRecordIds de la transaction elle-même : vérifié en live,
    * ce dernier reste vide même quand le relevé bancaire est "Matched" (le
@@ -211,7 +212,7 @@ function widenDateFilter(dateFilter: string, paddingDaysBefore: number, paddingD
   return `${startDate.toISOString().slice(0, 10)}...${endDate.toISOString().slice(0, 10)}`;
 }
 
-/** Référence (description, sinon uniqueRef) du relevé bancaire rapproché
+/** Référence (uniqueRef, sinon description) du relevé bancaire rapproché
  * pour chaque transaction donnée — en passant par les relevés bancaires
  * "paid" de la période (élargie, voir widenDateFilter) plutôt que par
  * transaction.payment.bankRecordIds (voir le commentaire sur
@@ -238,7 +239,7 @@ async function getPaidBankRecordReferences(
       for (const record of res.data) {
         const matched = record.reconciliation?.transactions ?? [];
         if (matched.length === 0) continue;
-        const ref = record.description ?? record.uniqueRef;
+        const ref = record.uniqueRef ?? record.description;
         if (!ref) continue;
         for (const m of matched) {
           if (transactionIds.has(m.id)) map.set(m.id, ref);
