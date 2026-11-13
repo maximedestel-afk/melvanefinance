@@ -116,22 +116,19 @@ export interface VendorExpenseLine {
   paidStatus: VendorExpensePaidStatus;
   /** Référence de la transaction (ex: "EXP-0IV-95AH-A4N"). */
   shortRef: string | null;
-  /** Référence du relevé bancaire qui a réglé cette dépense (sa description,
-   * ex: le libellé du virement), résolue via les bankRecordIds du paiement
-   * — null si pas encore payé ou si le paiement n'est pas passé par un
-   * relevé bancaire rapproché (voir getBankRecordReferences). */
+  /** Référence du relevé bancaire rapproché qui a réglé cette dépense (sa
+   * description, ex: "Sweep It - dépenses importées du 01/11/2026") —
+   * résolue via la liste des transactions que CE relevé dit avoir réglées
+   * (reconciliation.transactions[], voir getPaidBankRecordReferences), pas
+   * via payment.bankRecordIds de la transaction elle-même : vérifié en live,
+   * ce dernier reste vide même quand le relevé bancaire est "Matched" (le
+   * rapprochement bancaire et le statut de paiement de la facture sont deux
+   * choses distinctes côté VRPlatform). Null si pas encore rapproché. */
   paymentReference: string | null;
 }
 
 interface VrPlatformTransactionsResponse {
-  data: {
-    id: string;
-    date: string;
-    description: string;
-    amount: number;
-    shortRef: string | null;
-    payment?: { bankRecordIds?: string[] } | null;
-  }[];
+  data: { id: string; date: string; description: string; amount: number; shortRef: string | null }[];
   pagination: { page: number; totalPage: number };
 }
 
@@ -142,7 +139,6 @@ interface VendorExpenseTransactionRaw {
   amountCents: number;
   paidStatus: VendorExpensePaidStatus;
   shortRef: string | null;
-  bankRecordIds: string[];
 }
 
 async function getVendorExpenseTransactionsByStatus(
@@ -170,7 +166,6 @@ async function getVendorExpenseTransactionsByStatus(
         amountCents: Math.abs(t.amount),
         paidStatus,
         shortRef: t.shortRef,
-        bankRecordIds: t.payment?.bankRecordIds ?? [],
       });
     }
     if (page >= res.pagination.totalPage) break;
@@ -179,37 +174,51 @@ async function getVendorExpenseTransactionsByStatus(
   return results;
 }
 
-// Nombre d'IDs de relevé bancaire par requête /bank-records.
-const BANK_RECORD_ID_CHUNK_SIZE = 25;
-
 interface VrPlatformBankRecordsResponse {
-  data: { id: string; description: string | null; uniqueRef: string | null }[];
+  data: {
+    id: string;
+    description: string | null;
+    uniqueRef: string | null;
+    reconciliation?: { status: string; transactions?: { id: string }[] } | null;
+  }[];
   pagination: { page: number; totalPage: number };
 }
 
-/** Description (ou référence) des relevés bancaires donnés, via
- * /bank-records?ids=... — par lots. Dégradation silencieuse : une facture
- * payée sans relevé résolu retombe sur son shortRef (voir getVendorExpenses). */
-async function getBankRecordReferences(bankRecordIds: string[]): Promise<Map<string, string>> {
+/** Référence (description, sinon uniqueRef) du relevé bancaire rapproché
+ * pour chaque transaction donnée — en passant par les relevés bancaires
+ * "paid" de la période plutôt que par transaction.payment.bankRecordIds
+ * (voir le commentaire sur VendorExpenseLine.paymentReference), puisque
+ * c'est le relevé qui liste les transactions qu'il a réglées
+ * (reconciliation.transactions[]), pas l'inverse. Dégradation silencieuse :
+ * une facture sans relevé résolu retombe sur son shortRef (voir
+ * getVendorExpenses). */
+async function getPaidBankRecordReferences(
+  transactionIds: Set<string>,
+  dateRange: string
+): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  if (bankRecordIds.length === 0) return map;
-  const chunks: string[][] = [];
-  for (let i = 0; i < bankRecordIds.length; i += BANK_RECORD_ID_CHUNK_SIZE) {
-    chunks.push(bankRecordIds.slice(i, i + BANK_RECORD_ID_CHUNK_SIZE));
-  }
+  if (transactionIds.size === 0) return map;
   try {
-    await Promise.all(
-      chunks.map(async (chunk) => {
-        const res = await vrPlatformFetch<VrPlatformBankRecordsResponse>("/bank-records", {
-          ids: chunk.join(","),
-          limit: "250",
-        });
-        for (const record of res.data) {
-          const ref = record.description ?? record.uniqueRef;
-          if (ref) map.set(record.id, ref);
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformBankRecordsResponse>("/bank-records", {
+        dateRange,
+        reconcileStatus: "paid",
+        limit: "250",
+        page: String(page),
+      });
+      for (const record of res.data) {
+        const matched = record.reconciliation?.transactions ?? [];
+        if (matched.length === 0) continue;
+        const ref = record.description ?? record.uniqueRef;
+        if (!ref) continue;
+        for (const m of matched) {
+          if (transactionIds.has(m.id)) map.set(m.id, ref);
         }
-      })
-    );
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
   } catch {
     // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
   }
@@ -304,15 +313,15 @@ export async function getVendorExpenses(
   const transactions = perStatus.flat();
   const listingsById = new Map(listings.map((l) => [l.id, l.name]));
 
-  const allBankRecordIds = Array.from(new Set(transactions.flatMap((t) => t.bankRecordIds)));
-  const [linesByTransaction, bankRecordRefs] = await Promise.all([
+  const transactionIds = new Set(transactions.map((t) => t.id));
+  const [linesByTransaction, paymentRefsByTransaction] = await Promise.all([
     getJournalEntryLinesForTransactions(transactions.map((t) => t.id), listingsById),
-    getBankRecordReferences(allBankRecordIds),
+    getPaidBankRecordReferences(transactionIds, dateRange),
   ]);
 
   const result: VendorExpenseLine[] = [];
   for (const t of transactions) {
-    const paymentReference = t.bankRecordIds.map((id) => bankRecordRefs.get(id)).find((ref): ref is string => !!ref) ?? null;
+    const paymentReference = paymentRefsByTransaction.get(t.id) ?? null;
     const lines = linesByTransaction.get(t.id);
     if (lines && lines.length > 0) {
       for (const line of lines) {
