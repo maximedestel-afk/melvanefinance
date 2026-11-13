@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/queries";
-import { isVrPlatformConfigured } from "@/lib/vrplatform";
+import { isVrPlatformConfigured, listVendorContacts } from "@/lib/vrplatform";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -32,14 +32,30 @@ export async function GET(request: Request) {
   }
 
   const searchParams = new URL(request.url).searchParams;
-  const contactId = searchParams.get("contactId");
+  let contactId = searchParams.get("contactId");
+  const vendorName = searchParams.get("vendorName");
   const dateRange = searchParams.get("dateRange") ?? String(new Date().getUTCFullYear());
-  if (!contactId) return NextResponse.json({ error: "Paramètre 'contactId' requis." }, { status: 400 });
+  if (!contactId && !vendorName) {
+    return NextResponse.json({ error: "Paramètre 'contactId' ou 'vendorName' requis." }, { status: 400 });
+  }
 
   try {
+    let matchedVendors: { id: string; name: string | null; email: string | null }[] | undefined;
+    if (!contactId && vendorName) {
+      const needle = vendorName.trim().toLowerCase();
+      const vendors = await listVendorContacts();
+      matchedVendors = vendors.filter(
+        (v) => (v.name ?? "").toLowerCase().includes(needle) || (v.email ?? "").toLowerCase().includes(needle)
+      );
+      if (matchedVendors.length === 0) {
+        return NextResponse.json({ error: `Aucun vendor ne correspond à "${vendorName}".` }, { status: 404 });
+      }
+      contactId = matchedVendors[0].id;
+    }
+
     const transactions = (await vrPlatformFetchRaw("/transactions", {
       type: "expense",
-      contactId,
+      contactId: contactId as string,
       dateRange,
       limit: "10",
       sort: "-date",
@@ -63,7 +79,7 @@ export async function GET(request: Request) {
       : null;
 
     return NextResponse.json(
-      { transactions, journalEntriesAllTypes, journalEntriesLineType },
+      { contactId, matchedVendors, transactions, journalEntriesAllTypes, journalEntriesLineType },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
