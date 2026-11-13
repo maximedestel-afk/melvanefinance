@@ -68,6 +68,17 @@ export async function GET(request: Request) {
       ? await vrPlatformFetchRaw("/bank-records", { ids: bankRecordIds.join(","), limit: "250" })
       : null;
 
+    // Pour voir la vraie forme de "lines" (id de ligne, accountId, etc.) —
+    // nécessaire pour construire l'édition inline du compte dans l'onglet
+    // Supplier (PUT /transactions/{id} avec lines_update).
+    const transactionsWithLines = transactionIds.length
+      ? await vrPlatformFetchRaw("/transactions", {
+          ids: transactionIds.join(","),
+          includeLines: "true",
+          limit: "10",
+        })
+      : null;
+
     const journalEntriesAllTypes = transactionIds.length
       ? await vrPlatformFetchRaw("/reports/journal-entries", {
           transactionIds: transactionIds.join(","),
@@ -84,7 +95,15 @@ export async function GET(request: Request) {
       : null;
 
     return NextResponse.json(
-      { contactId, matchedVendors, transactions, journalEntriesAllTypes, journalEntriesLineType, bankRecords },
+      {
+        contactId,
+        matchedVendors,
+        transactions,
+        journalEntriesAllTypes,
+        journalEntriesLineType,
+        bankRecords,
+        transactionsWithLines,
+      },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
