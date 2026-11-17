@@ -814,6 +814,35 @@ async function getExpenseJournalEntriesAllAccounts(
   return perChunk.flat();
 }
 
+export interface OwnerBalanceActivity {
+  expenseCents: number;
+  otherCents: number;
+}
+
+/** Décompose, par listing, l'activité côté "owners" sur une plage de dates
+ * en "Dépenses" (comptes de EXPENSE_ACCOUNT_IDS) et "Autres" (tout le reste :
+ * revenus, ajustements, frais récurrents...) — utilisé par l'onglet Due to
+ * owner pour détailler le solde du mois en cours. */
+export async function getOwnerBalanceActivityByListing(
+  dateFilter: string
+): Promise<Map<string, OwnerBalanceActivity>> {
+  const entries = await getExpenseJournalEntriesAllAccounts(dateFilter, "owners");
+  const expenseAccountIds = new Set(EXPENSE_ACCOUNT_IDS);
+  const byListing = new Map<string, OwnerBalanceActivity>();
+  for (const entry of entries) {
+    const listingId = entry.listing?.id;
+    if (!listingId) continue;
+    const bucket = byListing.get(listingId) ?? { expenseCents: 0, otherCents: 0 };
+    if (entry.account?.id && expenseAccountIds.has(entry.account.id)) {
+      bucket.expenseCents += entry.centTotal;
+    } else {
+      bucket.otherCents += entry.centTotal;
+    }
+    byListing.set(listingId, bucket);
+  }
+  return byListing;
+}
+
 async function getListingExpenseEntries(
   listingId: string,
   dateFilter: string,

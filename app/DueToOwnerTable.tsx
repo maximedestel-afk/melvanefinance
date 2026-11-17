@@ -8,6 +8,7 @@ interface PropertyOption {
   reference: string;
   name: string | null;
   extraVrplatformReferences: string[];
+  rentAmount: number | null;
   ownerEmail: string | null;
   ownerLastName: string | null;
   ownerFirstName: string | null;
@@ -22,10 +23,24 @@ interface OwnerBalanceRow {
   currency: string;
 }
 
-interface PropertyBalanceRow extends OwnerBalanceRow {
+interface OwnerBalanceActivity {
+  listingId: string;
+  expenseCents: number;
+  otherCents: number;
+}
+
+interface PropertyBalanceRow {
+  listingId: string;
+  reference: string;
   propertyName: string | null;
   ownerKey: string;
   ownerLabel: string;
+  prevMonthCents: number;
+  currentCents: number;
+  expenseCents: number;
+  otherCents: number;
+  rentCents: number;
+  totalCents: number;
 }
 
 function escapeCsvField(value: string): string {
@@ -33,14 +48,32 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
+/** Dernier jour du mois précédant celui de `dateIso`. */
+function endOfPreviousMonth(dateIso: string): string {
+  const d = new Date(`${dateIso}T00:00:00Z`);
+  const firstOfMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  const endOfPrev = new Date(firstOfMonth.getTime() - 24 * 60 * 60 * 1000);
+  return endOfPrev.toISOString().slice(0, 10);
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", timeZone: "UTC" });
+}
+
 export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }) {
   const [date, setDate] = useState(todayIso());
-  const [balances, setBalances] = useState<OwnerBalanceRow[] | null>(null);
+  const [balancesPrevMonth, setBalancesPrevMonth] = useState<OwnerBalanceRow[] | null>(null);
+  const [balancesCurrent, setBalancesCurrent] = useState<OwnerBalanceRow[] | null>(null);
+  const [activity, setActivity] = useState<OwnerBalanceActivity[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hideZero, setHideZero] = useState(true);
+  const [hideZero, setHideZero] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
+
+  const prevMonthDate = endOfPreviousMonth(date);
+  const monthStartDate = `${date.slice(0, 7)}-01`;
 
   function toggleOwner(ownerKey: string) {
     setExpandedOwners((prev) => {
@@ -55,13 +88,21 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/finance/owner-balances?date=${date}`);
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-        setBalances(null);
+      const [prevRes, currentRes] = await Promise.all([
+        fetch(`/api/finance/owner-balances?date=${prevMonthDate}`),
+        fetch(`/api/finance/owner-balances?date=${date}&activityStartDate=${monthStartDate}`),
+      ]);
+      const prevData = await prevRes.json();
+      const currentData = await currentRes.json();
+      if (prevData.error || currentData.error) {
+        setError(prevData.error || currentData.error);
+        setBalancesPrevMonth(null);
+        setBalancesCurrent(null);
+        setActivity(null);
       } else {
-        setBalances(data.balances);
+        setBalancesPrevMonth(prevData.balances);
+        setBalancesCurrent(currentData.balances);
+        setActivity(currentData.activity);
         setExpandedOwners(new Set());
       }
     } catch {
@@ -91,27 +132,58 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
   }, [properties]);
 
   const rows: PropertyBalanceRow[] = useMemo(() => {
-    if (!balances) return [];
-    return balances.map((b): PropertyBalanceRow => {
-      const property = propertyByReference.get(b.reference.trim().toLowerCase());
+    if (!balancesPrevMonth || !balancesCurrent) return [];
+    const prevByListing = new Map(balancesPrevMonth.map((b) => [b.listingId, b]));
+    const currentByListing = new Map(balancesCurrent.map((b) => [b.listingId, b]));
+    const activityByListing = new Map((activity ?? []).map((a) => [a.listingId, a]));
+    const listingIds = new Set([...prevByListing.keys(), ...currentByListing.keys()]);
+
+    const result: PropertyBalanceRow[] = [];
+    for (const listingId of listingIds) {
+      const prev = prevByListing.get(listingId);
+      const current = currentByListing.get(listingId);
+      const listingActivity = activityByListing.get(listingId);
+      const reference = current?.reference ?? prev?.reference ?? "?";
+      const property = propertyByReference.get(reference.trim().toLowerCase());
+      // Exclut les listings qu'on ne sait rattacher à aucun propriétaire connu
+      // localement — demandé explicitement pour ne pas polluer la liste.
+      if (!property) continue;
+
       const ownerLabel =
-        property && (property.ownerFirstName || property.ownerLastName)
+        property.ownerFirstName || property.ownerLastName
           ? `${property.ownerFirstName ?? ""} ${property.ownerLastName ?? ""}`.trim()
-          : (property?.ownerEmail ?? "Propriétaire inconnu");
-      const ownerKey = property?.ownerEmail ?? ownerLabel;
-      return {
-        ...b,
-        propertyName: property?.name ?? null,
+          : (property.ownerEmail ?? "Propriétaire inconnu");
+      const ownerKey = property.ownerEmail ?? ownerLabel;
+
+      // Le loyer n'est compté qu'une fois par bien (sur le listing
+      // principal) pour ne pas être doublé quand une référence VRPlatform
+      // supplémentaire (ex: "14ECO 1") est rattachée au même bien.
+      const isMainListing = property.reference.trim().toLowerCase() === reference.trim().toLowerCase();
+      const rentCents = isMainListing && property.rentAmount != null ? Math.round(property.rentAmount * 100) : 0;
+      const prevMonthCents = prev?.balanceCents ?? 0;
+      const currentCents = current?.balanceCents ?? 0;
+
+      result.push({
+        listingId,
+        reference,
+        propertyName: property.name,
         ownerKey,
         ownerLabel,
-      };
-    });
-  }, [balances, propertyByReference]);
+        prevMonthCents,
+        currentCents,
+        expenseCents: listingActivity?.expenseCents ?? 0,
+        otherCents: listingActivity?.otherCents ?? 0,
+        rentCents,
+        totalCents: prevMonthCents + currentCents + rentCents,
+      });
+    }
+    return result;
+  }, [balancesPrevMonth, balancesCurrent, activity, propertyByReference]);
 
   const filteredRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows
-      .filter((r) => !hideZero || r.balanceCents !== 0)
+      .filter((r) => !hideZero || r.totalCents !== 0)
       .filter((r) => {
         if (!needle) return true;
         return r.reference.toLowerCase().includes(needle) || r.ownerLabel.toLowerCase().includes(needle);
@@ -130,30 +202,47 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         ownerKey,
         ownerLabel: group.ownerLabel,
         rows: [...group.rows].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
-        totalCents: group.rows.reduce((sum, r) => sum + r.balanceCents, 0),
+        prevMonthCents: group.rows.reduce((sum, r) => sum + r.prevMonthCents, 0),
+        currentCents: group.rows.reduce((sum, r) => sum + r.currentCents, 0),
+        expenseCents: group.rows.reduce((sum, r) => sum + r.expenseCents, 0),
+        otherCents: group.rows.reduce((sum, r) => sum + r.otherCents, 0),
+        rentCents: group.rows.reduce((sum, r) => sum + r.rentCents, 0),
+        totalCents: group.rows.reduce((sum, r) => sum + r.totalCents, 0),
       }))
       .sort((a, b) => b.totalCents - a.totalCents);
   }, [filteredRows]);
 
-  const grandTotalCents = filteredRows.reduce((sum, r) => sum + r.balanceCents, 0);
+  const grandTotalCents = filteredRows.reduce((sum, r) => sum + r.totalCents, 0);
+  const loaded = balancesPrevMonth != null && balancesCurrent != null;
 
   function exportExcel() {
     if (filteredRows.length === 0) return;
-    const header = ["Propriétaire", "Bien", "Solde dû", "Réserve", "Disponible", "Devise"];
+    const header = [
+      "Propriétaire",
+      "Bien",
+      `Solde au ${prevMonthDate}`,
+      `Solde au ${date}`,
+      `Dépenses (depuis le ${monthStartDate})`,
+      `Autres (depuis le ${monthStartDate})`,
+      "Loyer",
+      "Total",
+    ];
     const lines: string[][] = [header];
     for (const group of groupsByOwner) {
       for (const row of group.rows) {
         lines.push([
           group.ownerLabel,
           row.reference,
-          formatEuros(row.balanceCents / 100),
-          formatEuros(row.reserveCents / 100),
-          formatEuros(row.availableBalanceCents / 100),
-          row.currency.toUpperCase(),
+          formatEuros(row.prevMonthCents / 100),
+          formatEuros(row.currentCents / 100),
+          formatEuros(row.expenseCents / 100),
+          formatEuros(row.otherCents / 100),
+          formatEuros(row.rentCents / 100),
+          formatEuros(row.totalCents / 100),
         ]);
       }
     }
-    lines.push(["", "Total", formatEuros(grandTotalCents / 100), "", "", ""]);
+    lines.push(["", "Total", "", "", "", "", "", formatEuros(grandTotalCents / 100)]);
     const content = lines.map((line) => line.map(escapeCsvField).join(";")).join("\n");
     const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -167,12 +256,15 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="rounded-[8px] border border-black/10 px-2 py-1.5 text-[13px]"
-        />
+        <label className="flex items-center gap-1.5 text-[12px] text-[#6e6e73]">
+          Date (mois en cours)
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="rounded-[8px] border border-black/10 px-2 py-1.5 text-[13px]"
+          />
+        </label>
         <button type="button" onClick={load} disabled={loading} className="btn-secondary btn-sm">
           {loading ? "Chargement…" : "Charger"}
         </button>
@@ -185,9 +277,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         />
         <label className="flex items-center gap-1.5 text-[12px] text-[#6e6e73]">
           <input type="checkbox" checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
-          Masquer les soldes à zéro
+          Masquer les totaux à zéro
         </label>
-        {balances && (
+        {loaded && (
           <span className="text-[12px] text-[#6e6e73]">
             {filteredRows.length} bien{filteredRows.length > 1 ? "s" : ""} — total {formatEuros(grandTotalCents / 100)}
           </span>
@@ -203,13 +295,14 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       </div>
 
       <p className="text-[12px] text-[#6e6e73]">
-        Solde comptable VRPlatform dû à chaque propriétaire à la date choisie (inclut les écritures pas encore sur
-        un relevé publié) — positif = montant à verser au propriétaire.
+        Soldes comptables VRPlatform (positif = montant dû au propriétaire), fin du mois précédent ({formatShortDate(prevMonthDate)})
+        et à la date choisie, plus le loyer du bien — biens non rattachés à un propriétaire connu exclus. Dépenses/Autres
+        détaillent l&apos;activité du mois en cours (depuis le {formatShortDate(monthStartDate)}), à titre indicatif.
       </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
 
-      {balances && filteredRows.length === 0 && !loading && !error && (
+      {loaded && filteredRows.length === 0 && !loading && !error && (
         <p className="text-[13px] text-[#6e6e73]">Aucun solde pour ce filtre.</p>
       )}
 
@@ -220,9 +313,16 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
               <thead>
                 <tr className="border-b border-black/[0.08] bg-black/[0.015]">
                   <th className="py-1.5 pl-3 pr-2 text-left text-[11px] font-medium text-[#86868b]">Bien</th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Réserve</th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Disponible</th>
-                  <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Solde dû</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
+                    Solde au {formatShortDate(prevMonthDate)}
+                  </th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
+                    Solde au {formatShortDate(date)}
+                  </th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Dépenses</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Autres</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer</th>
+                  <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Total</th>
                 </tr>
               </thead>
               <tbody>
@@ -234,8 +334,23 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                         className="cursor-pointer border-b border-black/[0.08] bg-[#eef3fb] hover:bg-[#dceafb]"
                         onClick={() => toggleOwner(group.ownerKey)}
                       >
-                        <td colSpan={3} className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">
+                        <td className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">
                           {expanded ? "▾" : "▸"} {group.ownerLabel} ({group.rows.length})
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                          {formatEuros(group.prevMonthCents / 100)}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                          {formatEuros(group.currentCents / 100)}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                          {formatEuros(group.expenseCents / 100)}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                          {formatEuros(group.otherCents / 100)}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                          {formatEuros(group.rentCents / 100)}
                         </td>
                         <td className="py-1.5 pl-2 pr-3 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.totalCents / 100)}
@@ -254,13 +369,22 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                               {row.propertyName && <div className="text-[10.5px] text-[#86868b]">{row.propertyName}</div>}
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                              {formatEuros(row.reserveCents / 100)}
+                              {formatEuros(row.prevMonthCents / 100)}
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                              {formatEuros(row.availableBalanceCents / 100)}
+                              {formatEuros(row.currentCents / 100)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                              {formatEuros(row.expenseCents / 100)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                              {formatEuros(row.otherCents / 100)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                              {formatEuros(row.rentCents / 100)}
                             </td>
                             <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                              {formatEuros(row.balanceCents / 100)}
+                              {formatEuros(row.totalCents / 100)}
                             </td>
                           </tr>
                         ))}
