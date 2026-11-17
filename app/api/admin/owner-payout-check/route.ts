@@ -34,18 +34,33 @@ export async function GET(request: Request) {
   if (!txnCode) return NextResponse.json({ error: "Paramètre 'txnCode' requis." }, { status: 400 });
 
   try {
-    const journalEntriesNoPartyFilter = await vrPlatformFetchRaw("/reports/journal-entries", {
-      txnCode,
-      limit: "50",
-    });
-    const journalEntriesOwnersParty = await vrPlatformFetchRaw("/reports/journal-entries", {
-      txnCode,
-      party: "owners",
-      limit: "50",
-    });
+    // "PAY-202611-S784T" ressemble à un shortRef/uniqueRef de /transactions
+    // (type payout), pas à un txnCode de /reports/journal-entries (qui n'a
+    // rien renvoyé) — on cherche par shortRefs, puis par recherche libre, et
+    // on remonte aux écritures via transactionIds une fois l'id trouvé.
+    const byShortRef = (await vrPlatformFetchRaw("/transactions", {
+      type: "payout",
+      shortRefs: txnCode,
+      limit: "10",
+    })) as { data: { id: string }[] };
+    const bySearch = (await vrPlatformFetchRaw("/transactions", {
+      search: txnCode,
+      limit: "10",
+    })) as { data: { id: string }[] };
+
+    const transactionIds = Array.from(
+      new Set([...byShortRef.data.map((t) => t.id), ...bySearch.data.map((t) => t.id)])
+    );
+
+    const journalEntries = transactionIds.length
+      ? await vrPlatformFetchRaw("/reports/journal-entries", {
+          transactionIds: transactionIds.join(","),
+          limit: "50",
+        })
+      : null;
 
     return NextResponse.json(
-      { txnCode, journalEntriesNoPartyFilter, journalEntriesOwnersParty },
+      { txnCode, byShortRef, bySearch, transactionIds, journalEntries },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );
   } catch (err) {
