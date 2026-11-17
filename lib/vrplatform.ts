@@ -832,6 +832,9 @@ export interface OwnerBalanceActivity {
    * Owners/PM" ou "Owner Payout", confirmé par l'utilisateur — entityType
    * "payout" ne suffisait pas à les repérer). */
   payoutCents: number;
+  /** Détail des écritures individuelles composant payoutCents (une par
+   * virement), pour l'affichage au clic dans l'onglet Due to owner. */
+  payoutDetails: { date: string; cents: number; description: string }[];
   /** Tout ce qui n'est ni Net Owner Revenue ni Payout (entityType "deposit",
    * "expense", "recurringFee", "transfer"...) — section "Expenses" du
    * relevé au sens large demandé ici, pas seulement EXPENSE_ACCOUNT_IDS. */
@@ -869,12 +872,23 @@ export async function getOwnerBalanceActivityByListing(
     // ci-dessous, laissant Dépenses et Payouts à zéro.
     const listingId = entry.listingId;
     if (!listingId) continue;
-    const bucket = byListing.get(listingId) ?? { netOwnerRevenueCents: 0, payoutCents: 0, expenseCents: 0 };
+    const bucket = byListing.get(listingId) ?? {
+      netOwnerRevenueCents: 0,
+      payoutCents: 0,
+      payoutDetails: [],
+      expenseCents: 0,
+    };
     if (isPayoutAccountName(entry.account?.name)) {
       // Signe inversé : un payout de 5000€ (centTotal +500000 sur le compte
       // "Transfers to/From Owners/PM", confirmé en direct) doit apparaître
       // comme -5000 dans la colonne Payouts (réduit ce qui est dû).
-      bucket.payoutCents -= entry.centTotal;
+      const cents = -entry.centTotal;
+      bucket.payoutCents += cents;
+      bucket.payoutDetails.push({
+        date: entry.txnAt.slice(0, 10),
+        cents,
+        description: entry.description || "Payout",
+      });
     } else if (entry.entityType === "reservation") {
       bucket.netOwnerRevenueCents += entry.centTotal;
     } else {
