@@ -825,8 +825,10 @@ export interface OwnerBalanceActivity {
    * titre indicatif, la colonne Revenus net propriétaire de l'onglet Due to
    * owner est en fait recalculée (voir DueToOwnerTable). */
   netOwnerRevenueCents: number;
-  /** Section "Payouts" du relevé (écritures entityType "payout") — ce qui a
-   * été versé au propriétaire pendant la période. */
+  /** Section "Payouts" du relevé — ce qui a été versé au propriétaire
+   * pendant la période, identifié par le nom du compte ("Transfers to/From
+   * Owners/PM" ou "Owner Payout", confirmé par l'utilisateur — entityType
+   * "payout" ne suffisait pas à les repérer). */
   payoutCents: number;
   /** Tout ce qui n'est ni Net Owner Revenue ni Payout (entityType "deposit",
    * "expense", "recurringFee", "transfer"...) — section "Expenses" du
@@ -834,10 +836,18 @@ export interface OwnerBalanceActivity {
   expenseCents: number;
 }
 
+/** Noms de compte VRPlatform identifiant un virement au propriétaire — voir
+ * le commentaire sur OwnerBalanceActivity.payoutCents. */
+function isPayoutAccountName(accountName: string | undefined): boolean {
+  if (!accountName) return false;
+  const name = accountName.toLowerCase();
+  return name.includes("owner payout") || name.includes("transfers to/from owners");
+}
+
 /** Décompose, par listing, l'activité côté "owners" sur une plage de dates
- * en "Revenus net propriétaire" (entityType "reservation"), "Payouts"
- * (entityType "payout") et "Dépenses" (tout le reste) — utilisé par
- * l'onglet Due to owner pour détailler le solde du mois en cours. */
+ * en "Revenus net propriétaire" (entityType "reservation"), "Payouts" (voir
+ * isPayoutAccountName) et "Dépenses" (tout le reste) — utilisé par l'onglet
+ * Due to owner pour détailler le solde du mois en cours. */
 export async function getOwnerBalanceActivityByListing(
   dateFilter: string
 ): Promise<Map<string, OwnerBalanceActivity>> {
@@ -853,10 +863,10 @@ export async function getOwnerBalanceActivityByListing(
     const listingId = entry.listing?.id;
     if (!listingId) continue;
     const bucket = byListing.get(listingId) ?? { netOwnerRevenueCents: 0, payoutCents: 0, expenseCents: 0 };
-    if (entry.entityType === "reservation") {
-      bucket.netOwnerRevenueCents += entry.centTotal;
-    } else if (entry.entityType === "payout") {
+    if (isPayoutAccountName(entry.account?.name)) {
       bucket.payoutCents += entry.centTotal;
+    } else if (entry.entityType === "reservation") {
+      bucket.netOwnerRevenueCents += entry.centTotal;
     } else {
       bucket.expenseCents += entry.centTotal;
     }
