@@ -162,6 +162,12 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       const rentCents = isMainListing && property.rentAmount != null ? Math.round(property.rentAmount * 100) : 0;
       const prevMonthCents = prev?.balanceCents ?? 0;
       const currentCents = current?.balanceCents ?? 0;
+      const expenseCents = listingActivity?.expenseCents ?? 0;
+      // Revenus net propriétaire = valeur dérivée, pas une somme d'écritures
+      // classées : solde à la date choisie moins les dépenses du mois moins
+      // le solde du mois précédent (demandé explicitement — la
+      // classification par entityType ne tombait pas juste).
+      const netOwnerRevenueCents = currentCents - expenseCents - prevMonthCents;
 
       result.push({
         listingId,
@@ -171,8 +177,8 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         ownerLabel,
         prevMonthCents,
         currentCents,
-        netOwnerRevenueCents: listingActivity?.netOwnerRevenueCents ?? 0,
-        expenseCents: listingActivity?.expenseCents ?? 0,
+        netOwnerRevenueCents,
+        expenseCents,
         rentCents,
         totalCents: prevMonthCents + currentCents + rentCents,
       });
