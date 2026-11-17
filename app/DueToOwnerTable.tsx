@@ -63,7 +63,6 @@ interface PropertyBalanceRow {
   expenseCents: number;
   expenseLines: OwnerStatementLine[];
   rentCents: number;
-  totalCents: number;
 }
 
 function escapeCsvField(value: string): string {
@@ -213,7 +212,6 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         expenseCents: statement?.expenseCents ?? 0,
         expenseLines: statement?.expenseLines ?? [],
         rentCents,
-        totalCents: prevMonthCents + currentCents + rentCents,
       });
     }
     return result;
@@ -222,7 +220,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
   const filteredRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows
-      .filter((r) => !hideZero || r.totalCents !== 0)
+      .filter((r) => !hideZero || r.currentCents !== 0)
       .filter((r) => {
         if (!needle) return true;
         return r.reference.toLowerCase().includes(needle) || r.ownerLabel.toLowerCase().includes(needle);
@@ -247,12 +245,21 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         payoutCents: group.rows.reduce((sum, r) => sum + r.payoutCents, 0),
         expenseCents: group.rows.reduce((sum, r) => sum + r.expenseCents, 0),
         rentCents: group.rows.reduce((sum, r) => sum + r.rentCents, 0),
-        totalCents: group.rows.reduce((sum, r) => sum + r.totalCents, 0),
       }))
-      .sort((a, b) => b.totalCents - a.totalCents);
+      .sort((a, b) => b.currentCents - a.currentCents);
   }, [filteredRows]);
 
-  const grandTotalCents = filteredRows.reduce((sum, r) => sum + r.totalCents, 0);
+  const grandTotals = useMemo(
+    () => ({
+      prevMonthCents: filteredRows.reduce((sum, r) => sum + r.prevMonthCents, 0),
+      netRevenueCents: filteredRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
+      expenseCents: filteredRows.reduce((sum, r) => sum + r.expenseCents, 0),
+      currentCents: filteredRows.reduce((sum, r) => sum + r.currentCents, 0),
+      payoutCents: filteredRows.reduce((sum, r) => sum + r.payoutCents, 0),
+      rentCents: filteredRows.reduce((sum, r) => sum + r.rentCents, 0),
+    }),
+    [filteredRows]
+  );
   const loaded = balancesPrevMonth != null && balancesCurrent != null;
 
   function exportExcel() {
@@ -266,7 +273,6 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       `Solde au ${date}`,
       "Payouts",
       "Loyer",
-      "Total",
     ];
     const lines: string[][] = [header];
     for (const group of groupsByOwner) {
@@ -280,11 +286,19 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
           formatEuros(row.currentCents / 100),
           formatEuros(row.payoutCents / 100),
           formatEuros(row.rentCents / 100),
-          formatEuros(row.totalCents / 100),
         ]);
       }
     }
-    lines.push(["", "Total", "", "", "", "", "", "", formatEuros(grandTotalCents / 100)]);
+    lines.push([
+      "",
+      "Total",
+      formatEuros(grandTotals.prevMonthCents / 100),
+      formatEuros(grandTotals.netRevenueCents / 100),
+      formatEuros(grandTotals.expenseCents / 100),
+      formatEuros(grandTotals.currentCents / 100),
+      formatEuros(grandTotals.payoutCents / 100),
+      formatEuros(grandTotals.rentCents / 100),
+    ]);
     const content = lines.map((line) => line.map(escapeCsvField).join(";")).join("\n");
     const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -323,7 +337,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         </label>
         {loaded && (
           <span className="text-[12px] text-[#6e6e73]">
-            {filteredRows.length} bien{filteredRows.length > 1 ? "s" : ""} — total {formatEuros(grandTotalCents / 100)}
+            {filteredRows.length} bien{filteredRows.length > 1 ? "s" : ""} — solde total {formatEuros(grandTotals.currentCents / 100)}
           </span>
         )}
         <button
@@ -365,8 +379,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                     Solde au {formatShortDate(date)}
                   </th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Payouts</th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer</th>
-                  <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Total</th>
+                  <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Loyer</th>
                 </tr>
               </thead>
               <tbody>
@@ -396,11 +409,8 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.payoutCents / 100)}
                         </td>
-                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
-                          {formatEuros(group.rentCents / 100)}
-                        </td>
                         <td className="py-1.5 pl-2 pr-3 text-right font-semibold tabular-nums text-[#1d1d1f]">
-                          {formatEuros(group.totalCents / 100)}
+                          {formatEuros(group.rentCents / 100)}
                         </td>
                       </tr>
                       {expanded &&
@@ -479,11 +489,8 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                             >
                               {formatEuros(row.payoutCents / 100)}
                             </td>
-                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <td className="py-1.5 pl-2 pr-3 text-right tabular-nums text-[#1d1d1f]">
                               {formatEuros(row.rentCents / 100)}
-                            </td>
-                            <td className="py-1.5 pl-2 pr-3 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                              {formatEuros(row.totalCents / 100)}
                             </td>
                           </tr>
                         ))}
@@ -491,6 +498,29 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t border-black/[0.08] bg-black/[0.02]">
+                  <td className="py-1.5 pl-3 pr-2 font-semibold text-[#1d1d1f]">Total</td>
+                  <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                    {formatEuros(grandTotals.prevMonthCents / 100)}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                    {formatEuros(grandTotals.netRevenueCents / 100)}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                    {formatEuros(grandTotals.expenseCents / 100)}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                    {formatEuros(grandTotals.currentCents / 100)}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                    {formatEuros(grandTotals.payoutCents / 100)}
+                  </td>
+                  <td className="py-1.5 pl-2 pr-3 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                    {formatEuros(grandTotals.rentCents / 100)}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
