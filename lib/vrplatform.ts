@@ -821,131 +821,184 @@ async function getExpenseJournalEntriesAllAccounts(
   return perChunk.flat();
 }
 
-export interface OwnerBalanceActivity {
-  /** Section "Net Owner Revenue" du relevé propriétaire (écritures
-   * entityType "reservation" : loyer, frais, taxes, commission) — affiché à
-   * titre indicatif, la colonne Revenus net propriétaire de l'onglet Due to
-   * owner est en fait recalculée (voir DueToOwnerTable). */
-  netOwnerRevenueCents: number;
-  /** Section "Payouts" du relevé — ce qui a été versé au propriétaire
-   * pendant la période, identifié par le nom du compte ("Transfers to/From
-   * Owners/PM" ou "Owner Payout", confirmé par l'utilisateur — entityType
-   * "payout" ne suffisait pas à les repérer). */
-  payoutCents: number;
-  /** Détail des écritures individuelles composant payoutCents (une par
-   * virement), pour l'affichage au clic dans l'onglet Due to owner. */
-  payoutDetails: { date: string; cents: number; description: string }[];
-  /** Tout ce qui n'est ni Net Owner Revenue ni Payout (entityType "deposit",
-   * "expense", "recurringFee", "transfer"...) — section "Expenses" du
-   * relevé au sens large demandé ici, pas seulement EXPENSE_ACCOUNT_IDS. */
-  expenseCents: number;
-  /** Détail des écritures individuelles composant expenseCents, pour
-   * l'affichage au clic dans l'onglet Due to owner. */
-  expenseDetails: { date: string; cents: number; description: string }[];
-}
-
-/** Noms de compte VRPlatform identifiant un virement au propriétaire — voir
- * le commentaire sur OwnerBalanceActivity.payoutCents. */
+/** Noms de compte VRPlatform identifiant un virement au propriétaire —
+ * utilisé uniquement pour retrouver les écritures de payout individuelles
+ * (avec leur date), le montant officiel vient de
+ * getOwnerStatementListingBreakdown ci-dessous. */
 function isPayoutAccountName(accountName: string | undefined): boolean {
   if (!accountName) return false;
   const name = accountName.toLowerCase();
   return name.includes("owner payout") || name.includes("transfers to/from owners");
 }
 
-/** Comptes VRPlatform désignés explicitement par l'utilisateur (catégories
- * "Operating & Maintenance Expenses", "Adjustments" et "Taxes" du plan
- * comptable, captures d'écran à l'appui) comme composant le compte Dépenses
- * de l'onglet Due to owner — par nom plutôt que par id, pour ne pas dépendre
- * de EXPENSE_ACCOUNT_IDS (curée pour un usage différent, la réconciliation
- * Supplier/Manager) ni avoir à aller chercher les UUID un par un. */
-const DEPENSES_ACCOUNT_NAMES = new Set(
-  [
-    "Maintenance",
-    "Housekeeping",
-    "Supplies",
-    "Insurance",
-    "Expense Reimbursement Revenue",
-    "Expense Reimbursement Revenue - Supplies",
-    "Expense Reimbursement Revenue - Maintenance",
-    "Expense Markup Revenue",
-    "Delivery",
-    "Waiting Time",
-    "Tech",
-    "Key Locker",
-    "Insurance DL Melvane",
-    "Payout Adjustments",
-    "Co-Host Payouts",
-    "Guest Refund",
-    "VRBO comm share Expenses",
-    "VRBO comm share Revenues",
-    "Management Fee Rebate",
-    "Taxes Revenue (City taxes +) Expenses",
-    "Taxes Revenue (City taxes +) Revenues",
-    "City Taxes Revenue",
-  ].map((n) => n.toLowerCase())
-);
-
-function isDepensesAccountName(accountName: string | undefined): boolean {
-  if (!accountName) return false;
-  return DEPENSES_ACCOUNT_NAMES.has(accountName.toLowerCase());
+export interface OwnerPayoutEntry {
+  date: string;
+  cents: number;
+  description: string;
 }
 
-/** Décompose, par listing, l'activité côté "owners" sur une plage de dates
- * en "Revenus net propriétaire" (entityType "reservation"), "Payouts" (voir
- * isPayoutAccountName) et "Dépenses" (comptes de DEPENSES_ACCOUNT_NAMES
- * uniquement — pas un fourre-tout, voir isDepensesAccountName) — utilisé
- * par l'onglet Due to owner pour détailler le solde du mois en cours. */
-export async function getOwnerBalanceActivityByListing(
+/** Écritures de payout individuelles (avec leur date), par listing, sur une
+ * plage de dates — sert uniquement au détail affiché au clic sur la
+ * colonne Payouts de l'onglet Due to owner ; le montant total affiché dans
+ * la colonne vient de getOwnerStatementListingBreakdown (source officielle
+ * du relevé), pas d'une somme de ces entrées. */
+export async function getOwnerPayoutDetailsByListing(
   dateFilter: string
-): Promise<Map<string, OwnerBalanceActivity>> {
+): Promise<Map<string, OwnerPayoutEntry[]>> {
   // PAS getExpenseJournalEntriesAllAccounts : malgré son nom, elle ne
   // regarde que les comptes de classification "expense" (voir
-  // listAllAccountIds) — les écritures de revenu ("reservation") en sont
-  // exclues, ce qui laissait Revenus net propriétaire à 0. `accountIds:
-  // null` sur getExpenseJournalEntries omet entièrement le filtre de
-  // comptes et ramène vraiment tous les comptes (revenus compris).
+  // listAllAccountIds). `accountIds: null` sur getExpenseJournalEntries
+  // omet entièrement le filtre de comptes et ramène vraiment tous les
+  // comptes.
   const entries = await getExpenseJournalEntries(dateFilter, "owners", undefined, null);
-  const byListing = new Map<string, OwnerBalanceActivity>();
+  const byListing = new Map<string, OwnerPayoutEntry[]>();
   for (const entry of entries) {
+    if (!isPayoutAccountName(entry.account?.name)) continue;
     // PAS entry.listing?.id : /reports/journal-entries renvoie listingId en
     // champ plat (confirmé en direct sur une écriture de payout), pas un
-    // objet imbriqué "listing" — avec l'ancien code, listingId était
-    // toujours undefined et TOUTES les écritures étaient ignorées
-    // ci-dessous, laissant Dépenses et Payouts à zéro.
+    // objet imbriqué "listing".
     const listingId = entry.listingId;
     if (!listingId) continue;
-    const bucket = byListing.get(listingId) ?? {
-      netOwnerRevenueCents: 0,
-      payoutCents: 0,
-      payoutDetails: [],
-      expenseCents: 0,
-      expenseDetails: [],
-    };
-    if (isPayoutAccountName(entry.account?.name)) {
-      // Signe inversé : un payout de 5000€ (centTotal +500000 sur le compte
-      // "Transfers to/From Owners/PM", confirmé en direct) doit apparaître
-      // comme -5000 dans la colonne Payouts (réduit ce qui est dû).
-      const cents = -entry.centTotal;
-      bucket.payoutCents += cents;
-      bucket.payoutDetails.push({
-        date: entry.txnAt.slice(0, 10),
-        cents,
-        description: entry.description || "Payout",
-      });
-    } else if (entry.entityType === "reservation") {
-      bucket.netOwnerRevenueCents += entry.centTotal;
-    } else if (isDepensesAccountName(entry.account?.name)) {
-      bucket.expenseCents += entry.centTotal;
-      bucket.expenseDetails.push({
-        date: entry.txnAt.slice(0, 10),
-        cents: entry.centTotal,
-        description: entry.account?.name
-          ? `${entry.account.name} — ${entry.description || ""}`.trim().replace(/ — $/, "")
-          : entry.description || "Dépense",
-      });
-    }
-    byListing.set(listingId, bucket);
+    // Signe inversé : un payout de 5000€ (centTotal +500000 sur le compte
+    // "Transfers to/From Owners/PM", confirmé en direct) doit apparaître
+    // comme -5000 (réduit ce qui est dû).
+    const list = byListing.get(listingId) ?? [];
+    list.push({ date: entry.txnAt.slice(0, 10), cents: -entry.centTotal, description: entry.description || "Payout" });
+    byListing.set(listingId, list);
   }
+  return byListing;
+}
+
+interface VrPlatformStatementColumn {
+  title: string;
+  value: number;
+}
+
+interface VrPlatformListingSubtotal {
+  listingId: string;
+  title: string;
+  columns: VrPlatformStatementColumn[];
+}
+
+interface VrPlatformStatementSection {
+  title: string;
+  listingSubtotals: VrPlatformListingSubtotal[];
+}
+
+interface VrPlatformOwnerStatementDetails {
+  layouts: {
+    netRevenueSection: VrPlatformStatementSection;
+    otherSections: VrPlatformStatementSection[];
+    payoutsSection: VrPlatformStatementSection;
+  }[];
+}
+
+interface VrPlatformOwnerStatementSummariesResponse {
+  data: { contact: { contactId: string } }[];
+}
+
+function findColumnValue(columns: VrPlatformStatementColumn[], title: string): number {
+  return columns.find((c) => c.title === title)?.value ?? columns[columns.length - 1]?.value ?? 0;
+}
+
+export interface OwnerStatementLine {
+  title: string;
+  cents: number;
+}
+
+export interface OwnerStatementListingBreakdown {
+  /** Sous-total "Net Revenue" du relevé (section Net Owner Revenue). */
+  netRevenueCents: number;
+  /** Lignes qui composent netRevenueCents (Rents, Channel Fees, Management
+   * Commissions...), telles qu'affichées sur le relevé propriétaire. */
+  netRevenueLines: OwnerStatementLine[];
+  /** Somme de toutes les sections hors Net Owner Revenue et Payouts
+   * (Operating & Maintenance Expenses, Adjustments, Taxes...) — demandé
+   * explicitement : "tout ce qui n'est pas dans la partie net owner revenue
+   * ou payout du statement". */
+  expenseCents: number;
+  /** Une ligne par section (titre de section + son total pour ce bien). */
+  expenseLines: OwnerStatementLine[];
+  /** Sous-total de la section Payouts du relevé. */
+  payoutCents: number;
+}
+
+/** Revenus net propriétaire / Dépenses / Payouts par bien, lus directement
+ * dans le relevé officiel VRPlatform
+ * (/reports/owner-statement-summaries-per-layout puis .../details/
+ * {contactId}?view=listing pour chaque propriétaire actif sur la période)
+ * plutôt que reconstruits depuis /reports/journal-entries — c'est le même
+ * calcul que VRPlatform utilise pour générer les relevés eux-mêmes, donc
+ * fiable par construction (confirmé en direct). Un appel /reports/owner-
+ * statement-summaries-per-layout pour lister les propriétaires actifs, puis
+ * un appel .../details/{contactId} par propriétaire en parallèle. */
+export async function getOwnerStatementListingBreakdown(
+  dateRange: string
+): Promise<Map<string, OwnerStatementListingBreakdown>> {
+  const summaries = await vrPlatformFetch<VrPlatformOwnerStatementSummariesResponse>(
+    "/reports/owner-statement-summaries-per-layout",
+    { dateRange }
+  );
+  const contactIds = Array.from(new Set(summaries.data.map((s) => s.contact.contactId)));
+
+  const byListing = new Map<string, OwnerStatementListingBreakdown>();
+  await Promise.all(
+    contactIds.map(async (contactId) => {
+      let details: VrPlatformOwnerStatementDetails;
+      try {
+        details = await vrPlatformFetch<VrPlatformOwnerStatementDetails>(
+          `/reports/owner-statement-summaries-per-layout/details/${contactId}`,
+          { dateRange, view: "listing" }
+        );
+      } catch {
+        // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+        return;
+      }
+      for (const layout of details.layouts) {
+        for (const sub of layout.netRevenueSection.listingSubtotals) {
+          const bucket = byListing.get(sub.listingId) ?? {
+            netRevenueCents: 0,
+            netRevenueLines: [],
+            expenseCents: 0,
+            expenseLines: [],
+            payoutCents: 0,
+          };
+          bucket.netRevenueCents += findColumnValue(sub.columns, "Net Revenue");
+          for (const col of sub.columns) {
+            if (col.title === "Net Revenue" || col.title === "Nights") continue;
+            bucket.netRevenueLines.push({ title: col.title, cents: col.value });
+          }
+          byListing.set(sub.listingId, bucket);
+        }
+        for (const section of layout.otherSections) {
+          for (const sub of section.listingSubtotals) {
+            const value = findColumnValue(sub.columns, "Total");
+            const bucket = byListing.get(sub.listingId) ?? {
+              netRevenueCents: 0,
+              netRevenueLines: [],
+              expenseCents: 0,
+              expenseLines: [],
+              payoutCents: 0,
+            };
+            bucket.expenseCents += value;
+            bucket.expenseLines.push({ title: section.title, cents: value });
+            byListing.set(sub.listingId, bucket);
+          }
+        }
+        for (const sub of layout.payoutsSection.listingSubtotals) {
+          const bucket = byListing.get(sub.listingId) ?? {
+            netRevenueCents: 0,
+            netRevenueLines: [],
+            expenseCents: 0,
+            expenseLines: [],
+            payoutCents: 0,
+          };
+          bucket.payoutCents += findColumnValue(sub.columns, "Total");
+          byListing.set(sub.listingId, bucket);
+        }
+      }
+    })
+  );
   return byListing;
 }
 

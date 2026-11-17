@@ -29,13 +29,23 @@ interface OwnerPayoutDetail {
   description: string;
 }
 
-interface OwnerBalanceActivity {
+interface OwnerPayoutDetailsRow {
   listingId: string;
-  netOwnerRevenueCents: number;
-  payoutCents: number;
-  payoutDetails: OwnerPayoutDetail[];
+  details: OwnerPayoutDetail[];
+}
+
+interface OwnerStatementLine {
+  title: string;
+  cents: number;
+}
+
+interface OwnerStatementBreakdownRow {
+  listingId: string;
+  netRevenueCents: number;
+  netRevenueLines: OwnerStatementLine[];
   expenseCents: number;
-  expenseDetails: OwnerPayoutDetail[];
+  expenseLines: OwnerStatementLine[];
+  payoutCents: number;
 }
 
 interface PropertyBalanceRow {
@@ -46,11 +56,12 @@ interface PropertyBalanceRow {
   ownerLabel: string;
   prevMonthCents: number;
   currentCents: number;
-  netOwnerRevenueCents: number;
+  netRevenueCents: number;
+  netRevenueLines: OwnerStatementLine[];
   payoutCents: number;
   payoutDetails: OwnerPayoutDetail[];
   expenseCents: number;
-  expenseDetails: OwnerPayoutDetail[];
+  expenseLines: OwnerStatementLine[];
   rentCents: number;
   totalCents: number;
 }
@@ -77,7 +88,8 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
   const [date, setDate] = useState(todayIso());
   const [balancesPrevMonth, setBalancesPrevMonth] = useState<OwnerBalanceRow[] | null>(null);
   const [balancesCurrent, setBalancesCurrent] = useState<OwnerBalanceRow[] | null>(null);
-  const [activity, setActivity] = useState<OwnerBalanceActivity[] | null>(null);
+  const [payoutDetailsRows, setPayoutDetailsRows] = useState<OwnerPayoutDetailsRow[] | null>(null);
+  const [statementBreakdown, setStatementBreakdown] = useState<OwnerStatementBreakdownRow[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hideZero, setHideZero] = useState(false);
@@ -118,11 +130,13 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         setError(prevData.error || currentData.error);
         setBalancesPrevMonth(null);
         setBalancesCurrent(null);
-        setActivity(null);
+        setPayoutDetailsRows(null);
+        setStatementBreakdown(null);
       } else {
         setBalancesPrevMonth(prevData.balances);
         setBalancesCurrent(currentData.balances);
-        setActivity(currentData.activity);
+        setPayoutDetailsRows(currentData.payoutDetails);
+        setStatementBreakdown(currentData.statementBreakdown);
         setExpandedOwners(new Set());
       }
     } catch {
@@ -155,14 +169,15 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
     if (!balancesPrevMonth || !balancesCurrent) return [];
     const prevByListing = new Map(balancesPrevMonth.map((b) => [b.listingId, b]));
     const currentByListing = new Map(balancesCurrent.map((b) => [b.listingId, b]));
-    const activityByListing = new Map((activity ?? []).map((a) => [a.listingId, a]));
+    const payoutDetailsByListing = new Map((payoutDetailsRows ?? []).map((r) => [r.listingId, r.details]));
+    const statementByListing = new Map((statementBreakdown ?? []).map((r) => [r.listingId, r]));
     const listingIds = new Set([...prevByListing.keys(), ...currentByListing.keys()]);
 
     const result: PropertyBalanceRow[] = [];
     for (const listingId of listingIds) {
       const prev = prevByListing.get(listingId);
       const current = currentByListing.get(listingId);
-      const listingActivity = activityByListing.get(listingId);
+      const statement = statementByListing.get(listingId);
       const reference = current?.reference ?? prev?.reference ?? "?";
       const property = propertyByReference.get(reference.trim().toLowerCase());
       // Exclut les listings qu'on ne sait rattacher à aucun propriétaire connu
@@ -182,14 +197,6 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       const rentCents = isMainListing && property.rentAmount != null ? Math.round(property.rentAmount * 100) : 0;
       const prevMonthCents = prev?.balanceCents ?? 0;
       const currentCents = current?.balanceCents ?? 0;
-      const expenseCents = listingActivity?.expenseCents ?? 0;
-      const payoutCents = listingActivity?.payoutCents ?? 0;
-      // Revenus net propriétaire = valeur dérivée, pas une somme d'écritures
-      // classées : solde à la date choisie moins les dépenses du mois moins
-      // les payouts du mois moins le solde du mois précédent (demandé
-      // explicitement — la classification par entityType ne tombait pas
-      // juste).
-      const netOwnerRevenueCents = currentCents - expenseCents - payoutCents - prevMonthCents;
 
       result.push({
         listingId,
@@ -199,17 +206,18 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         ownerLabel,
         prevMonthCents,
         currentCents,
-        netOwnerRevenueCents,
-        payoutCents,
-        payoutDetails: listingActivity?.payoutDetails ?? [],
-        expenseCents,
-        expenseDetails: listingActivity?.expenseDetails ?? [],
+        netRevenueCents: statement?.netRevenueCents ?? 0,
+        netRevenueLines: statement?.netRevenueLines ?? [],
+        payoutCents: statement?.payoutCents ?? 0,
+        payoutDetails: payoutDetailsByListing.get(listingId) ?? [],
+        expenseCents: statement?.expenseCents ?? 0,
+        expenseLines: statement?.expenseLines ?? [],
         rentCents,
         totalCents: prevMonthCents + currentCents + rentCents,
       });
     }
     return result;
-  }, [balancesPrevMonth, balancesCurrent, activity, propertyByReference]);
+  }, [balancesPrevMonth, balancesCurrent, payoutDetailsRows, statementBreakdown, propertyByReference]);
 
   const filteredRows = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -235,7 +243,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         rows: [...group.rows].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
         prevMonthCents: group.rows.reduce((sum, r) => sum + r.prevMonthCents, 0),
         currentCents: group.rows.reduce((sum, r) => sum + r.currentCents, 0),
-        netOwnerRevenueCents: group.rows.reduce((sum, r) => sum + r.netOwnerRevenueCents, 0),
+        netRevenueCents: group.rows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         payoutCents: group.rows.reduce((sum, r) => sum + r.payoutCents, 0),
         expenseCents: group.rows.reduce((sum, r) => sum + r.expenseCents, 0),
         rentCents: group.rows.reduce((sum, r) => sum + r.rentCents, 0),
@@ -253,7 +261,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       "Propriétaire",
       "Bien",
       `Solde au ${prevMonthDate}`,
-      "Revenus net propriétaire",
+      "Owner Revenue",
       "Payouts",
       `Solde au ${date}`,
       "Dépenses",
@@ -267,7 +275,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
           group.ownerLabel,
           row.reference,
           formatEuros(row.prevMonthCents / 100),
-          formatEuros(row.netOwnerRevenueCents / 100),
+          formatEuros(row.netRevenueCents / 100),
           formatEuros(row.payoutCents / 100),
           formatEuros(row.currentCents / 100),
           formatEuros(row.expenseCents / 100),
@@ -330,9 +338,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
 
       <p className="text-[12px] text-[#6e6e73]">
         Soldes comptables VRPlatform (positif = montant dû au propriétaire), fin du mois précédent ({formatShortDate(prevMonthDate)})
-        et à la date choisie, plus le loyer du bien — biens non rattachés à un propriétaire connu exclus. Revenus net
-        propriétaire, Payouts et Dépenses détaillent l&apos;activité du mois en cours (depuis le {formatShortDate(monthStartDate)}),
-        à titre indicatif — Revenus net propriétaire = Solde à la date choisie − Dépenses − Payouts − Solde du mois précédent.
+        et à la date choisie, plus le loyer du bien — biens non rattachés à un propriétaire connu exclus. Owner Revenue,
+        Dépenses et Payouts viennent directement du relevé officiel VRPlatform pour la période depuis le{" "}
+        {formatShortDate(monthStartDate)} (cliquer pour le détail).
       </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
@@ -351,9 +359,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
                     Solde au {formatShortDate(prevMonthDate)}
                   </th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
-                    Revenus net propriétaire
-                  </th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Owner Revenue</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Payouts</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
                     Solde au {formatShortDate(date)}
@@ -379,7 +385,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                           {formatEuros(group.prevMonthCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
-                          {formatEuros(group.netOwnerRevenueCents / 100)}
+                          {formatEuros(group.netRevenueCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.payoutCents / 100)}
@@ -413,31 +419,25 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                               {formatEuros(row.prevMonthCents / 100)}
                             </td>
                             <td
-                              className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] cursor-pointer underline decoration-dotted hover:text-[#0071e3]"
+                              className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
+                                row.netRevenueLines.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
+                              }`}
                               onClick={(e) => {
+                                if (row.netRevenueLines.length === 0) return;
                                 e.stopPropagation();
                                 setDetailModal({
-                                  title: `Revenus net propriétaire — ${row.reference}`,
-                                  totalCents: row.netOwnerRevenueCents,
+                                  title: `Owner Revenue — ${row.reference}`,
+                                  totalCents: row.netRevenueCents,
                                   sortByDate: false,
-                                  details: [
-                                    {
-                                      date,
-                                      cents: row.currentCents,
-                                      description: `Solde au ${formatShortDate(date)}`,
-                                    },
-                                    { date, cents: -row.expenseCents, description: "− Dépenses" },
-                                    { date, cents: -row.payoutCents, description: "− Payouts" },
-                                    {
-                                      date: prevMonthDate,
-                                      cents: -row.prevMonthCents,
-                                      description: `− Solde au ${formatShortDate(prevMonthDate)}`,
-                                    },
-                                  ],
+                                  details: row.netRevenueLines.map((l) => ({
+                                    date,
+                                    cents: l.cents,
+                                    description: l.title,
+                                  })),
                                 });
                               }}
                             >
-                              {formatEuros(row.netOwnerRevenueCents / 100)}
+                              {formatEuros(row.netRevenueCents / 100)}
                             </td>
                             <td
                               className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
@@ -460,15 +460,20 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                             </td>
                             <td
                               className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
-                                row.expenseDetails.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
+                                row.expenseLines.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
                               }`}
                               onClick={(e) => {
-                                if (row.expenseDetails.length === 0) return;
+                                if (row.expenseLines.length === 0) return;
                                 e.stopPropagation();
                                 setDetailModal({
                                   title: `Dépenses — ${row.reference}`,
                                   totalCents: row.expenseCents,
-                                  details: row.expenseDetails,
+                                  sortByDate: false,
+                                  details: row.expenseLines.map((l) => ({
+                                    date,
+                                    cents: l.cents,
+                                    description: l.title,
+                                  })),
                                 });
                               }}
                             >
