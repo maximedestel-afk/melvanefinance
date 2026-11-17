@@ -26,6 +26,7 @@ interface OwnerBalanceRow {
 interface OwnerBalanceActivity {
   listingId: string;
   netOwnerRevenueCents: number;
+  payoutCents: number;
   expenseCents: number;
 }
 
@@ -38,6 +39,7 @@ interface PropertyBalanceRow {
   prevMonthCents: number;
   currentCents: number;
   netOwnerRevenueCents: number;
+  payoutCents: number;
   expenseCents: number;
   rentCents: number;
   totalCents: number;
@@ -163,11 +165,13 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       const prevMonthCents = prev?.balanceCents ?? 0;
       const currentCents = current?.balanceCents ?? 0;
       const expenseCents = listingActivity?.expenseCents ?? 0;
+      const payoutCents = listingActivity?.payoutCents ?? 0;
       // Revenus net propriétaire = valeur dérivée, pas une somme d'écritures
       // classées : solde à la date choisie moins les dépenses du mois moins
-      // le solde du mois précédent (demandé explicitement — la
-      // classification par entityType ne tombait pas juste).
-      const netOwnerRevenueCents = currentCents - expenseCents - prevMonthCents;
+      // les payouts du mois moins le solde du mois précédent (demandé
+      // explicitement — la classification par entityType ne tombait pas
+      // juste).
+      const netOwnerRevenueCents = currentCents - expenseCents - payoutCents - prevMonthCents;
 
       result.push({
         listingId,
@@ -178,6 +182,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         prevMonthCents,
         currentCents,
         netOwnerRevenueCents,
+        payoutCents,
         expenseCents,
         rentCents,
         totalCents: prevMonthCents + currentCents + rentCents,
@@ -211,6 +216,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         prevMonthCents: group.rows.reduce((sum, r) => sum + r.prevMonthCents, 0),
         currentCents: group.rows.reduce((sum, r) => sum + r.currentCents, 0),
         netOwnerRevenueCents: group.rows.reduce((sum, r) => sum + r.netOwnerRevenueCents, 0),
+        payoutCents: group.rows.reduce((sum, r) => sum + r.payoutCents, 0),
         expenseCents: group.rows.reduce((sum, r) => sum + r.expenseCents, 0),
         rentCents: group.rows.reduce((sum, r) => sum + r.rentCents, 0),
         totalCents: group.rows.reduce((sum, r) => sum + r.totalCents, 0),
@@ -228,6 +234,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       "Bien",
       `Solde au ${prevMonthDate}`,
       "Revenus net propriétaire",
+      "Payouts",
       `Solde au ${date}`,
       "Dépenses",
       "Loyer",
@@ -241,6 +248,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
           row.reference,
           formatEuros(row.prevMonthCents / 100),
           formatEuros(row.netOwnerRevenueCents / 100),
+          formatEuros(row.payoutCents / 100),
           formatEuros(row.currentCents / 100),
           formatEuros(row.expenseCents / 100),
           formatEuros(row.rentCents / 100),
@@ -248,7 +256,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         ]);
       }
     }
-    lines.push(["", "Total", "", "", "", "", "", formatEuros(grandTotalCents / 100)]);
+    lines.push(["", "Total", "", "", "", "", "", "", formatEuros(grandTotalCents / 100)]);
     const content = lines.map((line) => line.map(escapeCsvField).join(";")).join("\n");
     const blob = new Blob(["﻿" + content], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -303,8 +311,8 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       <p className="text-[12px] text-[#6e6e73]">
         Soldes comptables VRPlatform (positif = montant dû au propriétaire), fin du mois précédent ({formatShortDate(prevMonthDate)})
         et à la date choisie, plus le loyer du bien — biens non rattachés à un propriétaire connu exclus. Revenus net
-        propriétaire (section Net Owner Revenue du relevé) et Dépenses (tout le reste, hors Payouts) détaillent
-        l&apos;activité du mois en cours (depuis le {formatShortDate(monthStartDate)}), à titre indicatif.
+        propriétaire, Payouts et Dépenses détaillent l&apos;activité du mois en cours (depuis le {formatShortDate(monthStartDate)}),
+        à titre indicatif — Revenus net propriétaire = Solde à la date choisie − Dépenses − Payouts − Solde du mois précédent.
       </p>
 
       {error && <p className="text-[13px] text-red-600">{error}</p>}
@@ -326,6 +334,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
                     Revenus net propriétaire
                   </th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Payouts</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
                     Solde au {formatShortDate(date)}
                   </th>
@@ -351,6 +360,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.netOwnerRevenueCents / 100)}
+                        </td>
+                        <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
+                          {formatEuros(group.payoutCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.currentCents / 100)}
@@ -382,6 +394,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                               {formatEuros(row.netOwnerRevenueCents / 100)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                              {formatEuros(row.payoutCents / 100)}
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                               {formatEuros(row.currentCents / 100)}

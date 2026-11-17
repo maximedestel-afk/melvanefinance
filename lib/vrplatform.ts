@@ -821,8 +821,13 @@ async function getExpenseJournalEntriesAllAccounts(
 
 export interface OwnerBalanceActivity {
   /** Section "Net Owner Revenue" du relevé propriétaire (écritures
-   * entityType "reservation" : loyer, frais, taxes, commission). */
+   * entityType "reservation" : loyer, frais, taxes, commission) — affiché à
+   * titre indicatif, la colonne Revenus net propriétaire de l'onglet Due to
+   * owner est en fait recalculée (voir DueToOwnerTable). */
   netOwnerRevenueCents: number;
+  /** Section "Payouts" du relevé (écritures entityType "payout") — ce qui a
+   * été versé au propriétaire pendant la période. */
+  payoutCents: number;
   /** Tout ce qui n'est ni Net Owner Revenue ni Payout (entityType "deposit",
    * "expense", "recurringFee", "transfer"...) — section "Expenses" du
    * relevé au sens large demandé ici, pas seulement EXPENSE_ACCOUNT_IDS. */
@@ -830,10 +835,9 @@ export interface OwnerBalanceActivity {
 }
 
 /** Décompose, par listing, l'activité côté "owners" sur une plage de dates
- * en "Revenus net propriétaire" (entityType "reservation") et "Dépenses"
- * (tout le reste, à l'exclusion des Payouts qui ne sont ni l'un ni l'autre)
- * — utilisé par l'onglet Due to owner pour détailler le solde du mois en
- * cours. */
+ * en "Revenus net propriétaire" (entityType "reservation"), "Payouts"
+ * (entityType "payout") et "Dépenses" (tout le reste) — utilisé par
+ * l'onglet Due to owner pour détailler le solde du mois en cours. */
 export async function getOwnerBalanceActivityByListing(
   dateFilter: string
 ): Promise<Map<string, OwnerBalanceActivity>> {
@@ -848,10 +852,12 @@ export async function getOwnerBalanceActivityByListing(
   for (const entry of entries) {
     const listingId = entry.listing?.id;
     if (!listingId) continue;
-    const bucket = byListing.get(listingId) ?? { netOwnerRevenueCents: 0, expenseCents: 0 };
+    const bucket = byListing.get(listingId) ?? { netOwnerRevenueCents: 0, payoutCents: 0, expenseCents: 0 };
     if (entry.entityType === "reservation") {
       bucket.netOwnerRevenueCents += entry.centTotal;
-    } else if (entry.entityType !== "payout") {
+    } else if (entry.entityType === "payout") {
+      bucket.payoutCents += entry.centTotal;
+    } else {
       bucket.expenseCents += entry.centTotal;
     }
     byListing.set(listingId, bucket);
