@@ -839,6 +839,9 @@ export interface OwnerBalanceActivity {
    * "expense", "recurringFee", "transfer"...) — section "Expenses" du
    * relevé au sens large demandé ici, pas seulement EXPENSE_ACCOUNT_IDS. */
   expenseCents: number;
+  /** Détail des écritures individuelles composant expenseCents, pour
+   * l'affichage au clic dans l'onglet Due to owner. */
+  expenseDetails: { date: string; cents: number; description: string }[];
 }
 
 /** Noms de compte VRPlatform identifiant un virement au propriétaire — voir
@@ -877,6 +880,7 @@ export async function getOwnerBalanceActivityByListing(
       payoutCents: 0,
       payoutDetails: [],
       expenseCents: 0,
+      expenseDetails: [],
     };
     if (isPayoutAccountName(entry.account?.name)) {
       // Signe inversé : un payout de 5000€ (centTotal +500000 sur le compte
@@ -893,6 +897,13 @@ export async function getOwnerBalanceActivityByListing(
       bucket.netOwnerRevenueCents += entry.centTotal;
     } else {
       bucket.expenseCents += entry.centTotal;
+      bucket.expenseDetails.push({
+        date: entry.txnAt.slice(0, 10),
+        cents: entry.centTotal,
+        description: entry.account?.name
+          ? `${entry.account.name} — ${entry.description || ""}`.trim().replace(/ — $/, "")
+          : entry.description || "Dépense",
+      });
     }
     byListing.set(listingId, bucket);
   }

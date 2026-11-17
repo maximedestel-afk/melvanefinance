@@ -35,6 +35,7 @@ interface OwnerBalanceActivity {
   payoutCents: number;
   payoutDetails: OwnerPayoutDetail[];
   expenseCents: number;
+  expenseDetails: OwnerPayoutDetail[];
 }
 
 interface PropertyBalanceRow {
@@ -49,6 +50,7 @@ interface PropertyBalanceRow {
   payoutCents: number;
   payoutDetails: OwnerPayoutDetail[];
   expenseCents: number;
+  expenseDetails: OwnerPayoutDetail[];
   rentCents: number;
   totalCents: number;
 }
@@ -81,7 +83,11 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
   const [hideZero, setHideZero] = useState(false);
   const [search, setSearch] = useState("");
   const [expandedOwners, setExpandedOwners] = useState<Set<string>>(new Set());
-  const [payoutDetailRow, setPayoutDetailRow] = useState<PropertyBalanceRow | null>(null);
+  const [detailModal, setDetailModal] = useState<{
+    title: string;
+    totalCents: number;
+    details: OwnerPayoutDetail[];
+  } | null>(null);
 
   const prevMonthDate = endOfPreviousMonth(date);
   const monthStartDate = `${date.slice(0, 7)}-01`;
@@ -194,6 +200,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         payoutCents,
         payoutDetails: listingActivity?.payoutDetails ?? [],
         expenseCents,
+        expenseDetails: listingActivity?.expenseDetails ?? [],
         rentCents,
         totalCents: prevMonthCents + currentCents + rentCents,
       });
@@ -412,7 +419,11 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                               onClick={(e) => {
                                 if (row.payoutDetails.length === 0) return;
                                 e.stopPropagation();
-                                setPayoutDetailRow(row);
+                                setDetailModal({
+                                  title: `Payouts — ${row.reference}`,
+                                  totalCents: row.payoutCents,
+                                  details: row.payoutDetails,
+                                });
                               }}
                             >
                               {formatEuros(row.payoutCents / 100)}
@@ -420,7 +431,20 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                               {formatEuros(row.currentCents / 100)}
                             </td>
-                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <td
+                              className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
+                                row.expenseDetails.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
+                              }`}
+                              onClick={(e) => {
+                                if (row.expenseDetails.length === 0) return;
+                                e.stopPropagation();
+                                setDetailModal({
+                                  title: `Dépenses — ${row.reference}`,
+                                  totalCents: row.expenseCents,
+                                  details: row.expenseDetails,
+                                });
+                              }}
+                            >
                               {formatEuros(row.expenseCents / 100)}
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
@@ -440,22 +464,20 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         </div>
       )}
 
-      {payoutDetailRow && (
+      {detailModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => setPayoutDetailRow(null)}
+          onClick={() => setDetailModal(null)}
         >
           <div
             className="max-h-[85vh] w-full max-w-[420px] overflow-y-auto rounded-[16px] bg-white p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-[16px] font-semibold text-[#1d1d1f]">
-                Payouts — {payoutDetailRow.reference}
-              </h3>
+              <h3 className="text-[16px] font-semibold text-[#1d1d1f]">{detailModal.title}</h3>
               <button
                 type="button"
-                onClick={() => setPayoutDetailRow(null)}
+                onClick={() => setDetailModal(null)}
                 className="text-[15px] text-[#6e6e73] hover:text-[#1d1d1f]"
               >
                 ✕
@@ -463,7 +485,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
             </div>
             <table className="w-full border-collapse text-[13px]">
               <tbody>
-                {payoutDetailRow.payoutDetails
+                {detailModal.details
                   .slice()
                   .sort((a, b) => a.date.localeCompare(b.date))
                   .map((detail, i) => (
@@ -482,7 +504,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                     Total
                   </td>
                   <td className="py-2 pl-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
-                    {formatEuros(payoutDetailRow.payoutCents / 100)}
+                    {formatEuros(detailModal.totalCents / 100)}
                   </td>
                 </tr>
               </tfoot>
