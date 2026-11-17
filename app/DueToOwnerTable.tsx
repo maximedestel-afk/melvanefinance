@@ -37,6 +37,7 @@ interface OwnerPayoutDetailsRow {
 interface OwnerStatementLine {
   title: string;
   cents: number;
+  accountIds?: string[];
 }
 
 interface OwnerStatementBreakdownRow {
@@ -101,10 +102,50 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
     /** false pour une décomposition de formule (ordre fixe, pas de tri par
      * date) plutôt qu'une vraie liste d'écritures chronologiques. */
     sortByDate?: boolean;
+    loading?: boolean;
+    error?: string;
   } | null>(null);
 
   const prevMonthDate = endOfPreviousMonth(date);
   const monthStartDate = `${date.slice(0, 7)}-01`;
+
+  /** Détail écriture par écriture des Dépenses d'un bien (date, compte,
+   * description, montant) — chargé à la demande au clic, car le relevé
+   * officiel ne donne qu'un sous-total par catégorie (voir expenseLines). */
+  async function openExpenseDetail(row: PropertyBalanceRow) {
+    setDetailModal({ title: `Dépenses — ${row.reference}`, totalCents: row.expenseCents, details: [], loading: true });
+    const accountIds = Array.from(new Set(row.expenseLines.flatMap((l) => l.accountIds ?? [])));
+    try {
+      const params = new URLSearchParams({
+        listingId: row.listingId,
+        accountIds: accountIds.join(","),
+        startDate: monthStartDate,
+        endDate: date,
+      });
+      const res = await fetch(`/api/finance/owner-expense-detail?${params.toString()}`);
+      const data = await res.json();
+      if (data.error) {
+        setDetailModal({ title: `Dépenses — ${row.reference}`, totalCents: row.expenseCents, details: [], error: data.error });
+      } else {
+        setDetailModal({
+          title: `Dépenses — ${row.reference}`,
+          totalCents: row.expenseCents,
+          details: data.entries.map((e: { date: string; cents: number; description: string; accountName: string }) => ({
+            date: e.date,
+            cents: e.cents,
+            description: `${e.accountName} — ${e.description}`,
+          })),
+        });
+      }
+    } catch {
+      setDetailModal({
+        title: `Dépenses — ${row.reference}`,
+        totalCents: row.expenseCents,
+        details: [],
+        error: "Impossible de charger le détail des dépenses.",
+      });
+    }
+  }
 
   function toggleOwner(ownerKey: string) {
     setExpandedOwners((prev) => {
@@ -459,16 +500,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                               onClick={(e) => {
                                 if (row.expenseLines.length === 0) return;
                                 e.stopPropagation();
-                                setDetailModal({
-                                  title: `Dépenses — ${row.reference}`,
-                                  totalCents: row.expenseCents,
-                                  sortByDate: false,
-                                  details: row.expenseLines.map((l) => ({
-                                    date,
-                                    cents: l.cents,
-                                    description: l.title,
-                                  })),
-                                });
+                                openExpenseDetail(row);
                               }}
                             >
                               {formatEuros(row.expenseCents / 100)}
@@ -548,6 +580,12 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                 ✕
               </button>
             </div>
+            {detailModal.loading && <p className="text-[13px] text-[#6e6e73]">Chargement…</p>}
+            {detailModal.error && <p className="text-[13px] text-red-600">{detailModal.error}</p>}
+            {!detailModal.loading && !detailModal.error && detailModal.details.length === 0 && (
+              <p className="text-[13px] text-[#6e6e73]">Aucune écriture sur cette période.</p>
+            )}
+            {!detailModal.loading && !detailModal.error && detailModal.details.length > 0 && (
             <table className="w-full border-collapse text-[13px]">
               <tbody>
                 {(detailModal.sortByDate === false
@@ -576,6 +614,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                 </tr>
               </tfoot>
             </table>
+            )}
           </div>
         </div>
       )}

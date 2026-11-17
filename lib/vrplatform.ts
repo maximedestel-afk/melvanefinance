@@ -877,6 +877,10 @@ interface VrPlatformStatementColumn {
    * deux autres sont un décompte ou un ratio et doivent être exclues des
    * lignes affichées/sommées. */
   type?: string;
+  /** Comptes VRPlatform qui composent cette colonne — utilisé pour aller
+   * chercher le détail écriture par écriture (date, description, montant)
+   * au clic, voir getOwnerExpenseEntriesForListing. */
+  accountIds?: string[];
 }
 
 interface VrPlatformListingSubtotal {
@@ -909,6 +913,9 @@ function findColumnValue(columns: VrPlatformStatementColumn[], title: string): n
 export interface OwnerStatementLine {
   title: string;
   cents: number;
+  /** Comptes qui composent cette ligne — présent sur les lignes de
+   * expenseLines, pour aller chercher le détail écriture par écriture. */
+  accountIds?: string[];
 }
 
 export interface OwnerStatementListingBreakdown {
@@ -990,7 +997,11 @@ export async function getOwnerStatementListingBreakdown(
               payoutCents: 0,
             };
             bucket.expenseCents += value;
-            bucket.expenseLines.push({ title: section.title, cents: value });
+            bucket.expenseLines.push({
+              title: section.title,
+              cents: value,
+              accountIds: sub.columns.find((c) => c.title === "Total")?.accountIds ?? [],
+            });
             byListing.set(sub.listingId, bucket);
           }
         }
@@ -1009,6 +1020,34 @@ export async function getOwnerStatementListingBreakdown(
     })
   );
   return byListing;
+}
+
+export interface OwnerExpenseEntryDetail {
+  date: string;
+  cents: number;
+  description: string;
+  accountName: string;
+}
+
+/** Détail écriture par écriture (date, description, montant, compte) des
+ * entrées qui composent une ligne de Dépenses d'un bien, sur une plage de
+ * dates — appelé au clic dans l'onglet Due to owner, avec les accountIds
+ * capturés sur la ligne (voir OwnerStatementLine.accountIds). */
+export async function getOwnerExpenseEntriesForListing(
+  listingId: string,
+  accountIds: string[],
+  dateFilter: string
+): Promise<OwnerExpenseEntryDetail[]> {
+  if (accountIds.length === 0) return [];
+  const entries = await getExpenseJournalEntries(dateFilter, "owners", listingId, accountIds);
+  return entries
+    .map((e) => ({
+      date: e.txnAt.slice(0, 10),
+      cents: e.centTotal,
+      description: e.description || "Dépense",
+      accountName: e.account?.name ?? "Autre",
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 async function getListingExpenseEntries(
