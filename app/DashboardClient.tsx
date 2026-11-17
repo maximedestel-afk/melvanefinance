@@ -55,6 +55,7 @@ export function DashboardClient({
     reference: string;
     name: string | null;
     tags: string[];
+    extraVrplatformReferences: string[];
     rentType: RentType | null;
     rentAmount: number | null;
     rentAmountEuros: number | null;

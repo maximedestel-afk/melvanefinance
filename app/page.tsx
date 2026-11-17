@@ -45,6 +45,7 @@ export default async function DashboardPage() {
           reference: p.reference,
           name: p.name,
           tags: p.tags,
+          extraVrplatformReferences: p.extraVrplatformReferences,
           rentType: p.rentType,
           rentAmount: p.rentAmount,
           rentAmountEuros: p.rentAmountEuros,

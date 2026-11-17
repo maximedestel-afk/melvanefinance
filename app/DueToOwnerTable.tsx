@@ -7,6 +7,7 @@ interface PropertyOption {
   id: string;
   reference: string;
   name: string | null;
+  extraVrplatformReferences: string[];
   ownerEmail: string | null;
   ownerLastName: string | null;
   ownerFirstName: string | null;
@@ -76,10 +77,18 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const propertyByReference = useMemo(
-    () => new Map(properties.map((p) => [p.reference.trim().toLowerCase(), p])),
-    [properties]
-  );
+  // Un bien peut regrouper plusieurs listings VRPlatform (références
+  // supplémentaires, ex: "14ECO 1" rattaché au bien "14ECO") — tous
+  // partagent le même propriétaire que le bien principal, d'où l'indexation
+  // sur la référence principale ET chaque référence supplémentaire.
+  const propertyByReference = useMemo(() => {
+    const map = new Map<string, PropertyOption>();
+    for (const p of properties) {
+      map.set(p.reference.trim().toLowerCase(), p);
+      for (const ref of p.extraVrplatformReferences) map.set(ref.trim().toLowerCase(), p);
+    }
+    return map;
+  }, [properties]);
 
   const rows: PropertyBalanceRow[] = useMemo(() => {
     if (!balances) return [];
