@@ -735,6 +735,11 @@ interface VrPlatformExpenseJournalEntry {
    * par montant total de paiement plutôt que ligne par ligne. */
   transactionId?: string;
   txnCode?: string;
+  /** "reservation" | "deposit" | "expense" | "recurringFee" | "transfer" |
+   * "payout" — section du relevé propriétaire dont relève l'écriture (voir
+   * getOwnerBalanceActivityByListing : "reservation" = Net Owner Revenue,
+   * "payout" = Payouts, le reste = Expenses sur le relevé). */
+  entityType?: string;
   /** Listing rattaché à l'écriture, quand il y en a un — certaines dépenses
    * manager (frais généraux, ajustements non liés à un bien précis) n'en
    * ont pas du tout. */
@@ -815,28 +820,33 @@ async function getExpenseJournalEntriesAllAccounts(
 }
 
 export interface OwnerBalanceActivity {
+  /** Section "Net Owner Revenue" du relevé propriétaire (écritures
+   * entityType "reservation" : loyer, frais, taxes, commission). */
+  netOwnerRevenueCents: number;
+  /** Tout ce qui n'est ni Net Owner Revenue ni Payout (entityType "deposit",
+   * "expense", "recurringFee", "transfer"...) — section "Expenses" du
+   * relevé au sens large demandé ici, pas seulement EXPENSE_ACCOUNT_IDS. */
   expenseCents: number;
-  otherCents: number;
 }
 
 /** Décompose, par listing, l'activité côté "owners" sur une plage de dates
- * en "Dépenses" (comptes de EXPENSE_ACCOUNT_IDS) et "Autres" (tout le reste :
- * revenus, ajustements, frais récurrents...) — utilisé par l'onglet Due to
- * owner pour détailler le solde du mois en cours. */
+ * en "Revenus net propriétaire" (entityType "reservation") et "Dépenses"
+ * (tout le reste, à l'exclusion des Payouts qui ne sont ni l'un ni l'autre)
+ * — utilisé par l'onglet Due to owner pour détailler le solde du mois en
+ * cours. */
 export async function getOwnerBalanceActivityByListing(
   dateFilter: string
 ): Promise<Map<string, OwnerBalanceActivity>> {
   const entries = await getExpenseJournalEntriesAllAccounts(dateFilter, "owners");
-  const expenseAccountIds = new Set(EXPENSE_ACCOUNT_IDS);
   const byListing = new Map<string, OwnerBalanceActivity>();
   for (const entry of entries) {
     const listingId = entry.listing?.id;
     if (!listingId) continue;
-    const bucket = byListing.get(listingId) ?? { expenseCents: 0, otherCents: 0 };
-    if (entry.account?.id && expenseAccountIds.has(entry.account.id)) {
+    const bucket = byListing.get(listingId) ?? { netOwnerRevenueCents: 0, expenseCents: 0 };
+    if (entry.entityType === "reservation") {
+      bucket.netOwnerRevenueCents += entry.centTotal;
+    } else if (entry.entityType !== "payout") {
       bucket.expenseCents += entry.centTotal;
-    } else {
-      bucket.otherCents += entry.centTotal;
     }
     byListing.set(listingId, bucket);
   }
