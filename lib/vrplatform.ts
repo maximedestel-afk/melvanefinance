@@ -852,10 +852,49 @@ function isPayoutAccountName(accountName: string | undefined): boolean {
   return name.includes("owner payout") || name.includes("transfers to/from owners");
 }
 
+/** Comptes VRPlatform désignés explicitement par l'utilisateur (catégories
+ * "Operating & Maintenance Expenses", "Adjustments" et "Taxes" du plan
+ * comptable, captures d'écran à l'appui) comme composant le compte Dépenses
+ * de l'onglet Due to owner — par nom plutôt que par id, pour ne pas dépendre
+ * de EXPENSE_ACCOUNT_IDS (curée pour un usage différent, la réconciliation
+ * Supplier/Manager) ni avoir à aller chercher les UUID un par un. */
+const DEPENSES_ACCOUNT_NAMES = new Set(
+  [
+    "Maintenance",
+    "Housekeeping",
+    "Supplies",
+    "Insurance",
+    "Expense Reimbursement Revenue",
+    "Expense Reimbursement Revenue - Supplies",
+    "Expense Reimbursement Revenue - Maintenance",
+    "Expense Markup Revenue",
+    "Delivery",
+    "Waiting Time",
+    "Tech",
+    "Key Locker",
+    "Insurance DL Melvane",
+    "Payout Adjustments",
+    "Co-Host Payouts",
+    "Guest Refund",
+    "VRBO comm share Expenses",
+    "VRBO comm share Revenues",
+    "Management Fee Rebate",
+    "Taxes Revenue (City taxes +) Expenses",
+    "Taxes Revenue (City taxes +) Revenues",
+    "City Taxes Revenue",
+  ].map((n) => n.toLowerCase())
+);
+
+function isDepensesAccountName(accountName: string | undefined): boolean {
+  if (!accountName) return false;
+  return DEPENSES_ACCOUNT_NAMES.has(accountName.toLowerCase());
+}
+
 /** Décompose, par listing, l'activité côté "owners" sur une plage de dates
  * en "Revenus net propriétaire" (entityType "reservation"), "Payouts" (voir
- * isPayoutAccountName) et "Dépenses" (tout le reste) — utilisé par l'onglet
- * Due to owner pour détailler le solde du mois en cours. */
+ * isPayoutAccountName) et "Dépenses" (comptes de DEPENSES_ACCOUNT_NAMES
+ * uniquement — pas un fourre-tout, voir isDepensesAccountName) — utilisé
+ * par l'onglet Due to owner pour détailler le solde du mois en cours. */
 export async function getOwnerBalanceActivityByListing(
   dateFilter: string
 ): Promise<Map<string, OwnerBalanceActivity>> {
@@ -895,7 +934,7 @@ export async function getOwnerBalanceActivityByListing(
       });
     } else if (entry.entityType === "reservation") {
       bucket.netOwnerRevenueCents += entry.centTotal;
-    } else {
+    } else if (isDepensesAccountName(entry.account?.name)) {
       bucket.expenseCents += entry.centTotal;
       bucket.expenseDetails.push({
         date: entry.txnAt.slice(0, 10),
