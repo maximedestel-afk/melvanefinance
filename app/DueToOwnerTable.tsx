@@ -262,9 +262,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       "Bien",
       `Solde au ${prevMonthDate}`,
       "Owner Revenue",
-      "Payouts",
-      `Solde au ${date}`,
       "Dépenses",
+      `Solde au ${date}`,
+      "Payouts",
       "Loyer",
       "Total",
     ];
@@ -276,9 +276,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
           row.reference,
           formatEuros(row.prevMonthCents / 100),
           formatEuros(row.netRevenueCents / 100),
-          formatEuros(row.payoutCents / 100),
-          formatEuros(row.currentCents / 100),
           formatEuros(row.expenseCents / 100),
+          formatEuros(row.currentCents / 100),
+          formatEuros(row.payoutCents / 100),
           formatEuros(row.rentCents / 100),
           formatEuros(row.totalCents / 100),
         ]);
@@ -360,11 +360,11 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                     Solde au {formatShortDate(prevMonthDate)}
                   </th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Owner Revenue</th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Payouts</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Dépenses</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">
                     Solde au {formatShortDate(date)}
                   </th>
-                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Dépenses</th>
+                  <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Payouts</th>
                   <th className="py-1.5 px-2 text-right text-[11px] font-medium text-[#86868b]">Loyer</th>
                   <th className="py-1.5 pl-2 pr-3 text-right text-[11px] font-medium text-[#86868b]">Total</th>
                 </tr>
@@ -388,13 +388,13 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                           {formatEuros(group.netRevenueCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
-                          {formatEuros(group.payoutCents / 100)}
+                          {formatEuros(group.expenseCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.currentCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
-                          {formatEuros(group.expenseCents / 100)}
+                          {formatEuros(group.payoutCents / 100)}
                         </td>
                         <td className="py-1.5 px-2 text-right font-semibold tabular-nums text-[#1d1d1f]">
                           {formatEuros(group.rentCents / 100)}
@@ -441,25 +441,6 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                             </td>
                             <td
                               className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
-                                row.payoutDetails.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
-                              }`}
-                              onClick={(e) => {
-                                if (row.payoutDetails.length === 0) return;
-                                e.stopPropagation();
-                                setDetailModal({
-                                  title: `Payouts — ${row.reference}`,
-                                  totalCents: row.payoutCents,
-                                  details: row.payoutDetails,
-                                });
-                              }}
-                            >
-                              {formatEuros(row.payoutCents / 100)}
-                            </td>
-                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
-                              {formatEuros(row.currentCents / 100)}
-                            </td>
-                            <td
-                              className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
                                 row.expenseLines.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
                               }`}
                               onClick={(e) => {
@@ -478,6 +459,25 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                               }}
                             >
                               {formatEuros(row.expenseCents / 100)}
+                            </td>
+                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                              {formatEuros(row.currentCents / 100)}
+                            </td>
+                            <td
+                              className={`py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] ${
+                                row.payoutDetails.length > 0 ? "cursor-pointer underline decoration-dotted hover:text-[#0071e3]" : ""
+                              }`}
+                              onClick={(e) => {
+                                if (row.payoutDetails.length === 0) return;
+                                e.stopPropagation();
+                                setDetailModal({
+                                  title: `Payouts — ${row.reference}`,
+                                  totalCents: row.payoutCents,
+                                  details: row.payoutDetails,
+                                });
+                              }}
+                            >
+                              {formatEuros(row.payoutCents / 100)}
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                               {formatEuros(row.rentCents / 100)}
