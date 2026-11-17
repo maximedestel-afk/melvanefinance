@@ -872,6 +872,11 @@ export async function getOwnerPayoutDetailsByListing(
 interface VrPlatformStatementColumn {
   title: string;
   value: number;
+  /** "accounts" | "subTotal" | "field" (ex: Nights) | "formula.percentage"
+   * (ex: MC %) — seules les deux premières sont des montants en cents, les
+   * deux autres sont un décompte ou un ratio et doivent être exclues des
+   * lignes affichées/sommées. */
+  type?: string;
 }
 
 interface VrPlatformListingSubtotal {
@@ -898,7 +903,7 @@ interface VrPlatformOwnerStatementSummariesResponse {
 }
 
 function findColumnValue(columns: VrPlatformStatementColumn[], title: string): number {
-  return columns.find((c) => c.title === title)?.value ?? columns[columns.length - 1]?.value ?? 0;
+  return columns.find((c) => c.title === title)?.value ?? 0;
 }
 
 export interface OwnerStatementLine {
@@ -963,9 +968,13 @@ export async function getOwnerStatementListingBreakdown(
             expenseLines: [],
             payoutCents: 0,
           };
-          bucket.netRevenueCents += findColumnValue(sub.columns, "Net Revenue");
+          // Owner Revenue exclut explicitement Cleaning Fees (demandé) — le
+          // ménage n'est pas un revenu propriétaire dans ce portefeuille.
+          const cleaningFeesCents = findColumnValue(sub.columns, "Cleaning Fees");
+          bucket.netRevenueCents += findColumnValue(sub.columns, "Net Revenue") - cleaningFeesCents;
           for (const col of sub.columns) {
-            if (col.title === "Net Revenue" || col.title === "Nights") continue;
+            if (col.type === "field" || col.type?.startsWith("formula")) continue;
+            if (col.title === "Net Revenue" || col.title === "Cleaning Fees") continue;
             bucket.netRevenueLines.push({ title: col.title, cents: col.value });
           }
           byListing.set(sub.listingId, bucket);
