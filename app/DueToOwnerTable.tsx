@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { formatEuros, todayIso } from "@/lib/format";
+import type { RentType } from "@/lib/types";
 
 interface PropertyOption {
   id: string;
@@ -9,10 +10,20 @@ interface PropertyOption {
   name: string | null;
   extraVrplatformReferences: string[];
   rentAmount: number | null;
+  rentType: RentType | null;
   ownerEmail: string | null;
   ownerLastName: string | null;
   ownerFirstName: string | null;
 }
+
+/** "F" (loyer fixe), "F+V" (fixe + variable) ou "C" (conciergerie — loyer
+ * variable, pas de garantie de loyer fixe) — demandé pour repérer le modèle
+ * du bien directement dans la liste. */
+const RENT_TYPE_BADGE: Record<RentType, string> = {
+  fixe: "F",
+  fixe_variable: "F+V",
+  variable: "C",
+};
 
 interface OwnerBalanceRow {
   listingId: string;
@@ -53,6 +64,7 @@ interface PropertyBalanceRow {
   listingId: string;
   reference: string;
   propertyName: string | null;
+  rentType: RentType | null;
   ownerKey: string;
   ownerLabel: string;
   prevMonthCents: number;
@@ -245,6 +257,7 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
         listingId,
         reference,
         propertyName: property.name,
+        rentType: property.rentType,
         ownerKey,
         ownerLabel,
         prevMonthCents,
@@ -467,6 +480,11 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                           >
                             <td className="py-1.5 pl-3 pr-2 font-medium text-[#1d1d1f]">
                               {row.reference}
+                              {row.rentType && (
+                                <span className="ml-1.5 rounded-[4px] bg-black/[0.06] px-1 py-0.5 text-[9.5px] font-semibold text-[#6e6e73]">
+                                  {RENT_TYPE_BADGE[row.rentType]}
+                                </span>
+                              )}
                               {row.propertyName && <div className="text-[10.5px] text-[#86868b]">{row.propertyName}</div>}
                             </td>
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
