@@ -40,9 +40,11 @@ export async function GET(request: Request) {
     const summaries = (await vrPlatformFetchRaw("/reports/owner-statement-summaries-per-layout", {
       dateRange,
       ...(search ? { search } : {}),
-    })) as { data: { contact: { id: string; name: string | null; email: string | null } }[] };
+    })) as { data: { contact: { contactId: string; name: string | null; email: string | null } }[] };
 
-    const firstContactId = summaries.data[0]?.contact?.id;
+    // Le champ est "contactId", pas "id" (confirmé en direct) — avec "id" le
+    // premier essai de cette route ramenait toujours details: null.
+    const firstContactId = summaries.data[0]?.contact?.contactId;
     const details = firstContactId
       ? await vrPlatformFetchRaw(`/reports/owner-statement-summaries-per-layout/details/${firstContactId}`, {
           dateRange,
