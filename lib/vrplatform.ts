@@ -735,15 +735,17 @@ interface VrPlatformExpenseJournalEntry {
    * par montant total de paiement plutôt que ligne par ligne. */
   transactionId?: string;
   txnCode?: string;
-  /** "reservation" | "deposit" | "expense" | "recurringFee" | "transfer" |
-   * "payout" — section du relevé propriétaire dont relève l'écriture (voir
-   * getOwnerBalanceActivityByListing : "reservation" = Net Owner Revenue,
-   * "payout" = Payouts, le reste = Expenses sur le relevé). */
+  /** Valeur observée en direct "transaction" sur une écriture de payout —
+   * PAS "payout" ni "reservation" comme le nom du filtre `entityTypes` de
+   * /reports/journal-entries le laisserait penser. Ne pas s'y fier pour
+   * distinguer Payouts/Net Owner Revenue, voir isPayoutAccountName. */
   entityType?: string;
   /** Listing rattaché à l'écriture, quand il y en a un — certaines dépenses
    * manager (frais généraux, ajustements non liés à un bien précis) n'en
-   * ont pas du tout. */
-  listing?: { id: string; name: string } | null;
+   * ont pas du tout. Champ plat "listingId" confirmé en direct (PAS un
+   * objet imbriqué "listing": {id, name} comme on aurait pu le supposer par
+   * analogie avec /reports/owner-balances, qui lui renvoie bien un objet). */
+  listingId?: string | null;
 }
 interface VrPlatformExpenseJournalEntriesResponse {
   data: VrPlatformExpenseJournalEntry[];
@@ -860,11 +862,19 @@ export async function getOwnerBalanceActivityByListing(
   const entries = await getExpenseJournalEntries(dateFilter, "owners", undefined, null);
   const byListing = new Map<string, OwnerBalanceActivity>();
   for (const entry of entries) {
-    const listingId = entry.listing?.id;
+    // PAS entry.listing?.id : /reports/journal-entries renvoie listingId en
+    // champ plat (confirmé en direct sur une écriture de payout), pas un
+    // objet imbriqué "listing" — avec l'ancien code, listingId était
+    // toujours undefined et TOUTES les écritures étaient ignorées
+    // ci-dessous, laissant Dépenses et Payouts à zéro.
+    const listingId = entry.listingId;
     if (!listingId) continue;
     const bucket = byListing.get(listingId) ?? { netOwnerRevenueCents: 0, payoutCents: 0, expenseCents: 0 };
     if (isPayoutAccountName(entry.account?.name)) {
-      bucket.payoutCents += entry.centTotal;
+      // Signe inversé : un payout de 5000€ (centTotal +500000 sur le compte
+      // "Transfers to/From Owners/PM", confirmé en direct) doit apparaître
+      // comme -5000 dans la colonne Payouts (réduit ce qui est dû).
+      bucket.payoutCents -= entry.centTotal;
     } else if (entry.entityType === "reservation") {
       bucket.netOwnerRevenueCents += entry.centTotal;
     } else {
@@ -1050,9 +1060,13 @@ export async function getPortfolioManagerExpenseEntries(
     // négatives de la paire miroir (voir le commentaire sur party) ne sont
     // pas des dépenses facturées au manager.
     if (entry.centTotal <= 0) continue;
-    const listingId = entry.listing?.id ?? null;
+    // PAS entry.listing?.id : /reports/journal-entries renvoie listingId en
+    // champ plat, pas un objet imbriqué "listing" (voir le commentaire sur
+    // VrPlatformExpenseJournalEntry.listingId) — cette ligne ne résolvait
+    // donc jamais aucune référence avant ce correctif.
+    const listingId = entry.listingId ?? null;
     rows.push({
-      reference: (listingId && referenceByListingId.get(listingId)) || (entry.listing?.name ?? null),
+      reference: (listingId && referenceByListingId.get(listingId)) || null,
       date: entry.txnAt.slice(0, 10),
       accountName: entry.account?.name ?? "Autre",
       description: entry.description ?? null,
