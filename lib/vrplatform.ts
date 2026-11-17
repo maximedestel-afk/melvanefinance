@@ -837,7 +837,13 @@ export interface OwnerBalanceActivity {
 export async function getOwnerBalanceActivityByListing(
   dateFilter: string
 ): Promise<Map<string, OwnerBalanceActivity>> {
-  const entries = await getExpenseJournalEntriesAllAccounts(dateFilter, "owners");
+  // PAS getExpenseJournalEntriesAllAccounts : malgré son nom, elle ne
+  // regarde que les comptes de classification "expense" (voir
+  // listAllAccountIds) — les écritures de revenu ("reservation") en sont
+  // exclues, ce qui laissait Revenus net propriétaire à 0. `accountIds:
+  // null` sur getExpenseJournalEntries omet entièrement le filtre de
+  // comptes et ramène vraiment tous les comptes (revenus compris).
+  const entries = await getExpenseJournalEntries(dateFilter, "owners", undefined, null);
   const byListing = new Map<string, OwnerBalanceActivity>();
   for (const entry of entries) {
     const listingId = entry.listing?.id;
