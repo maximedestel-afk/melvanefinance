@@ -87,6 +87,9 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
     title: string;
     totalCents: number;
     details: OwnerPayoutDetail[];
+    /** false pour une décomposition de formule (ordre fixe, pas de tri par
+     * date) plutôt qu'une vraie liste d'écritures chronologiques. */
+    sortByDate?: boolean;
   } | null>(null);
 
   const prevMonthDate = endOfPreviousMonth(date);
@@ -409,7 +412,31 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
                             <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                               {formatEuros(row.prevMonthCents / 100)}
                             </td>
-                            <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                            <td
+                              className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f] cursor-pointer underline decoration-dotted hover:text-[#0071e3]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDetailModal({
+                                  title: `Revenus net propriétaire — ${row.reference}`,
+                                  totalCents: row.netOwnerRevenueCents,
+                                  sortByDate: false,
+                                  details: [
+                                    {
+                                      date,
+                                      cents: row.currentCents,
+                                      description: `Solde au ${formatShortDate(date)}`,
+                                    },
+                                    { date, cents: -row.expenseCents, description: "− Dépenses" },
+                                    { date, cents: -row.payoutCents, description: "− Payouts" },
+                                    {
+                                      date: prevMonthDate,
+                                      cents: -row.prevMonthCents,
+                                      description: `− Solde au ${formatShortDate(prevMonthDate)}`,
+                                    },
+                                  ],
+                                });
+                              }}
+                            >
                               {formatEuros(row.netOwnerRevenueCents / 100)}
                             </td>
                             <td
@@ -485,22 +512,24 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
             </div>
             <table className="w-full border-collapse text-[13px]">
               <tbody>
-                {detailModal.details
-                  .slice()
-                  .sort((a, b) => a.date.localeCompare(b.date))
-                  .map((detail, i) => (
-                    <tr key={i} className="border-b border-black/[0.05] last:border-b-0">
+                {(detailModal.sortByDate === false
+                  ? detailModal.details
+                  : detailModal.details.slice().sort((a, b) => a.date.localeCompare(b.date))
+                ).map((detail, i) => (
+                  <tr key={i} className="border-b border-black/[0.05] last:border-b-0">
+                    {detailModal.sortByDate !== false && (
                       <td className="py-2 pr-2 text-[#1d1d1f]">{formatShortDate(detail.date)}</td>
-                      <td className="py-2 pl-2 text-[#6e6e73]">{detail.description}</td>
-                      <td className="py-2 pl-2 text-right tabular-nums font-medium text-[#1d1d1f]">
-                        {formatEuros(detail.cents / 100)}
-                      </td>
-                    </tr>
-                  ))}
+                    )}
+                    <td className="py-2 pl-2 text-[#6e6e73]">{detail.description}</td>
+                    <td className="py-2 pl-2 text-right tabular-nums font-medium text-[#1d1d1f]">
+                      {formatEuros(detail.cents / 100)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
               <tfoot>
                 <tr className="border-t border-black/[0.08]">
-                  <td colSpan={2} className="py-2 pr-2 font-semibold text-[#1d1d1f]">
+                  <td colSpan={detailModal.sortByDate === false ? 1 : 2} className="py-2 pr-2 font-semibold text-[#1d1d1f]">
                     Total
                   </td>
                   <td className="py-2 pl-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
