@@ -472,6 +472,60 @@ export async function listVrPlatformListings(): Promise<VrPlatformListingOption[
   return options;
 }
 
+interface VrPlatformOwnerBalanceRow {
+  balance: number;
+  availableBalance: number;
+  reserve: number;
+  currency: string;
+  listing: { id?: string | null; name?: string | null; title?: string | null } | null;
+}
+
+interface VrPlatformOwnerBalancesResponse {
+  data: VrPlatformOwnerBalanceRow[];
+}
+
+export interface OwnerBalanceRow {
+  listingId: string;
+  /** Référence du bien résolue via listVrPlatformListings (le nom du listing
+   * VRPlatform EST la référence du bien, ex: "42MIR") — avec repli sur le nom
+   * déjà fourni par /reports/owner-balances si jamais le listing n'apparaît
+   * pas (ex: listing inactif) dans la liste "active" de listVrPlatformListings. */
+  reference: string;
+  /** Solde dû au propriétaire à la date demandée — positif = on lui doit de
+   * l'argent (voir /reports/owner-balances, "balance"). */
+  balanceCents: number;
+  availableBalanceCents: number;
+  reserveCents: number;
+  currency: string;
+}
+
+/** Solde dû à chaque propriétaire (par listing) à une date donnée — lit
+ * directement /reports/owner-balances (comptabilité VRPlatform, inclut les
+ * écritures pas encore sur un relevé publié), pas de recalcul local.
+ * Utilisé par l'onglet "Due to owner". */
+export async function getOwnerBalances(date: string): Promise<OwnerBalanceRow[]> {
+  const [res, listings] = await Promise.all([
+    vrPlatformFetch<VrPlatformOwnerBalancesResponse>("/reports/owner-balances", { date }),
+    listVrPlatformListings(),
+  ]);
+  const listingNameById = new Map(listings.map((l) => [l.id, l.name]));
+  return res.data
+    .map((row): OwnerBalanceRow => {
+      const listingId = row.listing?.id ?? "";
+      const reference =
+        listingNameById.get(listingId) ?? row.listing?.title ?? row.listing?.name ?? listingId ?? "?";
+      return {
+        listingId,
+        reference,
+        balanceCents: Math.round(row.balance),
+        availableBalanceCents: Math.round(row.availableBalance),
+        reserveCents: Math.round(row.reserve),
+        currency: row.currency,
+      };
+    })
+    .sort((a, b) => b.balanceCents - a.balanceCents);
+}
+
 /** Variante diagnostic de listVrPlatformListings sans filtre de statut (donc
  * tous statuts, pas seulement "active") — pour retrouver des listings qui
  * n'apparaissent pas dans la liste active habituelle. TEMPORAIRE, voir
