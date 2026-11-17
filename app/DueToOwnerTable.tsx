@@ -182,11 +182,14 @@ export function DueToOwnerTable({ properties }: { properties: PropertyOption[] }
       // Exclut les listings qu'on ne sait rattacher à aucun propriétaire connu
       // localement — demandé explicitement pour ne pas polluer la liste.
       if (!property) continue;
+      // Exclut aussi les biens sans propriétaire renseigné du tout (ni nom
+      // ni email) — demandé explicitement.
+      if (!property.ownerFirstName && !property.ownerLastName && !property.ownerEmail) continue;
 
       const ownerLabel =
         property.ownerFirstName || property.ownerLastName
           ? `${property.ownerFirstName ?? ""} ${property.ownerLastName ?? ""}`.trim()
-          : (property.ownerEmail ?? "Propriétaire inconnu");
+          : (property.ownerEmail as string);
       const ownerKey = property.ownerEmail ?? ownerLabel;
 
       // Le loyer n'est compté qu'une fois par bien (sur le listing
