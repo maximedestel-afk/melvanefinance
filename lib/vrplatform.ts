@@ -712,6 +712,46 @@ async function addListingMarkup(months: MonthlyFinance[], listingId: string, yea
   }
 }
 
+// Comptes représentant une vraie dépense payée PAR le manager pour le compte
+// d'un bien (fournisseurs, prestataires...) — à distinguer des comptes de
+// EXPENSE_ACCOUNT_IDS qui sont des frais que le PROPRIÉTAIRE paie AU manager
+// (Transfer Fees, VRBO comm share, Payout Adjustments, Management Commission,
+// commissions de channel, VAT...) : ces derniers sont un profit pour le
+// manager, pas une dépense qu'il engage, et doivent être exclus d'ici (voir
+// classification/categoryName confirmés en direct via /api/admin/
+// vrplatform-accounts-check). Housekeeping est volontairement exclu — déjà
+// suivi dans les onglets Ménage/Bonus Ménage.
+const MANAGER_EXPENSE_ACCOUNT_IDS = [
+  // classification "expense"
+  "988fd364-33c5-4c4a-896e-80a42e7a768e", // Delivery
+  "f5a218f5-7663-4a5e-a1fd-8730404102cc", // Key Locker
+  "562002c2-4ee2-49ab-98ad-78760e928a76", // Maintenance
+  "a43dbf60-4fb1-4bad-b255-ea26aaeb081a", // Front Desk
+  "6cdbbc14-3a75-444f-a4c1-b04b8c73d701", // Staff
+  "007a6222-9de4-4dd9-a3fb-ab35377aae61", // Tech
+  "c760ea2d-34b8-4652-af5f-4db9f313834a", // Personal
+  "7dfff8bb-3be8-4498-8ba5-8d2798c91815", // Waiting Time
+  // classification "costOfRevenue", hors frais refacturés au propriétaire
+  "3daed64f-aad5-4286-b38d-b11eebe2bf18", // Supplies
+  "891ffc56-15ee-4ac7-9ace-b670e31361dd", // Guest Refund
+  "9a650331-1cc2-40e0-a6e9-462ee6c70d5d", // Insurance
+  // classification "equity" — argent réellement reversé pour le bien
+  "6486ff97-60a2-4bed-93c8-eae682a5939e", // Co-Host Payouts
+];
+
+/** Dépenses réellement payées par le manager pour un bien (voir
+ * MANAGER_EXPENSE_ACCOUNT_IDS), côté "owners" — colonne "Manager Expense" de
+ * l'onglet Revenus. */
+async function addListingManagerExpense(months: MonthlyFinance[], listingId: string, year: number): Promise<void> {
+  const entries = await getExpenseJournalEntries(String(year), "owners", listingId, MANAGER_EXPENSE_ACCOUNT_IDS);
+  for (const entry of entries) {
+    const month = Number(entry.txnAt.slice(5, 7));
+    // Négatif — c'est une dépense, qui se retranche du Profit (voir
+    // PropertyFinanceTable.tsx) et s'affiche en négatif dans sa colonne.
+    if (month >= 1 && month <= 12) months[month - 1].managerExpenseCents -= Math.abs(entry.centTotal);
+  }
+}
+
 // Comptes des sections "Operating & Maintenance Expenses", "Adjustments" et
 // "Processing Fees" de la configuration du owner statement VRPlatform
 // (GET /statements/layouts, "Default Statement Layout" de l'équipe) — pas de
@@ -2055,6 +2095,9 @@ export interface MonthlyFinance {
   /** Écritures du compte "Expense Markup Revenue" (majoration facturée sur
    * les dépenses refacturées au propriétaire). */
   markupCents: number;
+  /** Dépenses réellement payées par le manager pour ce bien (voir
+   * MANAGER_EXPENSE_ACCOUNT_IDS / addListingManagerExpense), négatif. */
+  managerExpenseCents: number;
   /** Somme des sections "Operating & Maintenance Expenses", "Adjustments" et
    * "Processing Fees" de la configuration du owner statement VRPlatform
    * (voir EXPENSE_ACCOUNT_IDS) — 0 si non demandé via includeExpenses. */
@@ -2096,6 +2139,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     cityTaxCents: 0,
     transferFeesCents: 0,
     markupCents: 0,
+    managerExpenseCents: 0,
     expensesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
@@ -2262,6 +2306,7 @@ export async function getPortfolioMonthlyFinancials(
         await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
         if (transferFeesAccountId) await addListingTransferFees(months, listingId, year, transferFeesAccountId);
         if (markupAccountId) await addListingMarkup(months, listingId, year, markupAccountId);
+        await addListingManagerExpense(months, listingId, year);
         if (options.includeExpenses) {
           const listingExpenses = await getListingExpenseCentsByMonth(listingId, year);
           for (let i = 0; i < 12; i++) rawExpenseCentsByMonth[i] += listingExpenses[i];

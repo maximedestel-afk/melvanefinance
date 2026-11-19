@@ -20,6 +20,7 @@ type SortKey =
   | "cityTax"
   | "transferFees"
   | "markup"
+  | "managerExpense"
   | "netRevenue"
   | "commission"
   | "fixedRent"
@@ -64,6 +65,7 @@ interface FinanceRow {
   cityTaxCents: number;
   transferFeesCents: number;
   markupCents: number;
+  managerExpenseCents: number;
   netRevenueCents: number;
   commissionCents: number | null;
   fixedRentCents: number | null;
@@ -95,6 +97,7 @@ function toRow(
   let cityTaxCents = selected.reduce((sum, m) => sum + m.cityTaxCents, 0);
   let transferFeesCents = selected.reduce((sum, m) => sum + m.transferFeesCents, 0);
   let markupCents = selected.reduce((sum, m) => sum + m.markupCents, 0);
+  let managerExpenseCents = selected.reduce((sum, m) => sum + m.managerExpenseCents, 0);
   let netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   let commissionCents: number | null =
     !property.isFixedRent && property.commissionPercent != null
@@ -115,6 +118,7 @@ function toRow(
     cityTaxCents = 0;
     transferFeesCents = 0;
     markupCents = 0;
+    managerExpenseCents = 0;
     cleaningExcludedForMoret = true;
   }
 
@@ -146,7 +150,7 @@ function toRow(
       ? null
       : Math.round((cleaningProductGuesty - cleaningProductCustom) * 100);
 
-  // Profit = (Commission, ou Net Revenue − Loyer fixe pour le modèle fixe) + City Tax + Profit ménage + Markup + Transfer Fees.
+  // Profit = (Commission, ou Net Revenue − Loyer fixe pour le modèle fixe) + City Tax + Profit ménage + Markup + Transfer Fees + Manager Expense (négatif).
   const baseProfitCents = property.isFixedRent
     ? fixedRentCents != null
       ? netRevenueCents - fixedRentCents
@@ -158,7 +162,8 @@ function toRow(
         cityTaxCents +
         (cleaningProfitCents ?? 0) +
         markupCents +
-        transferFeesCents
+        transferFeesCents +
+        managerExpenseCents
       : null;
 
   return {
@@ -173,6 +178,7 @@ function toRow(
     cityTaxCents,
     transferFeesCents,
     markupCents,
+    managerExpenseCents,
     netRevenueCents,
     commissionCents,
     fixedRentCents,
@@ -404,6 +410,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           case "markup":
             cmp = a.markupCents - b.markupCents;
             break;
+          case "managerExpense":
+            cmp = a.managerExpenseCents - b.managerExpenseCents;
+            break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
@@ -432,6 +441,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         cityTaxCents: sortedRows.reduce((sum, r) => sum + r.cityTaxCents, 0),
         transferFeesCents: sortedRows.reduce((sum, r) => sum + r.transferFeesCents, 0),
         markupCents: sortedRows.reduce((sum, r) => sum + r.markupCents, 0),
+        managerExpenseCents: sortedRows.reduce((sum, r) => sum + r.managerExpenseCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         commissionCents: sortedRows.reduce((sum, r) => sum + (r.commissionCents ?? 0), 0),
         fixedRentCents: sortedRows.reduce((sum, r) => sum + (r.fixedRentCents ?? 0), 0),
@@ -710,6 +720,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     narrow
                   />
                   <SortHeader
+                    label="Manager Expense"
+                    sortKey="managerExpense"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                    narrow
+                  />
+                  <SortHeader
                     label="Ménage"
                     sortKey="cleaningProfit"
                     activeKey={sortKey}
@@ -786,6 +804,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.markupCents} />
                   </td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                    <Money cents={row.managerExpenseCents} />
+                  </td>
                   <td
                     className={`py-1.5 px-2 text-right tabular-nums font-semibold ${
                       row.cleaningProfitCents == null
@@ -846,6 +867,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                 </td>
                 <td className="py-1.5 px-2 text-right tabular-nums">
                   <Money cents={totals.markupCents} bold />
+                </td>
+                <td className="py-1.5 px-2 text-right tabular-nums">
+                  <Money cents={totals.managerExpenseCents} bold />
                 </td>
                 <td
                   className={`py-1.5 px-2 text-right tabular-nums ${
