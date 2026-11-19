@@ -580,6 +580,7 @@ const RENTS_ACCOUNT = "Rents";
 const CHANNEL_COMMISSION_ACCOUNTS = new Set(["Channel Commissions - Airbnb", "Channel Commissions (Reference Account)"]);
 const CITY_TAX_ACCOUNT = "City Taxes Revenue";
 const TRANSFER_FEES_ACCOUNT = "Transfer Fees Revenues";
+const MARKUP_ACCOUNT = "Expense Markup Revenue";
 
 /** Table "type de ligne de réservation" → nom du compte comptable,
  * configurée côté VRPlatform (Réglages > Reservation Line Mappings). */
@@ -676,6 +677,32 @@ async function addListingTransferFees(
       for (const entry of res.data) {
         const month = Number(entry.txnAt.slice(5, 7));
         if (month >= 1 && month <= 12) months[month - 1].transferFeesCents += Math.abs(entry.centTotal);
+      }
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+  }
+}
+
+/** Même principe qu'addListingTransferFees, pour le compte "Expense Markup
+ * Revenue". */
+async function addListingMarkup(months: MonthlyFinance[], listingId: string, year: number, markupAccountId: string): Promise<void> {
+  try {
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformJournalEntriesResponse>("/reports/journal-entries", {
+        accountIds: markupAccountId,
+        listingIds: listingId,
+        date: String(year),
+        status: "active",
+        limit: "250",
+        page: String(page),
+      });
+      for (const entry of res.data) {
+        const month = Number(entry.txnAt.slice(5, 7));
+        if (month >= 1 && month <= 12) months[month - 1].markupCents += Math.abs(entry.centTotal);
       }
       if (page >= res.pagination.totalPage) break;
       page++;
@@ -2025,6 +2052,9 @@ export interface MonthlyFinance {
   channelFeesCents: number;
   cityTaxCents: number;
   transferFeesCents: number;
+  /** Écritures du compte "Expense Markup Revenue" (majoration facturée sur
+   * les dépenses refacturées au propriétaire). */
+  markupCents: number;
   /** Somme des sections "Operating & Maintenance Expenses", "Adjustments" et
    * "Processing Fees" de la configuration du owner statement VRPlatform
    * (voir EXPENSE_ACCOUNT_IDS) — 0 si non demandé via includeExpenses. */
@@ -2065,6 +2095,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     channelFeesCents: 0,
     cityTaxCents: 0,
     transferFeesCents: 0,
+    markupCents: 0,
     expensesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
@@ -2213,10 +2244,11 @@ export async function getPortfolioMonthlyFinancials(
   year: number,
   options: { includeExpenses?: boolean } = {}
 ): Promise<PropertyMonthlyResult[]> {
-  const [listings, accountByLineType, transferFeesAccountId] = await Promise.all([
+  const [listings, accountByLineType, transferFeesAccountId, markupAccountId] = await Promise.all([
     listVrPlatformListings(),
     getReservationLineAccountMap(),
     getAccountIdByName(TRANSFER_FEES_ACCOUNT),
+    getAccountIdByName(MARKUP_ACCOUNT),
   ]);
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
 
@@ -2229,6 +2261,7 @@ export async function getPortfolioMonthlyFinancials(
       for (const listingId of listingIds) {
         await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
         if (transferFeesAccountId) await addListingTransferFees(months, listingId, year, transferFeesAccountId);
+        if (markupAccountId) await addListingMarkup(months, listingId, year, markupAccountId);
         if (options.includeExpenses) {
           const listingExpenses = await getListingExpenseCentsByMonth(listingId, year);
           for (let i = 0; i < 12; i++) rawExpenseCentsByMonth[i] += listingExpenses[i];
