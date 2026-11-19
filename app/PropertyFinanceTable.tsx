@@ -146,13 +146,14 @@ function toRow(
       ? null
       : Math.round((cleaningProductGuesty - cleaningProductCustom) * 100);
 
-  // Profit = (Commission, ou Net Revenue − Loyer fixe pour le modèle fixe) + City Tax + Profit ménage.
+  // Profit = (Commission, ou Net Revenue − Loyer fixe pour le modèle fixe) + City Tax + Profit ménage + Markup.
   const baseProfitCents = property.isFixedRent
     ? fixedRentCents != null
       ? netRevenueCents - fixedRentCents
       : null
     : commissionCents;
-  const profitCents = baseProfitCents != null ? baseProfitCents + cityTaxCents + (cleaningProfitCents ?? 0) : null;
+  const profitCents =
+    baseProfitCents != null ? baseProfitCents + cityTaxCents + (cleaningProfitCents ?? 0) + markupCents : null;
 
   return {
     propertyId: property.propertyId,
