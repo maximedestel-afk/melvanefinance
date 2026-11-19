@@ -715,11 +715,22 @@ async function addListingMarkup(months: MonthlyFinance[], listingId: string, yea
 /** Dépenses payées par bien (comptes de EXPENSE_ACCOUNT_IDS, côté "owners"),
  * sans le compte Housekeeping — demandé explicitement pour la colonne "Exp
  * Manager" de l'onglet Revenus, le ménage étant déjà suivi ailleurs (onglets
- * Ménage/Bonus Ménage). Référence EXPENSE_ACCOUNT_IDS et HOUSEKEEPING_ACCOUNT_ID
- * définis plus bas dans ce fichier — OK car évalués seulement à l'appel, pas
- * au chargement du module. */
+ * Ménage/Bonus Ménage). Exclut aussi Transfer Fees et Payout Adjustments :
+ * côté "owners", ce sont des frais que le propriétaire paie AU manager (donc
+ * un profit pour le manager, déjà compté via la colonne Transfer Fees pour
+ * le premier), pas une dépense que le manager engage pour le compte du
+ * bien — les compter ici les ferait retrancher à tort du Profit. Référence
+ * EXPENSE_ACCOUNT_IDS et HOUSEKEEPING_ACCOUNT_ID définis plus bas dans ce
+ * fichier — OK car évalués seulement à l'appel, pas au chargement du module. */
 async function addListingExpManager(months: MonthlyFinance[], listingId: string, year: number): Promise<void> {
-  const accountIds = EXPENSE_ACCOUNT_IDS.filter((id) => id !== HOUSEKEEPING_ACCOUNT_ID);
+  const excludedAccountIds = new Set([
+    HOUSEKEEPING_ACCOUNT_ID,
+    "eaedcd1b-99d7-4532-96eb-d2144dc7b9ca", // Transfer Fees Expenses
+    "53bfbbf0-7432-4521-a275-86abee55b5b3", // Transfer Fees Revenues
+    "8aa7d442-e286-43ce-a8db-161c3cf4ae7a", // Payout Adjustments (expense)
+    "e2f66f13-dc2a-4f0c-a536-29fa20427fff", // Payout Adjustments (revenue)
+  ]);
+  const accountIds = EXPENSE_ACCOUNT_IDS.filter((id) => !excludedAccountIds.has(id));
   const entries = await getExpenseJournalEntries(String(year), "owners", listingId, accountIds);
   for (const entry of entries) {
     const month = Number(entry.txnAt.slice(5, 7));

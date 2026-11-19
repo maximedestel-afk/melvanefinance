@@ -7,8 +7,11 @@ export const maxDuration = 30;
 
 // TEMPORAIRE — diagnostic pour voir le détail des écritures qui composent
 // Exp Manager d'un bien sur un mois donné (reference, year, month) — mêmes
-// comptes que addListingExpManager (EXPENSE_ACCOUNT_IDS hors Housekeeping),
-// pour comprendre un montant affiché dans l'onglet Revenus.
+// comptes que addListingExpManager (EXPENSE_ACCOUNT_IDS hors Housekeeping,
+// Transfer Fees et Payout Adjustments — ces deux derniers sont des frais que
+// le propriétaire paie AU manager, donc un profit pour le manager, pas une
+// dépense qu'il engage pour le bien), pour comprendre un montant affiché
+// dans l'onglet Revenus.
 const API_BASE_URL = "https://api.vrplatform.app";
 
 const EXPENSE_ACCOUNT_IDS_NO_HOUSEKEEPING = [
@@ -21,14 +24,10 @@ const EXPENSE_ACCOUNT_IDS_NO_HOUSEKEEPING = [
   "26c88bed-c6e3-4fd6-a422-2cea05ec784c", // Expense Reimbursement Revenue - Supplies
   "9927d0a7-fb96-48bb-a585-9359b2b6e36e", // Expense Reimbursement Revenue - Maintenance
   "dea04c5a-824f-4dc6-80f9-eee706a7de3a", // Expense Markup Revenue
-  "8aa7d442-e286-43ce-a8db-161c3cf4ae7a", // Payout Adjustments (expense)
-  "e2f66f13-dc2a-4f0c-a536-29fa20427fff", // Payout Adjustments (revenue)
   "6486ff97-60a2-4bed-93c8-eae682a5939e", // Co-Host Payouts
   "891ffc56-15ee-4ac7-9ace-b670e31361dd", // Guest Refund
   "a9c0d5aa-0f0d-492d-a49a-2d86972baa63", // VRBO comm share Expenses
   "b14d1581-0ca4-4a5d-8a61-d8161c15f38a", // VRBO comm share Revenues
-  "eaedcd1b-99d7-4532-96eb-d2144dc7b9ca", // Transfer Fees Expenses
-  "53bfbbf0-7432-4521-a275-86abee55b5b3", // Transfer Fees Revenues
 ];
 
 async function vrPlatformFetchRaw(path: string, query: Record<string, string>): Promise<unknown> {
