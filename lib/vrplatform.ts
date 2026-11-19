@@ -723,7 +723,10 @@ async function addListingExpManager(months: MonthlyFinance[], listingId: string,
   const entries = await getExpenseJournalEntries(String(year), "owners", listingId, accountIds);
   for (const entry of entries) {
     const month = Number(entry.txnAt.slice(5, 7));
-    if (month >= 1 && month <= 12) months[month - 1].expManagerCents += Math.abs(entry.centTotal);
+    // Négatif — c'est une dépense, demandé explicitement pour qu'elle se
+    // retranche du Profit (voir PropertyFinanceTable.tsx) et s'affiche en
+    // négatif dans sa propre colonne.
+    if (month >= 1 && month <= 12) months[month - 1].expManagerCents -= Math.abs(entry.centTotal);
   }
 }
 
