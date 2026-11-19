@@ -201,7 +201,11 @@ function SortHeader({
 }) {
   const isActive = activeKey === sortKey;
   return (
-    <th className={`py-1.5 px-2 first:pl-3 last:pr-3 ${align === "right" ? "text-right" : "text-left"}`}>
+    <th
+      className={`sticky top-0 z-10 border-b border-black/[0.08] bg-[#fafafc] py-1.5 px-2 first:pl-3 last:pr-3 ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+    >
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -637,10 +641,10 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
             </p>
           )}
           <div className="overflow-hidden rounded-[14px] border border-black/[0.06]">
-            <div className="overflow-x-auto">
+            <div className="max-h-[70vh] overflow-auto">
             <table className="w-full border-collapse text-[12px]">
               <thead>
-                <tr className="border-b border-black/[0.08] bg-black/[0.015]">
+                <tr>
                   <SortHeader
                     label="Bien"
                     sortKey="reference"
@@ -649,7 +653,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     onSort={handleSort}
                     align="left"
                   />
-                  <th className="py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">Modèle</th>
+                  <th className="sticky top-0 z-10 border-b border-black/[0.08] bg-[#fafafc] py-1.5 px-2 text-left text-[11px] font-medium text-[#86868b]">
+                    Modèle
+                  </th>
                   <SortHeader label="TR" sortKey="fillRate" activeKey={sortKey} direction={direction} onSort={handleSort} />
                   <SortHeader label="Rents" sortKey="rents" activeKey={sortKey} direction={direction} onSort={handleSort} />
                   <SortHeader
