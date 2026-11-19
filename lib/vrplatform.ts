@@ -712,35 +712,6 @@ async function addListingMarkup(months: MonthlyFinance[], listingId: string, yea
   }
 }
 
-/** Dépenses payées par bien (comptes de EXPENSE_ACCOUNT_IDS, côté "owners"),
- * sans le compte Housekeeping — demandé explicitement pour la colonne "Exp
- * Manager" de l'onglet Revenus, le ménage étant déjà suivi ailleurs (onglets
- * Ménage/Bonus Ménage). Exclut aussi Transfer Fees et Payout Adjustments :
- * côté "owners", ce sont des frais que le propriétaire paie AU manager (donc
- * un profit pour le manager, déjà compté via la colonne Transfer Fees pour
- * le premier), pas une dépense que le manager engage pour le compte du
- * bien — les compter ici les ferait retrancher à tort du Profit. Référence
- * EXPENSE_ACCOUNT_IDS et HOUSEKEEPING_ACCOUNT_ID définis plus bas dans ce
- * fichier — OK car évalués seulement à l'appel, pas au chargement du module. */
-async function addListingExpManager(months: MonthlyFinance[], listingId: string, year: number): Promise<void> {
-  const excludedAccountIds = new Set([
-    HOUSEKEEPING_ACCOUNT_ID,
-    "eaedcd1b-99d7-4532-96eb-d2144dc7b9ca", // Transfer Fees Expenses
-    "53bfbbf0-7432-4521-a275-86abee55b5b3", // Transfer Fees Revenues
-    "8aa7d442-e286-43ce-a8db-161c3cf4ae7a", // Payout Adjustments (expense)
-    "e2f66f13-dc2a-4f0c-a536-29fa20427fff", // Payout Adjustments (revenue)
-  ]);
-  const accountIds = EXPENSE_ACCOUNT_IDS.filter((id) => !excludedAccountIds.has(id));
-  const entries = await getExpenseJournalEntries(String(year), "owners", listingId, accountIds);
-  for (const entry of entries) {
-    const month = Number(entry.txnAt.slice(5, 7));
-    // Négatif — c'est une dépense, demandé explicitement pour qu'elle se
-    // retranche du Profit (voir PropertyFinanceTable.tsx) et s'affiche en
-    // négatif dans sa propre colonne.
-    if (month >= 1 && month <= 12) months[month - 1].expManagerCents -= Math.abs(entry.centTotal);
-  }
-}
-
 // Comptes des sections "Operating & Maintenance Expenses", "Adjustments" et
 // "Processing Fees" de la configuration du owner statement VRPlatform
 // (GET /statements/layouts, "Default Statement Layout" de l'équipe) — pas de
@@ -2084,9 +2055,6 @@ export interface MonthlyFinance {
   /** Écritures du compte "Expense Markup Revenue" (majoration facturée sur
    * les dépenses refacturées au propriétaire). */
   markupCents: number;
-  /** Dépenses payées par bien (EXPENSE_ACCOUNT_IDS, hors Housekeeping) —
-   * voir addListingExpManager. */
-  expManagerCents: number;
   /** Somme des sections "Operating & Maintenance Expenses", "Adjustments" et
    * "Processing Fees" de la configuration du owner statement VRPlatform
    * (voir EXPENSE_ACCOUNT_IDS) — 0 si non demandé via includeExpenses. */
@@ -2128,7 +2096,6 @@ function emptyMonths(year: number): MonthlyFinance[] {
     cityTaxCents: 0,
     transferFeesCents: 0,
     markupCents: 0,
-    expManagerCents: 0,
     expensesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
@@ -2295,7 +2262,6 @@ export async function getPortfolioMonthlyFinancials(
         await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
         if (transferFeesAccountId) await addListingTransferFees(months, listingId, year, transferFeesAccountId);
         if (markupAccountId) await addListingMarkup(months, listingId, year, markupAccountId);
-        await addListingExpManager(months, listingId, year);
         if (options.includeExpenses) {
           const listingExpenses = await getListingExpenseCentsByMonth(listingId, year);
           for (let i = 0; i < 12; i++) rawExpenseCentsByMonth[i] += listingExpenses[i];
