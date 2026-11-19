@@ -537,7 +537,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   }
 
   /** Date au format YYMMDD (ex: "261107" pour le 7 novembre 2026) — utilisé
-   * dans le Bill ID de l'export Expense Ménage. */
+   * dans le nom du fichier de l'export Expense Ménage. */
   function formatYyMmDd(iso: string): string {
     const d = new Date(`${iso}T00:00:00Z`);
     if (Number.isNaN(d.getTime())) return iso;
@@ -547,16 +547,37 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     return `${yy}${mm}${dd}`;
   }
 
+  /** Dernier jour du mois contenant dateIso (ex: "2026-11-30" pour toute
+   * date de novembre 2026) — utilisé comme Issue Date de l'export Expense
+   * Ménage, pour que toutes les écritures d'un même mois/prestataire se
+   * regroupent sous une seule facture datée fin de mois. */
+  function lastDayOfMonthIso(dateIso: string): string {
+    const d = new Date(`${dateIso}T00:00:00Z`);
+    const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+    return lastDay.toISOString().slice(0, 10);
+  }
+
   interface ExpenseRow {
     propertyId: string;
     reference: string;
     refResa: string;
     confirmationCode: string | null;
     checkoutDate: string;
-    description: string;
+    /** Date de fin de mois (dernier jour du mois du check-out) — Issue Date
+     * de l'export, pour regrouper toutes les lignes d'un même mois sous une
+     * seule facture. */
+    issueDate: string;
+    /** Description partagée par toutes les lignes d'un même prestataire/mois
+     * ("Ménages {prestataire} {mois} {année}"), utilisée pour Description et
+     * Line Description dans l'export — crée une seule facture groupée. */
+    invoiceDescription: string;
     billId: string;
     contact: string;
     amount: number;
+    /** Description par check-out (pas la description groupée ci-dessus),
+     * utilisée uniquement pour repérer les doublons contre les écritures
+     * Housekeeping déjà postées côté VRPlatform. */
+    matchDescription: string;
     alreadyRecorded: boolean;
   }
 
@@ -564,7 +585,9 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
    * unitaire (custom field), Ref Resa = confirmation code VRPlatform (ou la
    * référence du bien à défaut), recoupé avec les écritures Housekeeping déjà
    * postées côté VRPlatform (alreadyRecordedDescriptions) pour repérer les
-   * doublons potentiels avant export. */
+   * doublons potentiels avant export. Issue Date/Bill ID/description sont
+   * partagés par prestataire + mois du check-out, pour que l'import
+   * VRPlatform crée une seule facture groupée par prestataire et par mois. */
   const expenseRows: ExpenseRow[] = useMemo(() => {
     if (!sortedRows) return [];
     const result: ExpenseRow[] = [];
@@ -575,18 +598,23 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
       const alreadyRecordedDescriptions = new Set(row.alreadyRecordedDescriptions);
       for (const checkout of row.checkouts) {
         const refResa = checkout.confirmationCode ?? row.reference;
-        const description = `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`;
+        const matchDescription = `Ménage — ${refResa} — ${formatShortBillDate(checkout.date)}`;
+        const checkoutMonthDate = new Date(`${checkout.date}T00:00:00Z`);
+        const yearMonth = checkout.date.slice(0, 7);
+        const supplierLabel = providerName || "Prestataire";
         result.push({
           propertyId: row.propertyId,
           reference: row.reference,
           refResa,
           confirmationCode: checkout.confirmationCode,
           checkoutDate: checkout.date,
-          description,
-          billId: `${row.reference}-Menage-${checkout.confirmationCode ?? formatYyMmDd(checkout.date)}`,
+          issueDate: lastDayOfMonthIso(checkout.date),
+          invoiceDescription: `Ménages ${supplierLabel} ${MONTH_LABELS_SHORT[checkoutMonthDate.getUTCMonth()]} ${checkoutMonthDate.getUTCFullYear()}`,
+          billId: `Menage-${yearMonth}-${supplierLabel}`,
           contact,
           amount: row.cleaningFeeCustomField,
-          alreadyRecorded: alreadyRecordedDescriptions.has(description),
+          matchDescription,
+          alreadyRecorded: alreadyRecordedDescriptions.has(matchDescription),
         });
       }
     }
@@ -627,9 +655,9 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     const csvRows: string[][] = [header];
     for (const r of expenseRowsToExport) {
       csvRows.push([
-        r.checkoutDate,
+        r.issueDate,
         "",
-        r.description,
+        r.invoiceDescription,
         "Unpaid",
         "",
         r.contact,
@@ -637,7 +665,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         "EUR",
         r.reference,
         r.confirmationCode ?? "",
-        r.description,
+        r.invoiceDescription,
         "Housekeeping",
         "FALSE",
         r.amount.toFixed(2),
