@@ -442,10 +442,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
    * (Issue Date/Payment Date/Description/Status/Bank-CC account/Contact/
    * Bill ID/Currency/Listing/Reservation/Line Description/Expense account/
    * Bill to Owner/Applied amount/Markup/Markup Tax), avec deux lignes par
-   * réservation sélectionnée, toutes Bill to Owner = TRUE :
-   * - Housekeeping, +Comm Ménage : rattrapage crédité au propriétaire.
-   * - Management Fee Rebate, Comm Supp (même signe que dans le tableau —
-   *   négatif) : commission M.G.B. supplémentaire sur le ménage. */
+   * réservation sélectionnée, toutes Bill to Owner = TRUE, toutes deux sur
+   * le compte Management Fee Rebate :
+   * - +Comm Ménage : rattrapage crédité au propriétaire.
+   * - Comm Supp (même signe que dans le tableau — négatif) : commission
+   *   M.G.B. supplémentaire sur le ménage. */
   function exportSelectedAsCsv() {
     if (!sortedRows || selectedReservationIds.size === 0) return;
     const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
@@ -500,7 +501,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
     for (const r of selectedRows) {
       const stayLabel = `${r.confirmationCode ?? r.reservationId} (${r.checkOut})`;
       if (r.commissionOnCleaningCents != null && r.commissionOnCleaningCents !== 0) {
-        addLine(r, stayLabel, "RM", "Rattrapage commission ménage", "Housekeeping", r.commissionOnCleaningCents);
+        addLine(r, stayLabel, "RM", "Rattrapage commission ménage", "Management Fee Rebate", r.commissionOnCleaningCents);
       }
       if (r.additionalCommissionCents != null && r.additionalCommissionCents !== 0) {
         addLine(r, stayLabel, "CS", "Commission ménage", "Management Fee Rebate", r.additionalCommissionCents);
