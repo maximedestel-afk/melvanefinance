@@ -758,6 +758,88 @@ async function addListingManagerExpense(months: MonthlyFinance[], listingId: str
   }
 }
 
+export interface FinanceLineDetailEntry {
+  date: string;
+  cents: number;
+  description: string;
+  accountName: string;
+}
+
+/** Détail écriture par écriture du Markup d'un bien sur une plage de dates
+ * (mêmes écritures que addListingMarkup, pas de filtre par party) — appelé
+ * au clic sur la colonne Markup de l'onglet Revenus. */
+export async function getListingMarkupDetail(listingId: string, dateFilter: string): Promise<FinanceLineDetailEntry[]> {
+  const markupAccountId = await getAccountIdByName(MARKUP_ACCOUNT);
+  if (!markupAccountId) return [];
+  try {
+    const entries: VrPlatformExpenseJournalEntry[] = [];
+    let page = 1;
+    for (;;) {
+      const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
+        accountIds: markupAccountId,
+        listingIds: listingId,
+        date: dateFilter,
+        status: "active",
+        limit: "250",
+        page: String(page),
+      });
+      entries.push(...res.data);
+      if (page >= res.pagination.totalPage) break;
+      page++;
+    }
+    return entries
+      .map((e) => ({
+        date: e.txnAt.slice(0, 10),
+        cents: Math.abs(e.centTotal),
+        description: e.description || "Markup",
+        accountName: e.account?.name ?? "Markup",
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+    return [];
+  }
+}
+
+/** Détail écriture par écriture de Manager Expense d'un bien sur une plage
+ * de dates (mêmes écritures et filtres que addListingManagerExpense) —
+ * appelé au clic sur la colonne Manager Expense de l'onglet Revenus. */
+export async function getListingManagerExpenseDetail(
+  listingId: string,
+  dateFilter: string
+): Promise<FinanceLineDetailEntry[]> {
+  const entries = await getExpenseJournalEntries(dateFilter, "manager", listingId, MANAGER_EXPENSE_ACCOUNT_IDS);
+  return entries
+    .filter((e) => e.centTotal > 0)
+    .map((e) => ({
+      date: e.txnAt.slice(0, 10),
+      cents: e.centTotal,
+      description: e.description || "Dépense",
+      accountName: e.account?.name ?? "Autre",
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Détail écriture par écriture de Markup ou Manager Expense pour un bien —
+ * plusieurs listings VRPlatform possibles (reference + extraVrplatformReferences,
+ * voir "14ECO 1"), fusionnés et triés par date. Alimente le clic sur ces deux
+ * colonnes de l'onglet Revenus. */
+export async function getPropertyFinanceLineDetail(
+  references: string[],
+  kind: "markup" | "managerExpense",
+  dateFilter: string
+): Promise<FinanceLineDetailEntry[]> {
+  const listings = await listVrPlatformListings();
+  const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const { listingIds } = resolveListingIds(references, listingsByName);
+  const perListing = await Promise.all(
+    listingIds.map((listingId) =>
+      kind === "markup" ? getListingMarkupDetail(listingId, dateFilter) : getListingManagerExpenseDetail(listingId, dateFilter)
+    )
+  );
+  return perListing.flat().sort((a, b) => a.date.localeCompare(b.date));
+}
+
 // Comptes des sections "Operating & Maintenance Expenses", "Adjustments" et
 // "Processing Fees" de la configuration du owner statement VRPlatform
 // (GET /statements/layouts, "Default Statement Layout" de l'équipe) — pas de

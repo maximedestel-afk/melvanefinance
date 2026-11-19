@@ -44,6 +44,14 @@ interface PropertyOption {
   reference: string;
   tags: string[];
   rentType: RentType | null;
+  extraVrplatformReferences: string[];
+}
+
+interface LineDetailEntry {
+  date: string;
+  cents: number;
+  description: string;
+  accountName: string;
 }
 
 interface CleaningApiResult {
@@ -56,6 +64,7 @@ interface CleaningApiResult {
 interface FinanceRow {
   propertyId: string;
   reference: string;
+  extraVrplatformReferences: string[];
   rentType: RentType | null;
   notFoundReferences: string[];
   isFixedRent: boolean;
@@ -76,6 +85,7 @@ interface FinanceRow {
 function toRow(
   property: PropertyMonthlyResult,
   rentType: RentType | null,
+  extraVrplatformReferences: string[],
   selectedMonths: number[],
   year: number,
   cleaning?: CleaningApiResult,
@@ -169,6 +179,7 @@ function toRow(
   return {
     propertyId: property.propertyId,
     reference: property.reference,
+    extraVrplatformReferences,
     rentType,
     notFoundReferences: property.notFoundReferences,
     isFixedRent: property.isFixedRent,
@@ -185,6 +196,11 @@ function toRow(
     profitCents,
     cleaningProfitCents,
   };
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", timeZone: "UTC" });
 }
 
 function Money({ cents, bold = false }: { cents: number | null; bold?: boolean }) {
@@ -244,6 +260,10 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
     [allProperties]
   );
   const rentTypeByPropertyId = useMemo(() => new Map(allProperties.map((p) => [p.id, p.rentType])), [allProperties]);
+  const extraReferencesByPropertyId = useMemo(
+    () => new Map(allProperties.map((p) => [p.id, p.extraVrplatformReferences])),
+    [allProperties]
+  );
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
@@ -264,6 +284,13 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
   const [removedRowIds, setRemovedRowIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detailModal, setDetailModal] = useState<{
+    title: string;
+    totalCents: number;
+    entries: LineDetailEntry[];
+    loading?: boolean;
+    error?: string;
+  } | null>(null);
 
   const includedTags = useMemo(
     () => Object.entries(tagFilters).filter(([, mode]) => mode === "include").map(([tag]) => tag),
@@ -374,6 +401,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         toRow(
           r,
           rentTypeByPropertyId.get(r.propertyId) ?? null,
+          extraReferencesByPropertyId.get(r.propertyId) ?? [],
           selectedMonths,
           year,
           cleaningByPropertyId.get(r.propertyId),
@@ -383,6 +411,34 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
 
   function removeRow(propertyId: string) {
     setRemovedRowIds((prev) => new Set(prev).add(propertyId));
+  }
+
+  /** Détail écriture par écriture de Markup ou Manager Expense d'un bien,
+   * sur les mois sélectionnés — chargé à la demande au clic. Le total
+   * affiché est recalculé à partir des écritures reçues (toujours positif,
+   * comme un montant dépensé), plutôt que de reprendre le signe négatif de
+   * la colonne Manager Expense du tableau principal. */
+  async function openLineDetail(row: FinanceRow, kind: "markup" | "managerExpense") {
+    const title = `${kind === "markup" ? "Markup" : "Manager Expense"} — ${row.reference}`;
+    setDetailModal({ title, totalCents: 0, entries: [], loading: true });
+    try {
+      const params = new URLSearchParams({
+        references: [row.reference, ...row.extraVrplatformReferences].join(","),
+        kind,
+        year: String(year),
+        months: selectedMonths.join(","),
+      });
+      const res = await fetch(`/api/finance/property-line-detail?${params.toString()}`);
+      const data = await res.json();
+      if (data.error) {
+        setDetailModal({ title, totalCents: 0, entries: [], error: data.error });
+      } else {
+        const entries: LineDetailEntry[] = data.entries;
+        setDetailModal({ title, totalCents: entries.reduce((sum, e) => sum + e.cents, 0), entries });
+      }
+    } catch {
+      setDetailModal({ title, totalCents: 0, entries: [], error: "Impossible de charger le détail." });
+    }
   }
 
   const sortedRows = rows
@@ -802,10 +858,30 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     <Money cents={row.transferFeesCents} />
                   </td>
                   <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
-                    <Money cents={row.markupCents} />
+                    {row.markupCents !== 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openLineDetail(row, "markup")}
+                        className="underline decoration-dotted underline-offset-2 hover:text-[#0071e3]"
+                      >
+                        <Money cents={row.markupCents} />
+                      </button>
+                    ) : (
+                      <Money cents={row.markupCents} />
+                    )}
                   </td>
                   <td className="py-1 px-1.5 text-right tabular-nums text-[#1d1d1f]">
-                    <Money cents={row.managerExpenseCents} />
+                    {row.managerExpenseCents !== 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openLineDetail(row, "managerExpense")}
+                        className="underline decoration-dotted underline-offset-2 hover:text-[#0071e3]"
+                      >
+                        <Money cents={row.managerExpenseCents} />
+                      </button>
+                    ) : (
+                      <Money cents={row.managerExpenseCents} />
+                    )}
                   </td>
                   <td
                     className={`py-1 px-1.5 text-right tabular-nums font-semibold ${
@@ -902,6 +978,62 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         <p className="text-[13px] text-[#6e6e73]">
           Choisis une année, un ou plusieurs mois, filtre par bien/tag si besoin, puis charge les données.
         </p>
+      )}
+
+      {detailModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setDetailModal(null)}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-[420px] overflow-y-auto rounded-[16px] bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[16px] font-semibold text-[#1d1d1f]">{detailModal.title}</h3>
+              <button
+                type="button"
+                onClick={() => setDetailModal(null)}
+                className="text-[15px] text-[#6e6e73] hover:text-[#1d1d1f]"
+              >
+                ✕
+              </button>
+            </div>
+            {detailModal.loading && <p className="text-[13px] text-[#6e6e73]">Chargement…</p>}
+            {detailModal.error && <p className="text-[13px] text-red-600">{detailModal.error}</p>}
+            {!detailModal.loading && !detailModal.error && detailModal.entries.length === 0 && (
+              <p className="text-[13px] text-[#6e6e73]">Aucune écriture sur cette période.</p>
+            )}
+            {!detailModal.loading && !detailModal.error && detailModal.entries.length > 0 && (
+              <table className="w-full border-collapse text-[13px]">
+                <tbody>
+                  {detailModal.entries.map((entry, i) => (
+                    <tr key={i} className="border-b border-black/[0.05] last:border-b-0">
+                      <td className="py-2 pr-2 text-[#1d1d1f]">{formatShortDate(entry.date)}</td>
+                      <td className="py-2 px-2 text-[#6e6e73]">
+                        {entry.accountName}
+                        {entry.description ? ` — ${entry.description}` : ""}
+                      </td>
+                      <td className="py-2 pl-2 text-right tabular-nums font-medium text-[#1d1d1f]">
+                        {formatEuros(entry.cents / 100)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-black/[0.08]">
+                    <td colSpan={2} className="py-2 pr-2 font-semibold text-[#1d1d1f]">
+                      Total
+                    </td>
+                    <td className="py-2 pl-2 text-right tabular-nums font-semibold text-[#1d1d1f]">
+                      {formatEuros(detailModal.totalCents / 100)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
