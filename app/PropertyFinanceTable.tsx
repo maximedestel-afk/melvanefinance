@@ -20,6 +20,7 @@ type SortKey =
   | "cityTax"
   | "transferFees"
   | "markup"
+  | "expManager"
   | "netRevenue"
   | "commission"
   | "fixedRent"
@@ -64,6 +65,7 @@ interface FinanceRow {
   cityTaxCents: number;
   transferFeesCents: number;
   markupCents: number;
+  expManagerCents: number;
   netRevenueCents: number;
   commissionCents: number | null;
   fixedRentCents: number | null;
@@ -95,6 +97,7 @@ function toRow(
   let cityTaxCents = selected.reduce((sum, m) => sum + m.cityTaxCents, 0);
   let transferFeesCents = selected.reduce((sum, m) => sum + m.transferFeesCents, 0);
   let markupCents = selected.reduce((sum, m) => sum + m.markupCents, 0);
+  let expManagerCents = selected.reduce((sum, m) => sum + m.expManagerCents, 0);
   let netRevenueCents = selected.reduce((sum, m) => sum + m.netRevenueCents, 0);
   let commissionCents: number | null =
     !property.isFixedRent && property.commissionPercent != null
@@ -115,6 +118,7 @@ function toRow(
     cityTaxCents = 0;
     transferFeesCents = 0;
     markupCents = 0;
+    expManagerCents = 0;
     cleaningExcludedForMoret = true;
   }
 
@@ -169,6 +173,7 @@ function toRow(
     cityTaxCents,
     transferFeesCents,
     markupCents,
+    expManagerCents,
     netRevenueCents,
     commissionCents,
     fixedRentCents,
@@ -400,6 +405,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
           case "markup":
             cmp = a.markupCents - b.markupCents;
             break;
+          case "expManager":
+            cmp = a.expManagerCents - b.expManagerCents;
+            break;
           case "netRevenue":
             cmp = a.netRevenueCents - b.netRevenueCents;
             break;
@@ -428,6 +436,7 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
         cityTaxCents: sortedRows.reduce((sum, r) => sum + r.cityTaxCents, 0),
         transferFeesCents: sortedRows.reduce((sum, r) => sum + r.transferFeesCents, 0),
         markupCents: sortedRows.reduce((sum, r) => sum + r.markupCents, 0),
+        expManagerCents: sortedRows.reduce((sum, r) => sum + r.expManagerCents, 0),
         netRevenueCents: sortedRows.reduce((sum, r) => sum + r.netRevenueCents, 0),
         commissionCents: sortedRows.reduce((sum, r) => sum + (r.commissionCents ?? 0), 0),
         fixedRentCents: sortedRows.reduce((sum, r) => sum + (r.fixedRentCents ?? 0), 0),
@@ -706,6 +715,14 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                     narrow
                   />
                   <SortHeader
+                    label="Exp Manager"
+                    sortKey="expManager"
+                    activeKey={sortKey}
+                    direction={direction}
+                    onSort={handleSort}
+                    narrow
+                  />
+                  <SortHeader
                     label="Ménage"
                     sortKey="cleaningProfit"
                     activeKey={sortKey}
@@ -782,6 +799,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                   <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
                     <Money cents={row.markupCents} />
                   </td>
+                  <td className="py-1.5 px-2 text-right tabular-nums text-[#1d1d1f]">
+                    <Money cents={row.expManagerCents} />
+                  </td>
                   <td
                     className={`py-1.5 px-2 text-right tabular-nums font-semibold ${
                       row.cleaningProfitCents == null
@@ -842,6 +862,9 @@ export function PropertyFinanceTable({ properties: unsortedProperties }: { prope
                 </td>
                 <td className="py-1.5 px-2 text-right tabular-nums">
                   <Money cents={totals.markupCents} bold />
+                </td>
+                <td className="py-1.5 px-2 text-right tabular-nums">
+                  <Money cents={totals.expManagerCents} bold />
                 </td>
                 <td
                   className={`py-1.5 px-2 text-right tabular-nums ${

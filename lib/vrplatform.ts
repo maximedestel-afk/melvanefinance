@@ -712,6 +712,21 @@ async function addListingMarkup(months: MonthlyFinance[], listingId: string, yea
   }
 }
 
+/** Dépenses payées par bien (comptes de EXPENSE_ACCOUNT_IDS, côté "owners"),
+ * sans le compte Housekeeping — demandé explicitement pour la colonne "Exp
+ * Manager" de l'onglet Revenus, le ménage étant déjà suivi ailleurs (onglets
+ * Ménage/Bonus Ménage). Référence EXPENSE_ACCOUNT_IDS et HOUSEKEEPING_ACCOUNT_ID
+ * définis plus bas dans ce fichier — OK car évalués seulement à l'appel, pas
+ * au chargement du module. */
+async function addListingExpManager(months: MonthlyFinance[], listingId: string, year: number): Promise<void> {
+  const accountIds = EXPENSE_ACCOUNT_IDS.filter((id) => id !== HOUSEKEEPING_ACCOUNT_ID);
+  const entries = await getExpenseJournalEntries(String(year), "owners", listingId, accountIds);
+  for (const entry of entries) {
+    const month = Number(entry.txnAt.slice(5, 7));
+    if (month >= 1 && month <= 12) months[month - 1].expManagerCents += Math.abs(entry.centTotal);
+  }
+}
+
 // Comptes des sections "Operating & Maintenance Expenses", "Adjustments" et
 // "Processing Fees" de la configuration du owner statement VRPlatform
 // (GET /statements/layouts, "Default Statement Layout" de l'équipe) — pas de
@@ -2055,6 +2070,9 @@ export interface MonthlyFinance {
   /** Écritures du compte "Expense Markup Revenue" (majoration facturée sur
    * les dépenses refacturées au propriétaire). */
   markupCents: number;
+  /** Dépenses payées par bien (EXPENSE_ACCOUNT_IDS, hors Housekeeping) —
+   * voir addListingExpManager. */
+  expManagerCents: number;
   /** Somme des sections "Operating & Maintenance Expenses", "Adjustments" et
    * "Processing Fees" de la configuration du owner statement VRPlatform
    * (voir EXPENSE_ACCOUNT_IDS) — 0 si non demandé via includeExpenses. */
@@ -2096,6 +2114,7 @@ function emptyMonths(year: number): MonthlyFinance[] {
     cityTaxCents: 0,
     transferFeesCents: 0,
     markupCents: 0,
+    expManagerCents: 0,
     expensesCents: 0,
     netRevenueCents: 0,
     nightsBooked: 0,
@@ -2262,6 +2281,7 @@ export async function getPortfolioMonthlyFinancials(
         await addListingMonthlyFinancials(months, listingId, year, accountByLineType);
         if (transferFeesAccountId) await addListingTransferFees(months, listingId, year, transferFeesAccountId);
         if (markupAccountId) await addListingMarkup(months, listingId, year, markupAccountId);
+        await addListingExpManager(months, listingId, year);
         if (options.includeExpenses) {
           const listingExpenses = await getListingExpenseCentsByMonth(listingId, year);
           for (let i = 0; i < 12; i++) rawExpenseCentsByMonth[i] += listingExpenses[i];
