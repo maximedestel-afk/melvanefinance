@@ -656,7 +656,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     for (const r of expenseRowsToExport) {
       csvRows.push([
         r.issueDate,
-        "",
+        r.issueDate,
         r.invoiceDescription,
         "Unpaid",
         "",
