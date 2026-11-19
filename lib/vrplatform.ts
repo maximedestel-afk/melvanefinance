@@ -712,15 +712,14 @@ async function addListingMarkup(months: MonthlyFinance[], listingId: string, yea
   }
 }
 
-// Comptes représentant une vraie dépense payée PAR le manager pour le compte
-// d'un bien (fournisseurs, prestataires...) — à distinguer des comptes de
-// EXPENSE_ACCOUNT_IDS qui sont des frais que le PROPRIÉTAIRE paie AU manager
-// (Transfer Fees, VRBO comm share, Payout Adjustments, Management Commission,
-// commissions de channel, VAT...) : ces derniers sont un profit pour le
-// manager, pas une dépense qu'il engage, et doivent être exclus d'ici (voir
-// classification/categoryName confirmés en direct via /api/admin/
-// vrplatform-accounts-check). Housekeeping est volontairement exclu — déjà
-// suivi dans les onglets Ménage/Bonus Ménage.
+// Comptes pouvant porter une vraie dépense payée PAR le manager pour le
+// compte d'un bien (fournisseurs, prestataires...), par opposition aux
+// comptes de frais refacturés au propriétaire (Transfer Fees, VRBO comm
+// share, Payout Adjustments, Management Commission, commissions de channel,
+// VAT...), qui restent exclus même si une correction ponctuelle y apparaît
+// côté manager. Housekeeping est volontairement exclu — déjà suivi dans les
+// onglets Ménage/Bonus Ménage. Classification/categoryName confirmés en
+// direct via /api/admin/vrplatform-accounts-check.
 const MANAGER_EXPENSE_ACCOUNT_IDS = [
   // classification "expense"
   "988fd364-33c5-4c4a-896e-80a42e7a768e", // Delivery
@@ -739,16 +738,23 @@ const MANAGER_EXPENSE_ACCOUNT_IDS = [
   "6486ff97-60a2-4bed-93c8-eae682a5939e", // Co-Host Payouts
 ];
 
-/** Dépenses réellement payées par le manager pour un bien (voir
- * MANAGER_EXPENSE_ACCOUNT_IDS), côté "owners" — colonne "Manager Expense" de
- * l'onglet Revenus. */
+/** Dépenses réellement payées par le manager pour un bien, PAS facturées au
+ * propriétaire — colonne "Manager Expense" de l'onglet Revenus. party =
+ * "owners" désigne les écritures imputées au SOLDE DU PROPRIÉTAIRE (voir le
+ * commentaire sur VrPlatformExpenseJournalEntry.party et
+ * getPortfolioManagerExpenseEntries), donc l'inverse de ce qu'on veut ici —
+ * il faut party = "manager" (écritures imputées au compte du manager), et ne
+ * garder que les montants positifs : les négatifs côté manager sont la
+ * contrepartie miroir d'une dépense déjà facturée au propriétaire, pas une
+ * vraie dépense du manager. */
 async function addListingManagerExpense(months: MonthlyFinance[], listingId: string, year: number): Promise<void> {
-  const entries = await getExpenseJournalEntries(String(year), "owners", listingId, MANAGER_EXPENSE_ACCOUNT_IDS);
+  const entries = await getExpenseJournalEntries(String(year), "manager", listingId, MANAGER_EXPENSE_ACCOUNT_IDS);
   for (const entry of entries) {
+    if (entry.centTotal <= 0) continue;
     const month = Number(entry.txnAt.slice(5, 7));
     // Négatif — c'est une dépense, qui se retranche du Profit (voir
     // PropertyFinanceTable.tsx) et s'affiche en négatif dans sa colonne.
-    if (month >= 1 && month <= 12) months[month - 1].managerExpenseCents -= Math.abs(entry.centTotal);
+    if (month >= 1 && month <= 12) months[month - 1].managerExpenseCents -= entry.centTotal;
   }
 }
 
