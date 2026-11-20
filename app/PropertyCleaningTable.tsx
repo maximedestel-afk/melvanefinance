@@ -690,7 +690,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         r.lineDescription,
         "Cleaning Fare",
         "FALSE",
-        r.amount.toFixed(2),
+        (-r.amount).toFixed(2),
         "",
         "",
       ]);
