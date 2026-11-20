@@ -223,7 +223,7 @@ export function SupplierExpensesTable() {
 <meta charset="utf-8" />
 <title>Relevé fournisseur — ${escapeHtml(vendorLabel)}</title>
 <style>
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     color: #1d1d1f;
@@ -255,7 +255,7 @@ export function SupplierExpensesTable() {
   thead th.num, td.num { text-align: right; }
   td.nowrap, th.num { white-space: nowrap; }
   tbody td { padding: 10px 0; border-bottom: 1px solid #f0f0f2; font-size: 13px; vertical-align: top; }
-  tr.category td { background: #f5f5f7; font-weight: 600; padding: 7px 10px; border-bottom: 1px solid #e5e5ea; }
+  tr.category td { background: rgba(0, 113, 227, 0.1); font-weight: 600; padding: 7px 10px; border-bottom: 1px solid #e5e5ea; }
   tr.category td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
   tr.category td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
   tbody tr:not(.category) td:first-child, tbody tr:not(.category) td:nth-child(2) { padding-left: 10px; }
