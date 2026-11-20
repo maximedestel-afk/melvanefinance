@@ -197,18 +197,23 @@ export function SupplierExpensesTable() {
     const issueDate = formatDate(todayIso());
 
     const rowsHtml = groupsByAccount
-      .map((group) =>
-        group.lines
-          .map(
-            (line) => `
+      .map(
+        (group) => `
+            <tr class="category">
+              <td colspan="3">${escapeHtml(group.accountName)} <span class="muted">(${group.lines.length})</span></td>
+              <td class="num nowrap">${escapeHtml(formatEuros(group.totalCents / 100))}</td>
+            </tr>` +
+          group.lines
+            .map(
+              (line) => `
             <tr>
-              <td>${escapeHtml(line.description)}<span class="muted"> — ${escapeHtml(group.accountName)}</span></td>
+              <td>${escapeHtml(line.description)}</td>
               <td>${escapeHtml(line.listingRef ?? "—")}</td>
-              <td class="num">${formatDate(line.date)}</td>
+              <td class="num nowrap">${formatDate(line.date)}</td>
               <td class="num">${escapeHtml(formatEuros(line.cents / 100))}</td>
             </tr>`
-          )
-          .join("")
+            )
+            .join("")
       )
       .join("");
 
@@ -248,7 +253,12 @@ export function SupplierExpensesTable() {
     text-transform: uppercase; padding: 0 0 8px; border-bottom: 1px solid #e5e5ea;
   }
   thead th.num, td.num { text-align: right; }
+  td.nowrap, th.num { white-space: nowrap; }
   tbody td { padding: 10px 0; border-bottom: 1px solid #f0f0f2; font-size: 13px; vertical-align: top; }
+  tr.category td { background: #f5f5f7; font-weight: 600; padding: 7px 10px; border-bottom: 1px solid #e5e5ea; }
+  tr.category td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+  tr.category td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+  tbody tr:not(.category) td:first-child, tbody tr:not(.category) td:nth-child(2) { padding-left: 10px; }
   .muted { color: #86868b; font-size: 12px; }
   .totals { margin-top: 20px; display: flex; justify-content: flex-end; }
   .totals .line {
