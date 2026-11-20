@@ -271,11 +271,18 @@ interface VrPlatformJournalEntryLineResponse {
      * app/api/admin/supplier-journal-entries-check). */
     listingId?: string;
     centTotal: number;
+    /** Line Description de la ligne de facture (distincte de la
+     * Description de la facture elle-même, voir t.description) — ex: pour
+     * l'export Expense Ménage, "Ménage {Ref Bien} {DD MMM} {N° résa}" par
+     * check-out, alors que la Description de la facture est groupée par
+     * prestataire/mois (voir PropertyCleaningTable.tsx). */
+    description?: string | null;
   }[];
   pagination: { page: number; totalPage: number };
 }
 
-/** Lignes de détail (bien + catégorie) des factures données, via
+/** Lignes de détail (bien + catégorie + Line Description) des factures
+ * données, via
  * /reports/journal-entries?transactionIds=...&types=transaction_expense_line
  * (le type "ligne", pas l'écriture d'en-tête "transaction_expense" ni les
  * écritures de paiement, pour ne pas compter en double) — par lots de
@@ -286,8 +293,8 @@ interface VrPlatformJournalEntryLineResponse {
 async function getJournalEntryLinesForTransactions(
   transactionIds: string[],
   listingsById: Map<string, string>
-): Promise<Map<string, { listingRef: string | null; accountName: string; cents: number }[]>> {
-  const map = new Map<string, { listingRef: string | null; accountName: string; cents: number }[]>();
+): Promise<Map<string, { listingRef: string | null; accountName: string; cents: number; description: string | null }[]>> {
+  const map = new Map<string, { listingRef: string | null; accountName: string; cents: number; description: string | null }[]>();
   if (transactionIds.length === 0) return map;
   const chunks: string[][] = [];
   for (let i = 0; i < transactionIds.length; i += TRANSACTION_ID_CHUNK_SIZE) {
@@ -311,6 +318,7 @@ async function getJournalEntryLinesForTransactions(
               listingRef: entry.listingId ? (listingsById.get(entry.listingId) ?? null) : null,
               accountName: entry.account?.name ?? "Autre",
               cents: entry.centTotal,
+              description: entry.description ?? null,
             });
             map.set(entry.transactionId, list);
           }
@@ -361,7 +369,10 @@ export async function getVendorExpenses(
         result.push({
           transactionId: t.id,
           date: t.date,
-          description: t.description,
+          // Line Description de la ligne plutôt que la Description de la
+          // facture (t.description) — demandé explicitement pour l'onglet
+          // Supplier, repli sur t.description si la ligne n'en a pas.
+          description: line.description ?? t.description,
           listingRef: line.listingRef,
           accountName: line.accountName,
           // Signe conservé — voir le commentaire sur amountCents ci-dessus.
