@@ -717,9 +717,9 @@ async function addListingMarkup(months: MonthlyFinance[], listingId: string, yea
 // comptes de frais refacturés au propriétaire (Transfer Fees, VRBO comm
 // share, Payout Adjustments, Management Commission, commissions de channel,
 // VAT...), qui restent exclus même si une correction ponctuelle y apparaît
-// côté manager. Housekeeping est volontairement exclu — déjà suivi dans les
-// onglets Ménage/Bonus Ménage. Classification/categoryName confirmés en
-// direct via /api/admin/vrplatform-accounts-check.
+// côté manager. Housekeeping est inclus malgré son suivi par ailleurs dans
+// les onglets Ménage/Bonus Ménage — demandé explicitement. Classification/
+// categoryName confirmés en direct via /api/admin/vrplatform-accounts-check.
 const MANAGER_EXPENSE_ACCOUNT_IDS = [
   // classification "expense"
   "988fd364-33c5-4c4a-896e-80a42e7a768e", // Delivery
@@ -731,6 +731,7 @@ const MANAGER_EXPENSE_ACCOUNT_IDS = [
   "c760ea2d-34b8-4652-af5f-4db9f313834a", // Personal
   "7dfff8bb-3be8-4498-8ba5-8d2798c91815", // Waiting Time
   // classification "costOfRevenue", hors frais refacturés au propriétaire
+  "4c2860e2-0acc-4b22-b665-38005b8cd610", // Housekeeping
   "3daed64f-aad5-4286-b38d-b11eebe2bf18", // Supplies
   "891ffc56-15ee-4ac7-9ace-b670e31361dd", // Guest Refund
   "9a650331-1cc2-40e0-a6e9-462ee6c70d5d", // Insurance
