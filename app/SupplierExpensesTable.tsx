@@ -42,6 +42,13 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
+/** Montant au format comptable pour le relevé PDF — négatif entre
+ * parenthèses (ex: "(25,00€)") plutôt qu'avec un signe moins. */
+function formatEurosAccounting(cents: number): string {
+  const euros = cents / 100;
+  return euros < 0 ? `(${formatEuros(-euros)})` : formatEuros(euros);
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
@@ -201,7 +208,7 @@ export function SupplierExpensesTable() {
         (group) => `
             <tr class="category">
               <td colspan="3">${escapeHtml(group.accountName)} <span class="muted">(${group.lines.length})</span></td>
-              <td class="num nowrap">${escapeHtml(formatEuros(group.totalCents / 100))}</td>
+              <td class="num nowrap">${escapeHtml(formatEurosAccounting(group.totalCents))}</td>
             </tr>` +
           group.lines
             .map(
@@ -210,7 +217,7 @@ export function SupplierExpensesTable() {
               <td>${escapeHtml(line.description)}</td>
               <td>${escapeHtml(line.listingRef ?? "—")}</td>
               <td class="num nowrap">${formatDate(line.date)}</td>
-              <td class="num">${escapeHtml(formatEuros(line.cents / 100))}</td>
+              <td class="num">${escapeHtml(formatEurosAccounting(line.cents))}</td>
             </tr>`
             )
             .join("")
@@ -308,7 +315,7 @@ export function SupplierExpensesTable() {
   </table>
 
   <div class="totals">
-    <div class="line"><span>Total</span><span>${escapeHtml(formatEuros(total / 100))}</span></div>
+    <div class="line"><span>Total</span><span>${escapeHtml(formatEurosAccounting(total))}</span></div>
   </div>
 
   <p class="footnote">
