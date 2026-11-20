@@ -297,7 +297,7 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
    * sélectionné (voir effectiveSelectedRowIds, montant négatif — dépense)
    * avec sa référence en Listing, plus une ligne par perte (montant
    * positif — déduction partielle de la dépense, sans référence de bien en
-   * Listing, toujours incluses). Description toujours "Bonus Ménage" et
+   * Listing, toujours incluses). Description toujours "BONUS NEW FLAT" et
    * Bill ID toujours "BONUSMM-{période}", identiques pour toutes les
    * lignes — une seule facture groupée ; le détail par bien/perte reste
    * dans Line Description. */
@@ -328,11 +328,11 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     for (const row of sortedRows) {
       if (!row.bonusCentsPerDay) continue;
       if (!effectiveSelectedRowIds.has(row.propertyId)) continue;
-      const lineDescription = `Bonus Ménage — ${row.reference} — ${periodSummary}`;
+      const lineDescription = `BONUS NEW FLAT — ${row.reference} — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
         csvExportDate,
-        "Bonus Ménage",
+        "BONUS NEW FLAT",
         "Unpaid",
         "",
         "contact@sweepit.fr",
@@ -349,11 +349,11 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       ]);
     }
     for (const loss of losses) {
-      const lineDescription = `Bonus Ménage — ${loss.name} (Perte) — ${periodSummary}`;
+      const lineDescription = `BONUS NEW FLAT — ${loss.name} (Perte) — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
         csvExportDate,
-        "Bonus Ménage",
+        "BONUS NEW FLAT",
         "Unpaid",
         "",
         "contact@sweepit.fr",
