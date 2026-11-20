@@ -133,7 +133,7 @@ export function DashboardClient({
             tab === "bonus" ? "bg-[#0071e3] text-white" : "bg-white text-[#1d1d1f] hover:bg-black/[0.04]"
           }`}
         >
-          Bonus Ménage
+          BONUS NEW FLAT
         </button>
         <button
           type="button"
@@ -307,7 +307,7 @@ export function DashboardClient({
       </section>
 
       <section className={`card space-y-3 p-5 ${tab === "bonus" ? "" : "hidden"}`}>
-        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">Bonus Ménage</h2>
+        <h2 className="text-[18px] font-semibold text-[#1d1d1f]">BONUS NEW FLAT</h2>
         <PropertyBonusTable properties={properties} />
       </section>
 
