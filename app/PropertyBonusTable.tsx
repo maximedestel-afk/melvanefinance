@@ -297,8 +297,10 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
    * sélectionné (voir effectiveSelectedRowIds, montant négatif — dépense)
    * avec sa référence en Listing, plus une ligne par perte (montant
    * positif — déduction partielle de la dépense, sans référence de bien en
-   * Listing mais reprise dans le Bill ID, toujours incluses). Chaque ligne
-   * a sa propre Description et son propre Bill ID. */
+   * Listing, toujours incluses). Description toujours "Bonus Ménage" et
+   * Bill ID toujours "BONUSMM-{période}", identiques pour toutes les
+   * lignes — une seule facture groupée ; le détail par bien/perte reste
+   * dans Line Description. */
   function exportExpensesCsv() {
     if (sortedRows == null) return;
     const header = [
@@ -321,23 +323,24 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
     ];
     const escapeCsvField = (value: string): string => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
     const periodRef = `${year}${selectedMonths.map((m) => String(m).padStart(2, "0")).join("")}`;
+    const billId = `BONUSMM-${periodRef}`;
     const csvRows: string[][] = [header];
     for (const row of sortedRows) {
       if (!row.bonusCentsPerDay) continue;
       if (!effectiveSelectedRowIds.has(row.propertyId)) continue;
-      const description = `Bonus Ménage — ${row.reference} — ${periodSummary}`;
+      const lineDescription = `Bonus Ménage — ${row.reference} — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
         csvExportDate,
-        description,
+        "Bonus Ménage",
         "Unpaid",
         "",
         "contact@sweepit.fr",
-        `${row.reference}-BONUSMENAGE-${periodRef}`,
+        billId,
         "EUR",
         row.reference,
         "",
-        description,
+        lineDescription,
         "Front Desk",
         "FALSE",
         (-row.bonusCentsPerDay / 100).toFixed(2),
@@ -346,22 +349,19 @@ export function PropertyBonusTable({ properties: unsortedProperties }: { propert
       ]);
     }
     for (const loss of losses) {
-      const description = `Bonus Ménage — ${loss.name} (Perte) — ${periodSummary}`;
-      // Référence du bien perdu (libre) reprise dans le Bill ID, nettoyée
-      // des caractères qui ne passent pas bien dans un identifiant.
-      const lossRef = loss.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+      const lineDescription = `Bonus Ménage — ${loss.name} (Perte) — ${periodSummary}`;
       csvRows.push([
         csvExportDate,
         csvExportDate,
-        description,
+        "Bonus Ménage",
         "Unpaid",
         "",
         "contact@sweepit.fr",
-        `${lossRef || "PERTE"}-PERTE-${loss.id}`,
+        billId,
         "EUR",
         "",
         "",
-        description,
+        lineDescription,
         "Front Desk",
         "FALSE",
         (loss.amountCents / 100).toFixed(2),
