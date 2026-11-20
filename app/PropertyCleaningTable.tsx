@@ -67,6 +67,7 @@ interface PropertyCheckout {
   date: string;
   confirmationCode: string | null;
   reservationId: string;
+  listingReference: string;
 }
 
 interface CleaningApiResult {
@@ -560,6 +561,11 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
   interface ExpenseRow {
     propertyId: string;
     reference: string;
+    /** Nom exact du listing VRPlatform où ce check-out a eu lieu (voir
+     * PropertyCheckout.listingReference) — colonne "Listing" de l'export,
+     * pas `reference` (la référence M.G.B agrégée, qui peut regrouper
+     * plusieurs listings VRPlatform). */
+    listingReference: string;
     refResa: string;
     confirmationCode: string | null;
     checkoutDate: string;
@@ -605,6 +611,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         result.push({
           propertyId: row.propertyId,
           reference: row.reference,
+          listingReference: checkout.listingReference,
           refResa,
           confirmationCode: checkout.confirmationCode,
           checkoutDate: checkout.date,
@@ -663,7 +670,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         r.contact,
         r.billId,
         "EUR",
-        r.reference,
+        r.listingReference,
         r.confirmationCode ?? "",
         r.invoiceDescription,
         "Cleaning Fare",

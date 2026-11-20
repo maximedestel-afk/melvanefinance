@@ -2694,11 +2694,23 @@ export interface PropertyCheckout {
    * écritures déjà postées sur le compte Housekeeping (voir
    * getRecordedCleaningExpenseDescriptions), pas affiché tel quel. */
   reservationId: string;
+  /** Nom exact du listing VRPlatform où ce check-out a eu lieu — peut
+   * différer de la référence M.G.B du bien (property.reference) pour un
+   * bien à plusieurs listings (extraVrplatformReferences, ex: "14ECO 1"
+   * rattaché à un autre bien). Colonne "Listing" de l'export Expense
+   * Ménage : il faut le vrai nom du listing, pas la référence agrégée, pour
+   * que VRPlatform rattache la dépense au bon listing. */
+  listingReference: string;
 }
 
 /** Check-outs (date + confirmation code + ID réservation) d'un listing
  * tombant dans un mois donné. */
-async function getListingCheckoutsForMonth(listingId: string, year: number, month: number): Promise<PropertyCheckout[]> {
+async function getListingCheckoutsForMonth(
+  listingId: string,
+  listingReference: string,
+  year: number,
+  month: number
+): Promise<PropertyCheckout[]> {
   const dateParam = `${year}-${String(month).padStart(2, "0")}`;
   const checkouts: PropertyCheckout[] = [];
   let page = 1;
@@ -2718,6 +2730,7 @@ async function getListingCheckoutsForMonth(listingId: string, year: number, mont
           date: reservation.checkOut.slice(0, 10),
           confirmationCode: reservation.confirmationCode,
           reservationId: reservation.id,
+          listingReference,
         });
       }
     }
@@ -2832,6 +2845,7 @@ export async function getPropertyCheckoutsForMonths(
 ): Promise<PropertyCheckoutsResult[]> {
   const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const listingNameById = new Map(listings.map((l) => [l.id, l.name]));
 
   return Promise.all(
     properties.map(async (property) => {
@@ -2841,7 +2855,10 @@ export async function getPropertyCheckoutsForMonths(
       const [perListingCheckouts, alreadyRecordedIds] = await Promise.all([
         Promise.all(
           listingIds.map(async (listingId) => {
-            const perMonth = await Promise.all(months.map((month) => getListingCheckoutsForMonth(listingId, year, month)));
+            const listingReference = listingNameById.get(listingId) ?? property.reference;
+            const perMonth = await Promise.all(
+              months.map((month) => getListingCheckoutsForMonth(listingId, listingReference, year, month))
+            );
             return perMonth.flat();
           })
         ),
@@ -2867,7 +2884,12 @@ export async function getPropertyCheckoutsForMonths(
 /** Check-outs (date + confirmation code + ID réservation) d'un listing dans
  * un filtre de date VRPlatform [startDate, endDate] (inclus, YYYY-MM-DD) —
  * version "plage de dates" de getListingCheckoutsForMonth. */
-async function getListingCheckoutsForDateRange(listingId: string, startDate: string, endDate: string): Promise<PropertyCheckout[]> {
+async function getListingCheckoutsForDateRange(
+  listingId: string,
+  listingReference: string,
+  startDate: string,
+  endDate: string
+): Promise<PropertyCheckout[]> {
   const checkouts: PropertyCheckout[] = [];
   let page = 1;
   for (;;) {
@@ -2885,6 +2907,7 @@ async function getListingCheckoutsForDateRange(listingId: string, startDate: str
         date: reservation.checkOut.slice(0, 10),
         confirmationCode: reservation.confirmationCode,
         reservationId: reservation.id,
+        listingReference,
       });
     }
     if (page >= res.pagination.totalPage) break;
@@ -2903,6 +2926,7 @@ export async function getPropertyCheckoutsForDateRangeDetailed(
 ): Promise<PropertyCheckoutsResult[]> {
   const listings = await listVrPlatformListings();
   const listingsByName = new Map(listings.map((l) => [l.name.trim().toLowerCase(), l]));
+  const listingNameById = new Map(listings.map((l) => [l.id, l.name]));
 
   return Promise.all(
     properties.map(async (property) => {
@@ -2910,7 +2934,11 @@ export async function getPropertyCheckoutsForDateRangeDetailed(
       const { listingIds, notFoundReferences } = resolveListingIds(references, listingsByName);
 
       const [perListingCheckouts, alreadyRecordedIds] = await Promise.all([
-        Promise.all(listingIds.map((listingId) => getListingCheckoutsForDateRange(listingId, startDate, endDate))),
+        Promise.all(
+          listingIds.map((listingId) =>
+            getListingCheckoutsForDateRange(listingId, listingNameById.get(listingId) ?? property.reference, startDate, endDate)
+          )
+        ),
         getRecordedCleaningExpenseDescriptions(listingIds, `${startDate}...${endDate}`),
       ]);
 
