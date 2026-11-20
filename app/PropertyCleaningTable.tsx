@@ -558,6 +558,14 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
     return lastDay.toISOString().slice(0, 10);
   }
 
+  /** Date au format "DD MMM" (ex: "07 Nov") — utilisé dans Line Description
+   * de l'export Expense Ménage. */
+  function formatDayMonth(dateIso: string): string {
+    const d = new Date(`${dateIso}T00:00:00Z`);
+    if (Number.isNaN(d.getTime())) return dateIso;
+    return `${String(d.getUTCDate()).padStart(2, "0")} ${MONTH_LABELS_SHORT[d.getUTCMonth()]}`;
+  }
+
   interface ExpenseRow {
     propertyId: string;
     reference: string;
@@ -574,9 +582,12 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
      * seule facture. */
     issueDate: string;
     /** Description partagée par toutes les lignes d'un même prestataire/mois
-     * ("Ménages {prestataire} {mois} {année}"), utilisée pour Description et
-     * Line Description dans l'export — crée une seule facture groupée. */
+     * ("Ménages {prestataire} {mois} {année}"), utilisée pour la colonne
+     * Description (facture) dans l'export — crée une seule facture groupée. */
     invoiceDescription: string;
+    /** Description par check-out ("Ménage {Ref Bien} {DD MMM} {N° résa}"),
+     * utilisée pour la colonne Line Description dans l'export. */
+    lineDescription: string;
     billId: string;
     contact: string;
     amount: number;
@@ -608,6 +619,9 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         const checkoutMonthDate = new Date(`${checkout.date}T00:00:00Z`);
         const yearMonth = checkout.date.slice(0, 7);
         const supplierLabel = providerName || "Prestataire";
+        const lineDescription = ["Ménage", checkout.listingReference, formatDayMonth(checkout.date), checkout.confirmationCode]
+          .filter(Boolean)
+          .join(" ");
         result.push({
           propertyId: row.propertyId,
           reference: row.reference,
@@ -617,6 +631,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
           checkoutDate: checkout.date,
           issueDate: lastDayOfMonthIso(checkout.date),
           invoiceDescription: `Ménages ${supplierLabel} ${MONTH_LABELS_SHORT[checkoutMonthDate.getUTCMonth()]} ${checkoutMonthDate.getUTCFullYear()}`,
+          lineDescription,
           billId: `Menage-${yearMonth}-${supplierLabel}`,
           contact,
           amount: row.cleaningFeeCustomField,
@@ -672,7 +687,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         "EUR",
         r.listingReference,
         r.confirmationCode ?? "",
-        r.invoiceDescription,
+        r.lineDescription,
         "Cleaning Fare",
         "FALSE",
         r.amount.toFixed(2),
