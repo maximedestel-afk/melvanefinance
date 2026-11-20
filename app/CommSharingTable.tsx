@@ -242,9 +242,11 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
   /** Export VRPlatform "Expenses" — deux lignes par ligne Early Check-in
    * sélectionnée, toutes deux sur le compte Early Check-ins, Bill to Owner
    * FALSE (transaction manager/prestataire, le propriétaire n'est pas
-   * concerné) : le Price est le revenu du manager, le Montant dû (Bonus
-   * ECI) est la dépense payée au prestataire (négatif, Contact =
-   * prestataire). */
+   * concerné) : le Price est le revenu du manager (garde le signe de
+   * amountDue, négatif pour un "ECI Refund"), le Montant dû (Bonus ECI) est
+   * la dépense payée au prestataire — toujours négatif (Math.abs), même sur
+   * un refund où amountDue est négatif : sinon -amountDue y redevient
+   * positif, ce qui ne représente pas une vraie somme à payer. */
   function exportExpensesCsv() {
     if (selectedEciRows.length === 0) return;
     const header = [
@@ -300,7 +302,7 @@ export function CommSharingTable({ properties }: { properties: PropertyOption[] 
         r.expenseDescription,
         "Early Check-ins",
         "FALSE",
-        (-r.amountDue!).toFixed(2),
+        (-Math.abs(r.amountDue!)).toFixed(2),
         "",
         "",
       ]);
