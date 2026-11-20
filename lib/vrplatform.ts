@@ -164,7 +164,11 @@ async function getVendorExpenseTransactionsByStatus(
         id: t.id,
         date: t.date,
         description: t.description,
-        amountCents: Math.abs(t.amount),
+        // Garde le signe réel de VRPlatform — un remboursement/avoir
+        // (ex: "ECI Refund", importé avec un Applied amount négatif) doit
+        // rester négatif ici, sinon impossible de le distinguer d'une
+        // vraie dépense dans l'onglet Supplier.
+        amountCents: t.amount,
         paidStatus,
         shortRef: t.shortRef,
       });
@@ -360,7 +364,8 @@ export async function getVendorExpenses(
           description: t.description,
           listingRef: line.listingRef,
           accountName: line.accountName,
-          cents: Math.abs(line.cents),
+          // Signe conservé — voir le commentaire sur amountCents ci-dessus.
+          cents: line.cents,
           paidStatus: t.paidStatus,
           shortRef: t.shortRef,
           paymentReference,
