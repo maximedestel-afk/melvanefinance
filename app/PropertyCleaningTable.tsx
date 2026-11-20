@@ -666,7 +666,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
         r.reference,
         r.confirmationCode ?? "",
         r.invoiceDescription,
-        "Housekeeping",
+        "Cleaning Fare",
         "FALSE",
         r.amount.toFixed(2),
         "",
@@ -1032,7 +1032,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
                 type="button"
                 onClick={exportExpensesCsv}
                 disabled={expenseRowsToExport.length === 0}
-                title="Une ligne par check-out — Issue Date = date du check-out, prix ménage unitaire (custom field), compte Housekeeping, Bill to Owner FALSE"
+                title="Une ligne par check-out — Issue Date = fin de mois, Payment Date = aujourd'hui, prix ménage unitaire (custom field), compte Cleaning Fare, Bill to Owner FALSE"
                 className="btn-secondary btn-sm"
               >
                 Exporter Expense (CSV)
@@ -1052,7 +1052,7 @@ export function PropertyCleaningTable({ properties: unsortedProperties }: { prop
                     <span className="text-amber-600">
                       {" "}
                       — {alreadyRecordedCount} déjà enregistrée{alreadyRecordedCount !== 1 ? "s" : ""} côté VRPlatform
-                      (compte Housekeeping)
+                      (compte Cleaning Fare)
                     </span>
                   )}
                 </p>

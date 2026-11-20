@@ -2687,7 +2687,7 @@ export interface PropertyCheckout {
   confirmationCode: string | null;
   /** ID VRPlatform (UUID) de la réservation — sert à recouper avec les
    * écritures déjà postées sur le compte Housekeeping (voir
-   * getRecordedHousekeepingDescriptions), pas affiché tel quel. */
+   * getRecordedCleaningExpenseDescriptions), pas affiché tel quel. */
   reservationId: string;
 }
 
@@ -2722,24 +2722,29 @@ async function getListingCheckoutsForMonth(listingId: string, year: number, mont
   return checkouts;
 }
 
-const HOUSEKEEPING_ACCOUNT_ID = "4c2860e2-0acc-4b22-b665-38005b8cd610";
+const CLEANING_FARE_ACCOUNT = "Cleaning Fare";
 
-/** Descriptions des écritures déjà postées sur le compte Housekeeping sur un
- * filtre de date VRPlatform donné — sert à recouper l'export Expense Ménage
- * avec VRPlatform pour repérer les check-out déjà enregistrés (et éviter
- * les doublons). Matché sur la description plutôt que reservationId : les
- * lignes importées via CSV ne sont pas forcément rattachées à une
- * réservation (colonne "Reservation" du CSV), alors que la description est
- * toujours présente et reconstructible à l'identique côté app (voir
- * PropertyCleaningTable.tsx, format "Ménage — {Ref Resa} — {date}"). */
-async function getRecordedHousekeepingDescriptions(listingIds: string[], dateFilter: string): Promise<Set<string>> {
+/** Descriptions des écritures déjà postées sur le compte Cleaning Fare
+ * (compte de l'export Expense Ménage, voir PropertyCleaningTable.tsx — avant
+ * c'était Housekeeping) sur un filtre de date VRPlatform donné — sert à
+ * recouper l'export avec VRPlatform pour repérer les check-out déjà
+ * enregistrés (et éviter les doublons). Matché sur la description plutôt que
+ * reservationId : les lignes importées via CSV ne sont pas forcément
+ * rattachées à une réservation (colonne "Reservation" du CSV), alors que la
+ * description est toujours présente et reconstructible à l'identique côté
+ * app (voir PropertyCleaningTable.tsx, format "Ménage — {Ref Resa} — {date}").
+ * Résolution de l'ID par nom (comme Transfer Fees Revenues) plutôt qu'un ID
+ * en dur, le compte ayant changé une fois déjà. */
+async function getRecordedCleaningExpenseDescriptions(listingIds: string[], dateFilter: string): Promise<Set<string>> {
   const descriptions = new Set<string>();
+  const accountId = await getAccountIdByName(CLEANING_FARE_ACCOUNT);
+  if (!accountId) return descriptions;
   for (const listingId of listingIds) {
     try {
       let page = 1;
       for (;;) {
         const res = await vrPlatformFetch<VrPlatformExpenseJournalEntriesResponse>("/reports/journal-entries", {
-          accountIds: HOUSEKEEPING_ACCOUNT_ID,
+          accountIds: accountId,
           listingIds: listingId,
           date: dateFilter,
           status: "active",
@@ -2765,7 +2770,7 @@ const EARLY_CHECKINS_ACCOUNT_ID = "3b21c65d-3025-4b7f-a3be-bafea11851c0";
  * pour un mois donné — sert à recouper l'export Expense ECI (onglet ECI,
  * CommSharingTable.tsx) avec VRPlatform et repérer les lignes déjà
  * enregistrées (éviter les doublons), matché sur la description comme pour
- * getRecordedHousekeepingDescriptions. Pas de filtre par listing : les
+ * getRecordedCleaningExpenseDescriptions. Pas de filtre par listing : les
  * lignes ECI viennent de Monday.com (référence de bien en texte libre, pas
  * forcément résolue en ID de listing), donc une seule requête sur tout le
  * compte pour le mois plutôt qu'une par listing. */
@@ -2835,7 +2840,7 @@ export async function getPropertyCheckoutsForMonths(
             return perMonth.flat();
           })
         ),
-        getRecordedHousekeepingDescriptions(listingIds, String(year)),
+        getRecordedCleaningExpenseDescriptions(listingIds, String(year)),
       ]);
 
       const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
@@ -2901,7 +2906,7 @@ export async function getPropertyCheckoutsForDateRangeDetailed(
 
       const [perListingCheckouts, alreadyRecordedIds] = await Promise.all([
         Promise.all(listingIds.map((listingId) => getListingCheckoutsForDateRange(listingId, startDate, endDate))),
-        getRecordedHousekeepingDescriptions(listingIds, `${startDate}...${endDate}`),
+        getRecordedCleaningExpenseDescriptions(listingIds, `${startDate}...${endDate}`),
       ]);
 
       const primaryListing = listingsByName.get(property.reference.trim().toLowerCase());
