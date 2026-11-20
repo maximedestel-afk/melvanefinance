@@ -42,6 +42,14 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 export function SupplierExpensesTable() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
@@ -171,6 +179,141 @@ export function SupplierExpensesTable() {
     a.download = `supplier_expenses_${todayIso()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  /** Relevé fournisseur imprimable (même structure que le modèle de devis
+   * Melvane : en-tête société, bloc infos, tableau, total), ouvert dans un
+   * nouvel onglet avec le dialogue d'impression du navigateur déjà lancé —
+   * l'utilisateur choisit "Enregistrer en PDF" pour obtenir le fichier. Pas
+   * de TVA : les montants sont déjà des dépenses dues, pas une vente. */
+  function exportStatementPdf() {
+    if (!expenses || expenses.length === 0) return;
+    const vendor = (vendors ?? []).find((v) => v.id === vendorId);
+    const vendorLabel = vendor?.name ?? vendor?.email ?? "—";
+    const periodLabel =
+      mode === "month" ? `${MONTH_LABELS_SHORT[month - 1]} ${year}` : `${formatDate(startDate)} — ${formatDate(endDate)}`;
+    const refSuffix = mode === "month" ? `${year}${String(month).padStart(2, "0")}` : startDate.replace(/-/g, "");
+    const reference = `REL-${refSuffix}-01`;
+    const issueDate = formatDate(todayIso());
+
+    const rowsHtml = groupsByAccount
+      .map((group) =>
+        group.lines
+          .map(
+            (line) => `
+            <tr>
+              <td>${escapeHtml(line.description)}<span class="muted"> — ${escapeHtml(group.accountName)}</span></td>
+              <td>${escapeHtml(line.listingRef ?? "—")}</td>
+              <td class="num">${formatDate(line.date)}</td>
+              <td class="num">${escapeHtml(formatEuros(line.cents / 100))}</td>
+            </tr>`
+          )
+          .join("")
+      )
+      .join("");
+
+    const html = `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<title>Relevé fournisseur — ${escapeHtml(vendorLabel)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #1d1d1f;
+    margin: 0;
+    padding: 48px 56px;
+  }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .mark {
+    width: 40px; height: 40px; border-radius: 10px; background: #1d1d1f;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mark svg { width: 20px; height: 20px; fill: #fff; }
+  .company { text-align: right; font-size: 12px; color: #6e6e73; line-height: 1.5; }
+  .company strong { color: #1d1d1f; font-size: 13px; }
+  h1 { font-size: 40px; font-weight: 700; margin: 40px 0 4px; }
+  .subtitle { color: #6e6e73; font-size: 14px; margin: 0 0 24px; }
+  .infobox {
+    display: flex; gap: 32px; background: #f5f5f7; border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 28px;
+  }
+  .infobox div { flex: 1; }
+  .infobox .label { font-size: 10px; letter-spacing: 0.04em; color: #86868b; text-transform: uppercase; }
+  .infobox .value { font-size: 14px; font-weight: 600; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  thead th {
+    text-align: left; font-size: 10px; letter-spacing: 0.04em; color: #86868b;
+    text-transform: uppercase; padding: 0 0 8px; border-bottom: 1px solid #e5e5ea;
+  }
+  thead th.num, td.num { text-align: right; }
+  tbody td { padding: 10px 0; border-bottom: 1px solid #f0f0f2; font-size: 13px; vertical-align: top; }
+  .muted { color: #86868b; font-size: 12px; }
+  .totals { margin-top: 20px; display: flex; justify-content: flex-end; }
+  .totals .line {
+    display: flex; justify-content: space-between; gap: 40px; width: 260px;
+    padding: 10px 0; font-size: 18px; font-weight: 700; border-top: 2px solid #1d1d1f;
+  }
+  .footnote { margin-top: 48px; font-size: 11px; color: #86868b; line-height: 1.5; }
+  @media print {
+    body { padding: 0 32px; }
+    @page { margin: 24px; }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="mark"><svg viewBox="0 0 24 24"><path d="M12 3 2 12h3v8h5v-6h4v6h5v-8h3z"/></svg></div>
+    <div class="company">
+      <strong>Melvane by Design</strong><br />
+      20-22 Wenlock Road<br />
+      London N1 7GU, Royaume-Uni<br />
+      melvanebydesign@gmail.com
+    </div>
+  </div>
+
+  <h1>Relevé fournisseur</h1>
+  <p class="subtitle">Récapitulatif des sommes dues</p>
+
+  <div class="infobox">
+    <div><div class="label">Fournisseur</div><div class="value">${escapeHtml(vendorLabel)}</div></div>
+    <div><div class="label">Période</div><div class="value">${escapeHtml(periodLabel)}</div></div>
+    <div><div class="label">Référence</div><div class="value">${escapeHtml(reference)}</div></div>
+    <div><div class="label">Date</div><div class="value">${escapeHtml(issueDate)}</div></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Désignation</th>
+        <th>Bien</th>
+        <th class="num">Date</th>
+        <th class="num">Montant</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHtml}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="line"><span>Total</span><span>${escapeHtml(formatEuros(total / 100))}</span></div>
+  </div>
+
+  <p class="footnote">
+    Relevé généré le ${issueDate} — ${expenses.length} ligne${expenses.length !== 1 ? "s" : ""}.
+  </p>
+</body>
+</html>`;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => printWindow.print();
   }
 
   return (
@@ -324,7 +467,10 @@ export function SupplierExpensesTable() {
               {expenses.length} ligne{expenses.length !== 1 ? "s" : ""} sur {groupsByAccount.length} catégorie
               {groupsByAccount.length !== 1 ? "s" : ""} · {formatEuros(total / 100)}
             </span>
-            <button type="button" onClick={exportExcel} className="btn-secondary btn-sm ml-auto">
+            <button type="button" onClick={exportStatementPdf} className="btn-secondary btn-sm ml-auto">
+              Relevé fournisseur (PDF)
+            </button>
+            <button type="button" onClick={exportExcel} className="btn-secondary btn-sm">
               Exporter Excel (CSV)
             </button>
           </div>
