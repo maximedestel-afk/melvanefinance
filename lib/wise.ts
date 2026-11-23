@@ -23,9 +23,7 @@ async function wiseFetch<T>(path: string, query?: Record<string, string>): Promi
   });
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    throw new Error(
-      `Wise a répondu ${response.status} sur ${url.pathname}${url.search} — ${body.slice(0, 500) || "(réponse sans corps)"}`
-    );
+    throw new Error(`Wise a répondu ${response.status} sur ${path}${body ? ` — ${body.slice(0, 300)}` : ""}`);
   }
   return response.json() as Promise<T>;
 }
