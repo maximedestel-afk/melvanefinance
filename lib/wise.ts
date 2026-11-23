@@ -112,50 +112,33 @@ export interface WiseActivityRow {
   type: string;
 }
 
-// size=200 renvoie un 400 (sans corps) — confirmé en direct via la route de
-// diagnostic wise-activities-debug ; size=10 passe. Valeur max réelle non
-// connue avec certitude, 50 reste prudent sous ce seuil.
-const ACTIVITIES_PAGE_SIZE = 50;
-const ACTIVITIES_MAX_PAGES = 20;
-
 /** Historique d'activité d'un profil (transferts, conversions, paiements
- * carte, frais...) sur une période, normalisé, en suivant la pagination par
- * curseur (nextCursor) tant qu'une page est pleine — mélange TOUTES les
+ * carte, frais...) sur une période, normalisé — mélange TOUTES les
  * sous-réserves du profil (pas de filtre par compte/devise possible sur cet
  * endpoint, voir le commentaire en tête de fichier). PAS l'endpoint
  * balance-statement (protégé par SCA hors US/AU/NZ/SG/CA/MY, donc
  * inutilisable pour un sync serveur sans interaction utilisateur
- * récurrente). */
-export async function getWiseActivityRows(profileId: number, sinceIso: string, untilIso: string): Promise<WiseActivityRow[]> {
+ * récurrente). Une seule page (jusqu'à `size` résultats, pas de suivi du
+ * curseur) — suffisant pour un usage "relevé récent", pas pour un historique
+ * complet. */
+export async function getWiseActivityRows(profileId: number, sinceIso: string, untilIso: string, size = 200): Promise<WiseActivityRow[]> {
+  const res = await wiseFetch<WiseActivitiesResponse>(`/v1/profiles/${profileId}/activities`, {
+    since: sinceIso,
+    until: untilIso,
+    size: String(size),
+  });
   const rows: WiseActivityRow[] = [];
-  let cursor: string | null = null;
-  for (let page = 0; page < ACTIVITIES_MAX_PAGES; page++) {
-    const query: Record<string, string> = { since: sinceIso, until: untilIso, size: String(ACTIVITIES_PAGE_SIZE) };
-    if (cursor) query.nextCursor = cursor;
-    let res: WiseActivitiesResponse;
-    try {
-      res = await wiseFetch<WiseActivitiesResponse>(`/v1/profiles/${profileId}/activities`, query);
-    } catch (err) {
-      // Au-delà de la première page : dégradation silencieuse (nom exact du
-      // paramètre de pagination non garanti) — on garde ce qui a déjà été
-      // collecté plutôt que de tout perdre. La première page doit réussir.
-      if (page === 0) throw err;
-      break;
-    }
-    for (const activity of res.activities) {
-      const parsed = parseWiseActivityAmount(activity.primaryAmount);
-      if (!parsed) continue;
-      rows.push({
-        date: activity.createdOn.slice(0, 10),
-        amount: parsed.amount.toFixed(2),
-        currency: parsed.currency,
-        description: stripHtmlTags(activity.title),
-        wiseId: activity.resource.id,
-        type: activity.type,
-      });
-    }
-    if (res.activities.length < ACTIVITIES_PAGE_SIZE || !res.cursor) break;
-    cursor = res.cursor;
+  for (const activity of res.activities) {
+    const parsed = parseWiseActivityAmount(activity.primaryAmount);
+    if (!parsed) continue;
+    rows.push({
+      date: activity.createdOn.slice(0, 10),
+      amount: parsed.amount.toFixed(2),
+      currency: parsed.currency,
+      description: stripHtmlTags(activity.title),
+      wiseId: activity.resource.id,
+      type: activity.type,
+    });
   }
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
