@@ -1,7 +1,6 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import { todayIso } from "@/lib/format";
 
 interface VrRow {
   date: string;
@@ -161,15 +160,6 @@ export function BankStatementCsvTable() {
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const [liveStartDate, setLiveStartDate] = useState(() => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [liveEndDate, setLiveEndDate] = useState(todayIso());
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
-
   async function loadConversions() {
     setLoadingConversions(true);
     setListError(null);
@@ -261,62 +251,6 @@ export function BankStatementCsvTable() {
         setParseError("Impossible de lire ce fichier — vérifie qu'il s'agit bien d'un CSV.");
         setRows(null);
       });
-  }
-
-  /** Charge le flux Wise en direct (API) sur [liveStartDate, liveEndDate] à
-   * la place d'un upload manuel — mélange tous les comptes/devises Wise
-   * (voir lib/wise.ts, pas de filtre par compte possible côté API). Un CSV
-   * "virtuel" (mêmes colonnes qu'un export Wise) est généré à partir des
-   * lignes reçues et posé comme `file`, pour que le téléchargement et
-   * l'enregistrement d'historique (qui attendent un fichier WISE d'origine)
-   * continuent de fonctionner sans changement. */
-  async function loadLiveWise() {
-    setLiveLoading(true);
-    setLiveError(null);
-    setParseError(null);
-    setSaveError(null);
-    try {
-      const params = new URLSearchParams({ startDate: liveStartDate, endDate: liveEndDate });
-      const res = await fetch(`/api/finance/wise-activities?${params.toString()}`);
-      const data = await res.json();
-      if (data.error) {
-        setLiveError(data.error);
-        return;
-      }
-      const liveRows: { date: string; amount: string; description: string; wiseId: string }[] = data.rows;
-      if (liveRows.length === 0) {
-        setLiveError("Aucune activité Wise sur cette période.");
-        setRows(null);
-        return;
-      }
-      setRows(
-        liveRows.map((r) => ({
-          date: r.date,
-          amount: r.amount,
-          description: r.description,
-          wiseId: r.wiseId,
-          isExpense: false,
-          expenseBillId: r.wiseId,
-          expenseIssueDate: r.date,
-          expenseBank: "WISE",
-          expenseDescription: r.description,
-          expenseListing: "",
-          expenseContact: "",
-          expenseAccount: "",
-          billToOwner: "FALSE" as const,
-        }))
-      );
-      const csvLines = [
-        [DATE_HEADER, AMOUNT_HEADER, DESCRIPTION_HEADER, WISE_ID_HEADER].join(","),
-        ...liveRows.map((r) => [r.date, r.amount, r.description, r.wiseId].map(escapeCsvField).join(",")),
-      ];
-      const blob = new Blob(["﻿" + csvLines.join("\r\n")], { type: "text/csv" });
-      setFile(new File([blob], `wise_live_${liveStartDate}_${liveEndDate}.csv`, { type: "text/csv" }));
-    } catch {
-      setLiveError("Impossible de charger le flux Wise en direct.");
-    } finally {
-      setLiveLoading(false);
-    }
   }
 
   function vrCsvContent(): string {
@@ -522,31 +456,6 @@ export function BankStatementCsvTable() {
 
         {parseError && <p className="text-[13px] text-red-600">{parseError}</p>}
         {saveError && <p className="text-[13px] text-red-600">{saveError}</p>}
-
-        <div className="flex items-center gap-3 border-t border-black/[0.06] pt-3">
-          <span className="text-[12px] font-medium text-[#6e6e73]">ou en direct (Wise)</span>
-          <input
-            type="date"
-            value={liveStartDate}
-            onChange={(e) => setLiveStartDate(e.target.value)}
-            className="rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
-          />
-          <span className="text-[13px] text-[#86868b]">→</span>
-          <input
-            type="date"
-            value={liveEndDate}
-            onChange={(e) => setLiveEndDate(e.target.value)}
-            className="rounded-[8px] border border-black/10 bg-white px-2 py-1 text-[13px] text-[#1d1d1f] focus:border-[#0071e3] focus:outline-none"
-          />
-          <button type="button" onClick={loadLiveWise} disabled={liveLoading} className="btn-secondary btn-sm">
-            {liveLoading ? "Chargement…" : "Charger"}
-          </button>
-        </div>
-        {liveError && <p className="text-[13px] text-red-600">{liveError}</p>}
-        <p className="text-[11px] text-[#86868b]">
-          Mélange tous les comptes/devises Wise du profil business (pas de filtre par compte côté API) — à trier à
-          l&apos;œil (ex: lignes "Moret" à ignorer).
-        </p>
 
         {rows && rows.length > 0 && (
           <div className="space-y-2">
