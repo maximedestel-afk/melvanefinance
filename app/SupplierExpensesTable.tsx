@@ -19,7 +19,6 @@ interface VendorExpenseLine {
   paidStatus: "unpaid" | "underpaid" | "overpaid" | "paid";
   shortRef: string | null;
   paymentReference: string | null;
-  paymentDate: string | null;
 }
 
 type StatusFilter = "unpaid" | "paid" | "both";
@@ -233,33 +232,25 @@ export function SupplierExpensesTable() {
       )
       .join("");
 
-    // Détail des paiements sous le total — une ligne par facture payée/payée
-    // partiellement/en trop (date + référence du relevé bancaire rapproché,
-    // voir paymentDate/paymentReference ; à défaut, date de facture marquée
-    // d'un astérisque), puis solde dû (total moins payé + payé en trop, qui
-    // compte comme réglé même si le montant diffère).
-    const paidLines = expenses
-      .filter((e) => e.paidStatus !== "unpaid")
-      .sort((a, b) => (b.paymentDate ?? b.date).localeCompare(a.paymentDate ?? a.date));
+    // Détail des paiements sous le total — par statut présent dans les
+    // lignes exportées, puis solde dû (total moins ce qui est réglé : payé
+    // + payé en trop, qui compte comme réglé même si le montant diffère).
     const paidCents = expenses.filter((e) => e.paidStatus === "paid").reduce((s, e) => s + e.cents, 0);
     const overpaidCents = expenses.filter((e) => e.paidStatus === "overpaid").reduce((s, e) => s + e.cents, 0);
+    const underpaidCents = expenses.filter((e) => e.paidStatus === "underpaid").reduce((s, e) => s + e.cents, 0);
+    const unpaidCents = expenses.filter((e) => e.paidStatus === "unpaid").reduce((s, e) => s + e.cents, 0);
     const balanceDueCents = total - paidCents - overpaidCents;
-    let anyUnresolvedPaymentDate = false;
-    const paymentsHtml = paidLines
-      .map((line) => {
-        const hasPaymentDate = line.paymentDate != null;
-        if (!hasPaymentDate) anyUnresolvedPaymentDate = true;
-        const dateLabel = hasPaymentDate ? formatDate(line.paymentDate!) : `${formatDate(line.date)} *`;
-        const ref = line.paymentReference ?? line.shortRef ?? "—";
-        const statusTag = line.paidStatus === "paid" ? "" : ` (${STATUS_LABELS[line.paidStatus]})`;
-        return `
-          <tr>
-            <td class="nowrap">${escapeHtml(dateLabel)}</td>
-            <td>${escapeHtml(ref)}</td>
-            <td>${escapeHtml(line.description)}${escapeHtml(statusTag)}</td>
-            <td class="num">${escapeHtml(formatEurosAccounting(line.cents))}</td>
-          </tr>`;
-      })
+    const paymentBreakdown: { label: string; cents: number }[] = [
+      { label: "Payé", cents: paidCents },
+      { label: "Payé en trop", cents: overpaidCents },
+      { label: "Payé partiellement", cents: underpaidCents },
+      { label: "Non payé", cents: unpaidCents },
+    ].filter((row) => row.cents !== 0);
+    const paymentsHtml = paymentBreakdown
+      .map(
+        (row) => `
+          <div class="line small"><span>${escapeHtml(row.label)}</span><span>${escapeHtml(formatEurosAccounting(row.cents))}</span></div>`
+      )
       .join("");
 
     const html = `<!doctype html>
@@ -285,7 +276,6 @@ export function SupplierExpensesTable() {
   .company strong { color: #1d1d1f; font-size: 13px; }
   h1 { font-size: 40px; font-weight: 700; margin: 40px 0 4px; }
   .subtitle { color: #6e6e73; font-size: 14px; margin: 0 0 24px; }
-  .section-title { font-size: 14px; font-weight: 700; margin: 28px 0 0; }
   .infobox {
     display: flex; gap: 32px; background: #f5f5f7; border-radius: 12px;
     padding: 16px 20px; margin-bottom: 28px;
@@ -371,32 +361,18 @@ export function SupplierExpensesTable() {
   </div>
 
   ${
-    paidLines.length > 0
-      ? `<h2 class="section-title">Détail des paiements</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Référence</th>
-        <th>Désignation</th>
-        <th class="num">Montant</th>
-      </tr>
-    </thead>
-    <tbody>
+    paymentBreakdown.length > 0
+      ? `<div class="payments">
+    <div class="block">
       ${paymentsHtml}
-    </tbody>
-  </table>`
+      <div class="line balance"><span>Solde dû</span><span>${escapeHtml(formatEurosAccounting(balanceDueCents))}</span></div>
+    </div>
+  </div>`
       : ""
   }
 
-  <div class="totals">
-    <div class="line balance"><span>Solde dû</span><span>${escapeHtml(formatEurosAccounting(balanceDueCents))}</span></div>
-  </div>
-
   <p class="footnote">
-    Relevé généré le ${issueDate} — ${expenses.length} ligne${expenses.length !== 1 ? "s" : ""}.${
-    anyUnresolvedPaymentDate ? " * date de facture — règlement non rapproché à un relevé bancaire." : ""
-  }
+    Relevé généré le ${issueDate} — ${expenses.length} ligne${expenses.length !== 1 ? "s" : ""}.
   </p>
 </body>
 </html>`;

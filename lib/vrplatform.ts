@@ -126,9 +126,6 @@ export interface VendorExpenseLine {
    * rapprochement bancaire et le statut de paiement de la facture sont deux
    * choses distinctes côté VRPlatform). Null si pas encore rapproché. */
   paymentReference: string | null;
-  /** Date du relevé bancaire rapproché (voir paymentReference) — null si pas
-   * encore rapproché. */
-  paymentDate: string | null;
 }
 
 interface VrPlatformTransactionsResponse {
@@ -187,7 +184,6 @@ interface VrPlatformBankRecordsResponse {
     id: string;
     description: string | null;
     uniqueRef: string | null;
-    date: string;
     reconciliation?: { status: string; transactions?: { id: string }[] } | null;
   }[];
   pagination: { page: number; totalPage: number };
@@ -220,19 +216,19 @@ function widenDateFilter(dateFilter: string, paddingDaysBefore: number, paddingD
   return `${startDate.toISOString().slice(0, 10)}...${endDate.toISOString().slice(0, 10)}`;
 }
 
-/** Référence (uniqueRef, sinon description) ET date du relevé bancaire
- * rapproché pour chaque transaction donnée — en passant par les relevés
- * bancaires "paid" de la période (élargie, voir widenDateFilter) plutôt que
- * par transaction.payment.bankRecordIds (voir le commentaire sur
+/** Référence (uniqueRef, sinon description) du relevé bancaire rapproché
+ * pour chaque transaction donnée — en passant par les relevés bancaires
+ * "paid" de la période (élargie, voir widenDateFilter) plutôt que par
+ * transaction.payment.bankRecordIds (voir le commentaire sur
  * VendorExpenseLine.paymentReference), puisque c'est le relevé qui liste
  * les transactions qu'il a réglées (reconciliation.transactions[]), pas
  * l'inverse. Dégradation silencieuse : une facture sans relevé résolu
- * retombe sur son shortRef/sa propre date (voir getVendorExpenses). */
+ * retombe sur son shortRef (voir getVendorExpenses). */
 async function getPaidBankRecordReferences(
   transactionIds: Set<string>,
   dateRange: string
-): Promise<Map<string, { ref: string; date: string }>> {
-  const map = new Map<string, { ref: string; date: string }>();
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
   if (transactionIds.size === 0) return map;
   const widenedDateRange = widenDateFilter(dateRange, 30, 60);
   try {
@@ -250,7 +246,7 @@ async function getPaidBankRecordReferences(
         const ref = record.uniqueRef ?? record.description;
         if (!ref) continue;
         for (const m of matched) {
-          if (transactionIds.has(m.id)) map.set(m.id, { ref, date: record.date });
+          if (transactionIds.has(m.id)) map.set(m.id, ref);
         }
       }
       if (page >= res.pagination.totalPage) break;
@@ -366,9 +362,7 @@ export async function getVendorExpenses(
 
   const result: VendorExpenseLine[] = [];
   for (const t of transactions) {
-    const bankRecord = paymentRefsByTransaction.get(t.id);
-    const paymentReference = bankRecord?.ref ?? null;
-    const paymentDate = bankRecord?.date ?? null;
+    const paymentReference = paymentRefsByTransaction.get(t.id) ?? null;
     const lines = linesByTransaction.get(t.id);
     if (lines && lines.length > 0) {
       for (const line of lines) {
@@ -386,7 +380,6 @@ export async function getVendorExpenses(
           paidStatus: t.paidStatus,
           shortRef: t.shortRef,
           paymentReference,
-          paymentDate,
         });
       }
     } else {
@@ -400,7 +393,6 @@ export async function getVendorExpenses(
         paidStatus: t.paidStatus,
         shortRef: t.shortRef,
         paymentReference,
-        paymentDate,
       });
     }
   }
