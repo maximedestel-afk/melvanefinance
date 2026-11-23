@@ -4,16 +4,10 @@
 // (Paramètres > Intégrations personnalisées > API tokens), stocké dans
 // WISE_API_KEY. Doc : https://docs.wise.com/api-docs/api-reference.
 
-import { createSign } from "crypto";
-
 const API_BASE_URL = "https://api.wise.com";
 
 export function isWiseConfigured(): boolean {
   return !!process.env.WISE_API_KEY;
-}
-
-export function isWiseScaConfigured(): boolean {
-  return !!process.env.WISE_SCA_PRIVATE_KEY;
 }
 
 async function wiseFetch<T>(path: string, query?: Record<string, string>): Promise<T> {
@@ -27,60 +21,6 @@ async function wiseFetch<T>(path: string, query?: Record<string, string>): Promi
     headers: { Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
   });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `Wise a répondu ${response.status} sur ${url.pathname}${url.search} — ${body.slice(0, 500) || "(réponse sans corps)"}`
-    );
-  }
-  return response.json() as Promise<T>;
-}
-
-/** Signe un one-time-token (OTT) SCA avec la clé privée RSA enregistrée côté
- * Wise (clé publique associée au token API, voir Paramètres > API tokens >
- * Strong Customer Authentication) — SHA256withRSA, base64. Flux officiel
- * TransferWise pour un token Personal/Business (pas de ré-approbation
- * interactive type SMS/push, juste une signature cryptographique côté
- * serveur). Voir https://github.com/transferwise/digital-signatures-examples. */
-function signOneTimeToken(ott: string): string {
-  const privateKey = process.env.WISE_SCA_PRIVATE_KEY;
-  if (!privateKey) throw new Error("Wise SCA non configuré (WISE_SCA_PRIVATE_KEY manquant).");
-  const signer = createSign("RSA-SHA256");
-  signer.update(ott);
-  signer.end();
-  // Accepte la clé avec de vrais retours à la ligne (valeur multi-ligne
-  // Vercel) ou avec des "\n" littéraires échappés (si collée sur une seule
-  // ligne) — les deux formats sont courants selon comment la variable a été
-  // saisie.
-  return signer.sign(privateKey.replace(/\\n/g, "\n"), "base64");
-}
-
-/** Comme wiseFetch, mais relance automatiquement la requête avec la
- * signature SCA si Wise répond 403 avec un one-time-token à signer
- * (x-2fa-approval) — nécessaire pour l'endpoint balance-statement, protégé
- * par SCA hors US/AU/NZ/SG/CA/MY. */
-async function wiseFetchWithSca<T>(path: string, query?: Record<string, string>): Promise<T> {
-  const apiKey = process.env.WISE_API_KEY;
-  if (!apiKey) throw new Error("Wise n'est pas configuré (WISE_API_KEY manquant).");
-
-  const url = new URL(path, API_BASE_URL);
-  if (query) for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
-
-  const doFetch = (extraHeaders?: Record<string, string>) =>
-    fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, ...extraHeaders }, cache: "no-store" });
-
-  let response = await doFetch();
-  if (response.status === 403) {
-    const ott = response.headers.get("x-2fa-approval");
-    if (!ott) {
-      const body = await response.text().catch(() => "");
-      throw new Error(
-        `Wise a répondu 403 sur ${url.pathname}${url.search} sans one-time-token SCA — ${body.slice(0, 500) || "(réponse sans corps)"}`
-      );
-    }
-    const signature = signOneTimeToken(ott);
-    response = await doFetch({ "x-2fa-approval": ott, "X-Signature": signature });
-  }
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     throw new Error(
@@ -182,10 +122,10 @@ const ACTIVITIES_MAX_PAGES = 20;
  * carte, frais...) sur une période, normalisé, en suivant la pagination par
  * curseur (nextCursor) tant qu'une page est pleine — mélange TOUTES les
  * sous-réserves du profil (pas de filtre par compte/devise possible sur cet
- * endpoint, voir le commentaire en tête de fichier). Pour un relevé séparé
- * par compte, voir getWiseBalanceStatementRows (endpoint balance-statement,
- * protégé par SCA hors US/AU/NZ/SG/CA/MY — géré via signature RSA, voir
- * wiseFetchWithSca). */
+ * endpoint, voir le commentaire en tête de fichier). PAS l'endpoint
+ * balance-statement (protégé par SCA hors US/AU/NZ/SG/CA/MY, donc
+ * inutilisable pour un sync serveur sans interaction utilisateur
+ * récurrente). */
 export async function getWiseActivityRows(profileId: number, sinceIso: string, untilIso: string): Promise<WiseActivityRow[]> {
   const rows: WiseActivityRow[] = [];
   let cursor: string | null = null;
@@ -218,26 +158,4 @@ export async function getWiseActivityRows(profileId: number, sinceIso: string, u
     cursor = res.cursor;
   }
   return rows.sort((a, b) => b.date.localeCompare(a.date));
-}
-
-/** Relevé officiel d'un compte (balance) Wise sur une période — seul
- * endpoint réellement filtré par compte (l'endpoint /activities mélange
- * tout, voir plus haut), mais protégé par SCA hors US/AU/NZ/SG/CA/MY, géré
- * via wiseFetchWithSca (signature RSA, pas d'approbation interactive).
- * intervalStart/intervalEnd en ISO 8601, écart max 469 jours (limite
- * documentée Wise). type=FLAT pour une ligne par écriture (COMPACT regroupe
- * certaines lignes). Forme brute de la réponse pas encore stabilisée — voir
- * la route de diagnostic wise-statement-check avant de construire un
- * mapping définitif vers WiseActivityRow. */
-export async function getWiseBalanceStatementRaw(
-  profileId: number,
-  balanceId: number,
-  currency: string,
-  intervalStartIso: string,
-  intervalEndIso: string
-): Promise<Record<string, unknown>> {
-  return wiseFetchWithSca<Record<string, unknown>>(
-    `/v1/profiles/${profileId}/balance-statements/${balanceId}/statement.json`,
-    { currency, intervalStart: intervalStartIso, intervalEnd: intervalEndIso, type: "FLAT" }
-  );
 }
