@@ -203,11 +203,18 @@ export function SupplierExpensesTable() {
     const reference = `REL-${refSuffix}-01`;
     const issueDate = formatDate(todayIso());
 
+    const statusClass: Record<VendorExpenseLine["paidStatus"], string> = {
+      paid: "status-paid",
+      unpaid: "status-unpaid",
+      underpaid: "status-partial",
+      overpaid: "status-partial",
+    };
+
     const rowsHtml = groupsByAccount
       .map(
         (group) => `
             <tr class="category">
-              <td colspan="3">${escapeHtml(group.accountName)} <span class="muted">(${group.lines.length})</span></td>
+              <td colspan="4">${escapeHtml(group.accountName)} <span class="muted">(${group.lines.length})</span></td>
               <td class="num nowrap">${escapeHtml(formatEurosAccounting(group.totalCents))}</td>
             </tr>` +
           group.lines
@@ -217,10 +224,32 @@ export function SupplierExpensesTable() {
               <td>${escapeHtml(line.description)}</td>
               <td>${escapeHtml(line.listingRef ?? "—")}</td>
               <td class="num nowrap">${formatDate(line.date)}</td>
+              <td class="nowrap ${statusClass[line.paidStatus]}">${escapeHtml(STATUS_LABELS[line.paidStatus])}</td>
               <td class="num">${escapeHtml(formatEurosAccounting(line.cents))}</td>
             </tr>`
             )
             .join("")
+      )
+      .join("");
+
+    // Détail des paiements sous le total — par statut présent dans les
+    // lignes exportées, puis solde dû (total moins ce qui est réglé : payé
+    // + payé en trop, qui compte comme réglé même si le montant diffère).
+    const paidCents = expenses.filter((e) => e.paidStatus === "paid").reduce((s, e) => s + e.cents, 0);
+    const overpaidCents = expenses.filter((e) => e.paidStatus === "overpaid").reduce((s, e) => s + e.cents, 0);
+    const underpaidCents = expenses.filter((e) => e.paidStatus === "underpaid").reduce((s, e) => s + e.cents, 0);
+    const unpaidCents = expenses.filter((e) => e.paidStatus === "unpaid").reduce((s, e) => s + e.cents, 0);
+    const balanceDueCents = total - paidCents - overpaidCents;
+    const paymentBreakdown: { label: string; cents: number }[] = [
+      { label: "Payé", cents: paidCents },
+      { label: "Payé en trop", cents: overpaidCents },
+      { label: "Payé partiellement", cents: underpaidCents },
+      { label: "Non payé", cents: unpaidCents },
+    ].filter((row) => row.cents !== 0);
+    const paymentsHtml = paymentBreakdown
+      .map(
+        (row) => `
+          <div class="line small"><span>${escapeHtml(row.label)}</span><span>${escapeHtml(formatEurosAccounting(row.cents))}</span></div>`
       )
       .join("");
 
@@ -257,21 +286,33 @@ export function SupplierExpensesTable() {
   table { width: 100%; border-collapse: collapse; margin-top: 8px; }
   thead th {
     text-align: left; font-size: 10px; letter-spacing: 0.04em; color: #86868b;
-    text-transform: uppercase; padding: 0 0 8px; border-bottom: 1px solid #e5e5ea;
+    text-transform: uppercase; padding: 0 12px 8px 0; border-bottom: 1px solid #e5e5ea;
   }
   thead th.num, td.num { text-align: right; }
   td.nowrap, th.num { white-space: nowrap; }
-  tbody td { padding: 10px 0; border-bottom: 1px solid #f0f0f2; font-size: 13px; vertical-align: top; }
+  tbody td { padding: 10px 12px 10px 0; border-bottom: 1px solid #f0f0f2; font-size: 13px; vertical-align: top; }
   tr.category td { background: rgba(0, 113, 227, 0.1); font-weight: 600; padding: 7px 10px; border-bottom: 1px solid #e5e5ea; }
   tr.category td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
   tr.category td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
   tbody tr:not(.category) td:first-child, tbody tr:not(.category) td:nth-child(2) { padding-left: 10px; }
   .muted { color: #86868b; font-size: 12px; }
-  .totals { margin-top: 20px; display: flex; justify-content: flex-end; }
-  .totals .line {
-    display: flex; justify-content: space-between; gap: 40px; width: 260px;
+  .status-paid { color: #15803d; font-weight: 600; }
+  .status-unpaid { color: #b45309; font-weight: 600; }
+  .status-partial { color: #6e6e73; font-weight: 600; }
+  .line {
+    display: flex; justify-content: space-between; gap: 40px;
     padding: 10px 0; font-size: 18px; font-weight: 700; border-top: 2px solid #1d1d1f;
   }
+  .line.small {
+    font-size: 13px; font-weight: 500; color: #6e6e73; border-top: none; padding: 4px 0;
+  }
+  .line.balance {
+    font-size: 16px; font-weight: 700; border-top: 1px solid #e5e5ea; margin-top: 4px; padding-top: 10px;
+  }
+  .totals { margin-top: 20px; display: flex; justify-content: flex-end; }
+  .totals .line { width: 260px; }
+  .payments { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .payments .block { width: 260px; }
   .footnote { margin-top: 48px; font-size: 11px; color: #86868b; line-height: 1.5; }
   @media print {
     body { padding: 0 32px; }
@@ -306,6 +347,7 @@ export function SupplierExpensesTable() {
         <th>Désignation</th>
         <th>Bien</th>
         <th class="num">Date</th>
+        <th>Statut</th>
         <th class="num">Montant</th>
       </tr>
     </thead>
@@ -317,6 +359,17 @@ export function SupplierExpensesTable() {
   <div class="totals">
     <div class="line"><span>Total</span><span>${escapeHtml(formatEurosAccounting(total))}</span></div>
   </div>
+
+  ${
+    paymentBreakdown.length > 0
+      ? `<div class="payments">
+    <div class="block">
+      ${paymentsHtml}
+      <div class="line balance"><span>Solde dû</span><span>${escapeHtml(formatEurosAccounting(balanceDueCents))}</span></div>
+    </div>
+  </div>`
+      : ""
+  }
 
   <p class="footnote">
     Relevé généré le ${issueDate} — ${expenses.length} ligne${expenses.length !== 1 ? "s" : ""}.
