@@ -55,21 +55,88 @@ export async function getWiseBalances(profileId: number): Promise<WiseBalance[]>
   return wiseFetch<WiseBalance[]>(`/v4/profiles/${profileId}/balances`, { types: "STANDARD,SAVINGS" });
 }
 
+interface WiseRawActivity {
+  id: string;
+  type: string;
+  resource: { type: string; id: string };
+  title: string;
+  description: string;
+  primaryAmount: string;
+  status: string;
+  createdOn: string;
+  updatedOn: string;
+}
+
+interface WiseActivitiesResponse {
+  cursor: string | null;
+  activities: WiseRawActivity[];
+}
+
+function stripHtmlTags(value: string): string {
+  return value.replace(/<\/?[a-z][^>]*>/gi, "").trim();
+}
+
+/** Parse le champ primaryAmount du flux /activities — une chaîne du type
+ * "25.94 EUR" (débit, carte) ou "<positive>+ 5,224.96 EUR</positive>"
+ * (crédit, viré explicitement en positif par Wise). Hypothèse déduite des
+ * données observées en direct (confirmée sur des paiements carte et des
+ * virements entrants) : seul le crédit est marqué par le tag <positive>/un
+ * "+" explicite — tout le reste (pas de tag, pas de "-") est traité comme un
+ * débit. Pas encore vérifié sur un virement SORTANT réel — à confirmer si
+ * un montant ressort avec le mauvais signe. */
+function parseWiseActivityAmount(raw: string): { amount: number; currency: string } | null {
+  const isCredit = /<positive>/i.test(raw) || /^\s*\+/.test(raw);
+  const isExplicitDebit = /<negative>/i.test(raw) || /^\s*-/.test(stripHtmlTags(raw));
+  const stripped = stripHtmlTags(raw).replace(/^[+-]\s*/, "");
+  const m = /^([\d,]+(?:\.\d+)?)\s*([A-Z]{3})$/.exec(stripped);
+  if (!m) return null;
+  const value = Number.parseFloat(m[1].replace(/,/g, ""));
+  const sign = isCredit ? 1 : isExplicitDebit ? -1 : -1;
+  return { amount: sign * value, currency: m[2] };
+}
+
+export interface WiseActivityRow {
+  /** YYYY-MM-DD */
+  date: string;
+  /** Signé, format décimal simple ("-25.94", "5224.96") — même format que
+   * la colonne "Amount" d'un export CSV Wise, pour rester compatible avec
+   * BankStatementCsvTable.tsx. */
+  amount: string;
+  currency: string;
+  description: string;
+  /** resource.id (ID de transfert/transaction carte) — sert de "TransferWise
+   * ID" (Bill ID par défaut d'une ligne de dépense). */
+  wiseId: string;
+  type: string;
+}
+
 /** Historique d'activité d'un profil (transferts, conversions, paiements
- * carte, frais...) sur une période — PAS l'endpoint balance-statement
- * (protégé par SCA hors US/AU/NZ/SG/CA/MY, donc inutilisable pour un sync
- * serveur sans interaction utilisateur récurrente). Structure brute non
- * encore typée : voir la route de diagnostic wise-check pour l'inspecter en
- * direct avant de construire le mapping définitif. */
-export async function getWiseActivities(
-  profileId: number,
-  sinceIso: string,
-  untilIso: string,
-  size = 100
-): Promise<Record<string, unknown>> {
-  return wiseFetch<Record<string, unknown>>(`/v1/profiles/${profileId}/activities`, {
+ * carte, frais...) sur une période, normalisé — mélange TOUTES les
+ * sous-réserves du profil (pas de filtre par compte/devise possible sur cet
+ * endpoint, voir le commentaire en tête de fichier). PAS l'endpoint
+ * balance-statement (protégé par SCA hors US/AU/NZ/SG/CA/MY, donc
+ * inutilisable pour un sync serveur sans interaction utilisateur
+ * récurrente). Une seule page (jusqu'à `size` résultats, pas de suivi du
+ * curseur) — suffisant pour un usage "relevé récent", pas pour un historique
+ * complet. */
+export async function getWiseActivityRows(profileId: number, sinceIso: string, untilIso: string, size = 200): Promise<WiseActivityRow[]> {
+  const res = await wiseFetch<WiseActivitiesResponse>(`/v1/profiles/${profileId}/activities`, {
     since: sinceIso,
     until: untilIso,
     size: String(size),
   });
+  const rows: WiseActivityRow[] = [];
+  for (const activity of res.activities) {
+    const parsed = parseWiseActivityAmount(activity.primaryAmount);
+    if (!parsed) continue;
+    rows.push({
+      date: activity.createdOn.slice(0, 10),
+      amount: parsed.amount.toFixed(2),
+      currency: parsed.currency,
+      description: stripHtmlTags(activity.title),
+      wiseId: activity.resource.id,
+      type: activity.type,
+    });
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
