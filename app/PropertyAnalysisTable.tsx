@@ -234,7 +234,7 @@ export function PropertyAnalysisTable({
   request?: AnalysisRequest | null;
 }) {
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 4 + i);
   const properties = useMemo(
     () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
     [unsortedProperties]

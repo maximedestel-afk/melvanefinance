@@ -90,7 +90,7 @@ function PricingCell({ pricing }: { pricing: PricingComparison | null | undefine
 export function PropertyOccupancyTable({ properties: unsortedProperties }: { properties: PropertyOption[] }) {
   const now = new Date();
   const currentYear = now.getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 4 + i);
   const allProperties = useMemo(
     () => [...unsortedProperties].sort((a, b) => a.reference.localeCompare(b.reference, "fr")),
     [unsortedProperties]

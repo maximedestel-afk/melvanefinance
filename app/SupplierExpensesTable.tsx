@@ -59,7 +59,7 @@ function escapeHtml(value: string): string {
 
 export function SupplierExpensesTable() {
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 4 + i);
 
   const [vendors, setVendors] = useState<VendorContact[] | null>(null);
   const [vendorsError, setVendorsError] = useState<string | null>(null);

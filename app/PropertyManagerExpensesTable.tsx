@@ -16,7 +16,7 @@ function formatDate(iso: string): string {
 
 export function PropertyManagerExpensesTable() {
   const currentYear = new Date().getFullYear();
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - 4 + i);
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 4 + i);
 
   const [year, setYear] = useState(currentYear);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth() + 1]);
