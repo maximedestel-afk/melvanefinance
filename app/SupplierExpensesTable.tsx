@@ -221,7 +221,11 @@ export function SupplierExpensesTable() {
             .map(
               (line) => `
             <tr>
-              <td>${escapeHtml(line.description)}</td>
+              <td class="nowrap">${escapeHtml(line.description)}${
+                line.paymentReference ?? line.shortRef
+                  ? ` <span class="muted">(${escapeHtml(line.paymentReference ?? line.shortRef ?? "")})</span>`
+                  : ""
+              }</td>
               <td>${escapeHtml(line.listingRef ?? "—")}</td>
               <td class="num nowrap">${formatDate(line.date)}</td>
               <td class="nowrap ${statusClass[line.paidStatus]}">${escapeHtml(STATUS_LABELS[line.paidStatus])}</td>
