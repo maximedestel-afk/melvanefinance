@@ -125,13 +125,16 @@ function escapeCsvField(value: string): string {
   return value;
 }
 
-/** "04-11-2026" (format WISE, JJ-MM-AAAA) → "2026-11-04" — laisse la valeur
- * telle quelle si elle n'a pas ce format (reste visible dans l'aperçu au
- * lieu de planter la conversion). */
+/** "04-11-2026" ou "04-11-26" (format WISE, JJ-MM-AAAA ou JJ-MM-AA) →
+ * "2026-11-04" — laisse la valeur telle quelle si elle n'a pas ce format
+ * (reste visible dans l'aperçu au lieu de planter la conversion). */
 function convertWiseDate(raw: string): string {
   const trimmed = raw.trim();
-  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(trimmed);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  const m = /^(\d{2})-(\d{2})-(\d{2}|\d{4})$/.exec(trimmed);
+  if (m) {
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+    return `${year}-${m[2]}-${m[1]}`;
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
   return trimmed;
 }
