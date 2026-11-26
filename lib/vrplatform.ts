@@ -742,6 +742,7 @@ const MANAGER_EXPENSE_ACCOUNT_IDS = [
   "f5a218f5-7663-4a5e-a1fd-8730404102cc", // Key Locker
   "562002c2-4ee2-49ab-98ad-78760e928a76", // Maintenance
   "a43dbf60-4fb1-4bad-b255-ea26aaeb081a", // Front Desk
+  "c1484a69-a68b-4b6a-b14f-c61aae6de70b", // Apporteur Affaire
   "6cdbbc14-3a75-444f-a4c1-b04b8c73d701", // Staff
   "007a6222-9de4-4dd9-a3fb-ab35377aae61", // Tech
   "c760ea2d-34b8-4652-af5f-4db9f313834a", // Personal
