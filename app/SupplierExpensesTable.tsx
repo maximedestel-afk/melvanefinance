@@ -38,7 +38,7 @@ function formatDate(iso: string): string {
 }
 
 function escapeCsvField(value: string): string {
-  if (/[";\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  if (/[,"\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
 }
 
@@ -157,8 +157,10 @@ export function SupplierExpensesTable() {
       .sort((a, b) => b.totalCents - a.totalCents);
   }, [expenses]);
 
-  /** Export "lisible Excel" (point-virgule, pas le format d'import
-   * VRPlatform) — une ligne par ligne de facture, groupée par catégorie
+  /** Export "lisible Excel" (CSV standard virgule, RFC 4180 — les champs
+   * contenant une virgule, un guillemet ou un retour à la ligne sont
+   * entre guillemets, pas le format d'import VRPlatform) — une ligne par
+   * ligne de facture, groupée par catégorie
    * comme à l'écran. */
   function exportExcel() {
     if (!expenses || expenses.length === 0) return;
@@ -178,7 +180,7 @@ export function SupplierExpensesTable() {
       }
     }
     rows.push(["", "", "", "", "", "Total", formatEuros(total / 100)]);
-    const csvContent = rows.map((r) => r.map(escapeCsvField).join(";")).join("\r\n");
+    const csvContent = rows.map((r) => r.map(escapeCsvField).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
