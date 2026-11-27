@@ -405,7 +405,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         csvExportDate,
         fullDescription,
         "Paid",
-        "Non-Trust Account",
+        "Expense Reimbursement",
         "info@melvanebydesign.com",
         `${r.confirmationCode ?? r.reservationId}-${billIdSuffix}`,
         "EUR",
