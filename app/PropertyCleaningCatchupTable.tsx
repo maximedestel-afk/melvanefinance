@@ -93,6 +93,7 @@ type ColumnKey =
 
 const ALL_COLUMNS: ColumnKey[] = [
   "reference",
+  "alreadyInVr",
   "bookedAt",
   "stay",
   "platform",
@@ -107,7 +108,6 @@ const ALL_COLUMNS: ColumnKey[] = [
   "commissionPercent",
   "additionalCommission",
   "pnl",
-  "alreadyInVr",
 ];
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
@@ -241,9 +241,6 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
   const [direction, setDirection] = useState<"asc" | "desc">("asc");
   const [hiddenColumns, setHiddenColumns] = useState<Set<ColumnKey>>(new Set());
   const [selectedReservationIds, setSelectedReservationIds] = useState<Set<string>>(new Set());
-  const [exportedByReservationId, setExportedByReservationId] = useState<Map<string, string>>(new Map());
-  const [exportActionLoading, setExportActionLoading] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
   const [csvExportDate, setCsvExportDate] = useState(todayIso());
 
   function toggleColumn(col: ColumnKey) {
@@ -354,94 +351,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
         setRows(data.rows);
         setSelectedPlatforms([]);
         setSelectedReservationIds(new Set());
-        await loadExportStatus((data.rows as CatchupApiRow[]).map((r) => r.reservationId));
       }
     } catch {
       setError("Impossible de charger le rattrapage ménage.");
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadExportStatus(reservationIds: string[]) {
-    if (reservationIds.length === 0) {
-      setExportedByReservationId(new Map());
-      return;
-    }
-    try {
-      const params = new URLSearchParams({ reservationIds: reservationIds.join(",") });
-      const res = await fetch(`/api/finance/cleaning-commission-catchup/exports?${params.toString()}`);
-      const data = await res.json();
-      if (!data.error) {
-        setExportedByReservationId(
-          new Map((data.exports as { reservationId: string; exportedAt: string }[]).map((e) => [e.reservationId, e.exportedAt]))
-        );
-      }
-    } catch {
-      // Dégradation silencieuse — l'absence de statut d'export n'empêche pas d'afficher le tableau.
-    }
-  }
-
-  async function markSelectedAsExported() {
-    if (!sortedRows || selectedReservationIds.size === 0) return;
-    setExportActionLoading(true);
-    setExportError(null);
-    try {
-      const selectedRows = sortedRows.filter((r) => selectedReservationIds.has(r.reservationId));
-      const res = await fetch("/api/finance/cleaning-commission-catchup/exports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rows: selectedRows.map((r) => ({
-            reservationId: r.reservationId,
-            propertyId: r.propertyId,
-            propertyReference: r.reference,
-            checkoutDate: r.checkOut,
-            commissionOnCleaningCents: r.commissionOnCleaningCents ?? 0,
-            additionalCommissionCents: r.additionalCommissionCents ?? 0,
-            pnlCents: r.pnlCents ?? 0,
-          })),
-        }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setExportError(data.error);
-      } else {
-        const now = new Date().toISOString();
-        setExportedByReservationId((prev) => {
-          const next = new Map(prev);
-          for (const id of selectedReservationIds) next.set(id, now);
-          return next;
-        });
-      }
-    } catch {
-      setExportError("Impossible de marquer ces réservations comme exportées.");
-    } finally {
-      setExportActionLoading(false);
-    }
-  }
-
-  async function unmarkSelectedAsExported() {
-    if (selectedReservationIds.size === 0) return;
-    setExportActionLoading(true);
-    setExportError(null);
-    try {
-      const params = new URLSearchParams({ reservationIds: Array.from(selectedReservationIds).join(",") });
-      const res = await fetch(`/api/finance/cleaning-commission-catchup/exports?${params.toString()}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.error) {
-        setExportError(data.error);
-      } else {
-        setExportedByReservationId((prev) => {
-          const next = new Map(prev);
-          for (const id of selectedReservationIds) next.delete(id);
-          return next;
-        });
-      }
-    } catch {
-      setExportError("Impossible d'annuler l'export de ces réservations.");
-    } finally {
-      setExportActionLoading(false);
     }
   }
 
@@ -818,18 +732,6 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
             </p>
             {selectedReservationIds.size > 0 && (
               <>
-                <button
-                  type="button"
-                  onClick={markSelectedAsExported}
-                  disabled={exportActionLoading}
-                  className="btn-secondary btn-sm"
-                  title="Marque les réservations sélectionnées comme exportées, une fois l'écriture de rattrapage posée à la main dans VRPlatform"
-                >
-                  ✓ Marquer comme exporté
-                </button>
-                <button type="button" onClick={unmarkSelectedAsExported} disabled={exportActionLoading} className="btn-secondary btn-sm">
-                  Annuler l&apos;export
-                </button>
                 <label className="flex items-center gap-1.5 text-[12px] text-[#6e6e73]" htmlFor="csv-export-date">
                   Date du CSV
                   <input
@@ -846,7 +748,6 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
               </>
             )}
           </div>
-          {exportError && <p className="text-[13px] text-red-600">{exportError}</p>}
 
           {sortedRows.length === 0 ? (
             <p className="text-[13px] text-[#6e6e73]">Aucune réservation sur cette période.</p>
@@ -866,6 +767,14 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                       </th>
                       {!hiddenColumns.has("reference") && (
                         <SortHeader label="Bien" sortKey="reference" activeKey={sortKey} direction={direction} onSort={handleSort} align="left" />
+                      )}
+                      {!hiddenColumns.has("alreadyInVr") && (
+                        <th
+                          className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]"
+                          title="Vérifié en direct dans VRPlatform (Adjustments de la réservation), pas un marquage manuel"
+                        >
+                          Déjà dans VR
+                        </th>
                       )}
                       {!hiddenColumns.has("bookedAt") && (
                         <SortHeader label="Date résa" sortKey="bookedAt" activeKey={sortKey} direction={direction} onSort={handleSort} />
@@ -948,24 +857,15 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           title="Comm Ménage − Comm Supp"
                         />
                       )}
-                      {!hiddenColumns.has("alreadyInVr") && (
-                        <th
-                          className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]"
-                          title="Vérifié en direct dans VRPlatform (Adjustments de la réservation), pas un marquage manuel"
-                        >
-                          Déjà dans VR
-                        </th>
-                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {sortedRows.map((r, rowIndex) => {
-                      const exportedAt = exportedByReservationId.get(r.reservationId);
                       return (
                       <tr
                         key={r.reservationId}
                         className={`border-b border-black/[0.04] transition-colors last:border-b-0 hover:bg-[#dceafb] ${
-                          exportedAt ? "opacity-50" : rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
+                          r.alreadyInVr ? "opacity-50" : rowIndex % 2 === 0 ? "bg-white" : "bg-[#f0f6fd]"
                         }`}
                       >
                         <td className="py-1 pl-3 pr-1.5">
@@ -984,10 +884,14 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                                 ⚠
                               </span>
                             )}
-                            {exportedAt && (
-                              <span title={`Exporté le ${formatDate(exportedAt.slice(0, 10))}`} className="ml-1.5 text-emerald-600">
-                                ✓
-                              </span>
+                          </td>
+                        )}
+                        {!hiddenColumns.has("alreadyInVr") && (
+                          <td className="py-1 px-1.5">
+                            {r.alreadyInVr ? (
+                              <span className="text-emerald-600">✓ Oui</span>
+                            ) : (
+                              <span className="text-[#86868b]">— Non</span>
                             )}
                           </td>
                         )}
@@ -1051,17 +955,8 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           </td>
                         )}
                         {!hiddenColumns.has("pnl") && (
-                          <td className="py-1 pl-1.5 pr-1.5 text-right tabular-nums">
+                          <td className="py-1 pl-1.5 pr-2.5 text-right tabular-nums">
                             <SignedMoney cents={r.pnlCents} bold />
-                          </td>
-                        )}
-                        {!hiddenColumns.has("alreadyInVr") && (
-                          <td className="py-1 pl-1.5 pr-2.5">
-                            {r.alreadyInVr ? (
-                              <span className="text-emerald-600">✓ Oui</span>
-                            ) : (
-                              <span className="text-[#86868b]">— Non</span>
-                            )}
                           </td>
                         )}
                       </tr>
@@ -1072,6 +967,7 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                     <tr className="border-t border-black/[0.08] bg-black/[0.015] font-semibold text-[#1d1d1f]">
                       <td className="py-1 pl-3 pr-1.5"></td>
                       {!hiddenColumns.has("reference") && <td className="py-1 pl-2.5 pr-1.5">Total ({sortedRows.length})</td>}
+                      {!hiddenColumns.has("alreadyInVr") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("bookedAt") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("stay") && <td className="py-1 px-1.5"></td>}
                       {!hiddenColumns.has("platform") && <td className="py-1 px-1.5"></td>}
@@ -1110,11 +1006,10 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         </td>
                       )}
                       {!hiddenColumns.has("pnl") && (
-                        <td className="py-1 pl-1.5 pr-1.5 text-right tabular-nums">
+                        <td className="py-1 pl-1.5 pr-2.5 text-right tabular-nums">
                           <SignedMoney cents={totals.pnlCents} bold />
                         </td>
                       )}
-                      {!hiddenColumns.has("alreadyInVr") && <td className="py-1 pl-1.5 pr-2.5"></td>}
                     </tr>
                   </tfoot>
                 </table>

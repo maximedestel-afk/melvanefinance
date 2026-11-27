@@ -37,11 +37,9 @@ export interface CleaningCommissionCatchupRow {
   /** Taux de commission M.G.B. du bien (property_owner.commission_percent),
    * ex: 20 pour 20 % — null si non configuré. */
   commissionPercent: number | null;
-  /** true si un Adjustment de rattrapage ménage existe déjà pour cette
-   * réservation dans VRPlatform (vérifié en direct, voir
-   * getAlreadyAdjustedReservationIds) — indépendant du marquage manuel
-   * "exporté" côté app (cleaning_commission_catchup_exports), qui peut être
-   * coché sans que l'ajustement existe réellement. */
+  /** true si le rattrapage de commission ménage existe déjà dans VRPlatform
+   * pour cette réservation (vérifié en direct via une recherche sur les
+   * écritures de journal, voir getAlreadyAdjustedReservationIds). */
   alreadyInVr: boolean;
 }
 

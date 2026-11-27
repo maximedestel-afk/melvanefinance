@@ -1778,9 +1778,8 @@ const ADJUSTMENTS_CHECK_CONCURRENCY = 8;
 /** Pour un lot de réservations (onglet Rattrapage Ménage), indique
  * lesquelles ont déjà un rattrapage de commission ménage posé dans
  * VRPlatform (description contenant "ménage" et le confirmationCode de la
- * réservation) — vérifié en direct plutôt que de se fier au marquage
- * manuel "exporté" côté app, qui peut être coché sans que l'écriture
- * VRPlatform existe réellement (cf. cleaning_commission_catchup_exports). */
+ * réservation) — vérifié en direct dans VRPlatform plutôt qu'à partir d'un
+ * marquage manuel côté app. */
 export async function getAlreadyAdjustedReservationIds(
   reservations: { reservationId: string; confirmationCode: string | null }[]
 ): Promise<Set<string>> {
