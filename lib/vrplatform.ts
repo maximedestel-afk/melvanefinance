@@ -1741,42 +1741,45 @@ export async function getPortfolioReservationDetails(
   return perProperty.flat().sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
-interface VrPlatformReservationAdjustment {
-  id: string;
-  description: string | null;
-  amount: number;
-}
-interface VrPlatformReservationWithAdjustments {
-  id: string;
-  adjustments: VrPlatformReservationAdjustment[] | null;
+interface VrPlatformJournalEntrySearchResult {
+  data: { description: string | null; reservationId?: string | null }[];
+  pagination: { page: number; totalPage: number };
 }
 
-/** Les "Adjustments" d'une réservation (ex: rattrapage de commission
- * ménage posé à la main dans VRPlatform, onglet Adjustments de la
- * réservation) ne sont renvoyés que par GET /reservations/{id} (détail
- * d'une seule réservation) — PAS par la liste /reservations utilisée
- * partout ailleurs dans ce fichier (confirmé via l'OpenAPI VRPlatform :
- * seul le schéma de réponse du endpoint singulier inclut `adjustments`). */
-async function getReservationAdjustmentDescriptions(reservationId: string): Promise<string[]> {
+/** Le rattrapage de commission ménage posé à la main dans VRPlatform n'est
+ * PAS une "Adjustment" de réservation (GET /reservations/{id}.adjustments,
+ * qui reste vide) — ce sont de simples écritures de journal (comptes
+ * "Management Fee Rebate"/"Accounts Payable"/"Expense Reimbursement
+ * Revenue"), SANS reservationId, qui ne référencent la réservation que par
+ * son confirmationCode en texte libre dans la description (ex: "Commission
+ * ménage — 5300993280 (2026-10-21)"). On les retrouve donc via le
+ * paramètre `search` de /reports/journal-entries, pas par reservationId —
+ * confirmé en direct sur un cas réel. */
+async function searchJournalEntryDescriptions(confirmationCode: string): Promise<string[]> {
   try {
-    const res = await vrPlatformFetch<VrPlatformReservationWithAdjustments>(`/reservations/${reservationId}`, {});
-    return (res.adjustments ?? []).map((a) => a.description ?? "").filter((d) => d !== "");
+    const res = await vrPlatformFetch<VrPlatformJournalEntrySearchResult>("/reports/journal-entries", {
+      search: confirmationCode,
+      limit: "50",
+      page: "1",
+    });
+    return res.data.map((e) => e.description ?? "").filter((d) => d !== "");
   } catch {
     // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
     return [];
   }
 }
 
-// Nombre d'appels /reservations/{id} en parallèle pour vérifier les
-// Adjustments déjà posées — un appel par réservation affichée dans
-// l'onglet Rattrapage Ménage, limité pour rester raisonnable côté API.
+// Nombre de recherches /reports/journal-entries?search=... en parallèle
+// pour vérifier les rattrapages déjà posés — une recherche par réservation
+// affichée dans l'onglet Rattrapage Ménage, limité pour rester raisonnable
+// côté API.
 const ADJUSTMENTS_CHECK_CONCURRENCY = 8;
 
 /** Pour un lot de réservations (onglet Rattrapage Ménage), indique
- * lesquelles ont déjà un Adjustment de rattrapage ménage posé dans
+ * lesquelles ont déjà un rattrapage de commission ménage posé dans
  * VRPlatform (description contenant "ménage" et le confirmationCode de la
  * réservation) — vérifié en direct plutôt que de se fier au marquage
- * manuel "exporté" côté app, qui peut être coché sans que l'ajustement
+ * manuel "exporté" côté app, qui peut être coché sans que l'écriture
  * VRPlatform existe réellement (cf. cleaning_commission_catchup_exports). */
 export async function getAlreadyAdjustedReservationIds(
   reservations: { reservationId: string; confirmationCode: string | null }[]
@@ -1789,7 +1792,7 @@ export async function getAlreadyAdjustedReservationIds(
       if (i >= reservations.length) return;
       const r = reservations[i];
       if (!r.confirmationCode) continue;
-      const descriptions = await getReservationAdjustmentDescriptions(r.reservationId);
+      const descriptions = await searchJournalEntryDescriptions(r.confirmationCode);
       const hasMatch = descriptions.some(
         (d) => d.toLowerCase().includes("ménage") && d.includes(r.confirmationCode!)
       );
