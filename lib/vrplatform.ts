@@ -1364,6 +1364,7 @@ export interface ManagerExpenseEntry {
   date: string;
   accountName: string;
   description: string | null;
+  /** Négatif — c'est une dépense, qui se retranche du profit. */
   cents: number;
   transactionId: string | null;
   txnCode: string | null;
@@ -1408,7 +1409,10 @@ export async function getPortfolioManagerExpenseEntries(
       date: entry.txnAt.slice(0, 10),
       accountName: entry.account?.name ?? "Autre",
       description: entry.description ?? null,
-      cents: entry.centTotal,
+      // Négatif — c'est une dépense (même convention que
+      // addListingManagerExpense/PropertyFinanceTable : entry.centTotal est
+      // positif côté VRPlatform, mais un coût doit s'afficher en négatif).
+      cents: -entry.centTotal,
       transactionId: entry.transactionId ?? null,
       txnCode: entry.txnCode ?? null,
     });
