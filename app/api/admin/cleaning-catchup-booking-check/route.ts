@@ -41,10 +41,11 @@ interface VrReservationsResponse {
 }
 
 async function findReservationByConfirmationCode(code: string): Promise<VrReservation | null> {
-  // Tentative directe : si l'API filtre réellement sur ce paramètre, une
-  // seule page suffit.
+  // "confirmationCode" n'est pas un paramètre reconnu par /reservations
+  // (confirmé via l'OpenAPI spec VRPlatform) — le paramètre de recherche
+  // générique s'appelle "search".
   const direct = (await vrPlatformFetchRaw("/reservations", {
-    confirmationCode: code,
+    search: code,
     limit: "250",
     page: "1",
   })) as VrReservationsResponse;
