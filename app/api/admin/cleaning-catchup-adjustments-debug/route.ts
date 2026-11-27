@@ -48,6 +48,22 @@ export async function GET() {
     result.rawFetchError = err instanceof Error ? err.message : String(err);
   }
 
+  // Les 2 lignes vues dans l'UI VRPlatform (catégorie "Management Fee
+  // Rebate") n'apparaissent pas dans /reservations/{id}.adjustments — ce
+  // sont peut-être de vraies écritures de journal (comme Management
+  // Commission@25% etc), mais SANS reservationId associé (référence au
+  // confirmationCode seulement en texte libre dans la description), donc
+  // invisibles dans la recherche précédente qui filtrait par reservationId.
+  // On teste ici /reports/journal-entries?search=<confirmationCode>.
+  try {
+    const searchResult = await vrPlatformFetchRaw(
+      `/reports/journal-entries?search=${encodeURIComponent(CONFIRMATION_CODE)}&limit=50&page=1`
+    );
+    result.journalEntriesSearchResult = searchResult;
+  } catch (err) {
+    result.journalEntriesSearchError = err instanceof Error ? err.message : String(err);
+  }
+
   try {
     const alreadyAdjusted = await getAlreadyAdjustedReservationIds([
       { reservationId: RESERVATION_ID, confirmationCode: CONFIRMATION_CODE },
