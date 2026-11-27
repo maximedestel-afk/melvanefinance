@@ -1741,6 +1741,65 @@ export async function getPortfolioReservationDetails(
   return perProperty.flat().sort((a, b) => a.checkIn.localeCompare(b.checkIn));
 }
 
+interface VrPlatformReservationAdjustment {
+  id: string;
+  description: string | null;
+  amount: number;
+}
+interface VrPlatformReservationWithAdjustments {
+  id: string;
+  adjustments: VrPlatformReservationAdjustment[] | null;
+}
+
+/** Les "Adjustments" d'une réservation (ex: rattrapage de commission
+ * ménage posé à la main dans VRPlatform, onglet Adjustments de la
+ * réservation) ne sont renvoyés que par GET /reservations/{id} (détail
+ * d'une seule réservation) — PAS par la liste /reservations utilisée
+ * partout ailleurs dans ce fichier (confirmé via l'OpenAPI VRPlatform :
+ * seul le schéma de réponse du endpoint singulier inclut `adjustments`). */
+async function getReservationAdjustmentDescriptions(reservationId: string): Promise<string[]> {
+  try {
+    const res = await vrPlatformFetch<VrPlatformReservationWithAdjustments>(`/reservations/${reservationId}`, {});
+    return (res.adjustments ?? []).map((a) => a.description ?? "").filter((d) => d !== "");
+  } catch {
+    // Dégradation silencieuse — voir le commentaire sur getAccountIdByName.
+    return [];
+  }
+}
+
+// Nombre d'appels /reservations/{id} en parallèle pour vérifier les
+// Adjustments déjà posées — un appel par réservation affichée dans
+// l'onglet Rattrapage Ménage, limité pour rester raisonnable côté API.
+const ADJUSTMENTS_CHECK_CONCURRENCY = 8;
+
+/** Pour un lot de réservations (onglet Rattrapage Ménage), indique
+ * lesquelles ont déjà un Adjustment de rattrapage ménage posé dans
+ * VRPlatform (description contenant "ménage" et le confirmationCode de la
+ * réservation) — vérifié en direct plutôt que de se fier au marquage
+ * manuel "exporté" côté app, qui peut être coché sans que l'ajustement
+ * VRPlatform existe réellement (cf. cleaning_commission_catchup_exports). */
+export async function getAlreadyAdjustedReservationIds(
+  reservations: { reservationId: string; confirmationCode: string | null }[]
+): Promise<Set<string>> {
+  const already = new Set<string>();
+  let index = 0;
+  async function worker() {
+    for (;;) {
+      const i = index++;
+      if (i >= reservations.length) return;
+      const r = reservations[i];
+      if (!r.confirmationCode) continue;
+      const descriptions = await getReservationAdjustmentDescriptions(r.reservationId);
+      const hasMatch = descriptions.some(
+        (d) => d.toLowerCase().includes("ménage") && d.includes(r.confirmationCode!)
+      );
+      if (hasMatch) already.add(r.reservationId);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(ADJUSTMENTS_CHECK_CONCURRENCY, reservations.length) }, worker));
+  return already;
+}
+
 /** Version "réservations récentes" de getPortfolioReservationDetails —
  * filtre par date de réservation (dateField=bookedAt) sur [sinceDate,
  * untilDate] au lieu du mois de check-out, pour lister ce qui a été réservé

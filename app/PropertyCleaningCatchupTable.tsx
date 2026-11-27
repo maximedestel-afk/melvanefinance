@@ -28,6 +28,10 @@ interface CatchupApiRow {
   /** Taux de commission M.G.B. du bien, ex: 20 pour 20 % — null si non
    * configuré. */
   commissionPercent: number | null;
+  /** true si un Adjustment de rattrapage ménage existe déjà pour cette
+   * réservation dans VRPlatform (vérifié en direct par l'API, pas un
+   * marquage manuel) — voir getAlreadyAdjustedReservationIds. */
+  alreadyInVr: boolean;
 }
 
 interface CatchupRow extends CatchupApiRow {
@@ -84,7 +88,8 @@ type ColumnKey =
   | "commissionOnCleaning"
   | "commissionPercent"
   | "additionalCommission"
-  | "pnl";
+  | "pnl"
+  | "alreadyInVr";
 
 const ALL_COLUMNS: ColumnKey[] = [
   "reference",
@@ -102,6 +107,7 @@ const ALL_COLUMNS: ColumnKey[] = [
   "commissionPercent",
   "additionalCommission",
   "pnl",
+  "alreadyInVr",
 ];
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
@@ -120,6 +126,7 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   commissionPercent: "Comm Melvane",
   additionalCommission: "Comm Supp",
   pnl: "PNL Owner",
+  alreadyInVr: "Déjà dans VR",
 };
 
 function toRow(r: CatchupApiRow): CatchupRow {
@@ -941,6 +948,14 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           title="Comm Ménage − Comm Supp"
                         />
                       )}
+                      {!hiddenColumns.has("alreadyInVr") && (
+                        <th
+                          className="py-1 px-1.5 text-left text-[11px] font-medium text-[#86868b]"
+                          title="Vérifié en direct dans VRPlatform (Adjustments de la réservation), pas un marquage manuel"
+                        >
+                          Déjà dans VR
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -1036,8 +1051,17 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                           </td>
                         )}
                         {!hiddenColumns.has("pnl") && (
-                          <td className="py-1 pl-1.5 pr-2.5 text-right tabular-nums">
+                          <td className="py-1 pl-1.5 pr-1.5 text-right tabular-nums">
                             <SignedMoney cents={r.pnlCents} bold />
+                          </td>
+                        )}
+                        {!hiddenColumns.has("alreadyInVr") && (
+                          <td className="py-1 pl-1.5 pr-2.5">
+                            {r.alreadyInVr ? (
+                              <span className="text-emerald-600">✓ Oui</span>
+                            ) : (
+                              <span className="text-[#86868b]">— Non</span>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -1086,10 +1110,11 @@ export function PropertyCleaningCatchupTable({ properties: unsortedProperties }:
                         </td>
                       )}
                       {!hiddenColumns.has("pnl") && (
-                        <td className="py-1 pl-1.5 pr-2.5 text-right tabular-nums">
+                        <td className="py-1 pl-1.5 pr-1.5 text-right tabular-nums">
                           <SignedMoney cents={totals.pnlCents} bold />
                         </td>
                       )}
+                      {!hiddenColumns.has("alreadyInVr") && <td className="py-1 pl-1.5 pr-2.5"></td>}
                     </tr>
                   </tfoot>
                 </table>

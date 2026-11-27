@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile, listPropertiesForFinance } from "@/lib/queries";
-import { getPortfolioGuestyListingIds, getPortfolioReservationDetails, isVrPlatformConfigured } from "@/lib/vrplatform";
+import {
+  getAlreadyAdjustedReservationIds,
+  getPortfolioGuestyListingIds,
+  getPortfolioReservationDetails,
+  isVrPlatformConfigured,
+} from "@/lib/vrplatform";
 import { getGuestyCleaningPrices, isGuestyConfigured, mapWithGuestyConcurrency } from "@/lib/guesty";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +37,12 @@ export interface CleaningCommissionCatchupRow {
   /** Taux de commission M.G.B. du bien (property_owner.commission_percent),
    * ex: 20 pour 20 % — null si non configuré. */
   commissionPercent: number | null;
+  /** true si un Adjustment de rattrapage ménage existe déjà pour cette
+   * réservation dans VRPlatform (vérifié en direct, voir
+   * getAlreadyAdjustedReservationIds) — indépendant du marquage manuel
+   * "exporté" côté app (cleaning_commission_catchup_exports), qui peut être
+   * coché sans que l'ajustement existe réellement. */
+  alreadyInVr: boolean;
 }
 
 /** Pour chaque réservation, la commission prélevée par la plateforme de
@@ -103,6 +114,10 @@ export async function GET(request: Request) {
       });
     }
 
+    const alreadyAdjustedReservationIds = await getAlreadyAdjustedReservationIds(
+      reservations.map((r) => ({ reservationId: r.reservationId, confirmationCode: r.confirmationCode }))
+    );
+
     const rows: CleaningCommissionCatchupRow[] = reservations.map((r) => ({
       propertyId: r.propertyId,
       reference: r.reference,
@@ -118,6 +133,7 @@ export async function GET(request: Request) {
       cleaningFeeCents: cleaningFeeByPropertyId.get(r.propertyId) ?? null,
       cleaningError: cleaningErrorByPropertyId.get(r.propertyId) ?? null,
       commissionPercent: commissionPercentByPropertyId.get(r.propertyId) ?? null,
+      alreadyInVr: alreadyAdjustedReservationIds.has(r.reservationId),
     }));
 
     return NextResponse.json({ rows }, { headers: { "Cache-Control": "no-store, max-age=0" } });
