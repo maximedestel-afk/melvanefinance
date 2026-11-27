@@ -49,7 +49,7 @@ export async function GET() {
   }
 
   const results: Record<string, unknown[]> = {};
-  for (const term of ["CARTE5G", "FREE"]) {
+  for (const term of ["Carte 5G", "FREE"]) {
     try {
       const res = (await vrPlatformFetchRaw(
         `/reports/journal-entries?search=${encodeURIComponent(term)}&limit=100&page=1`
